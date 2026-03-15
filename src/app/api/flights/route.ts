@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GLOBAL_CITY_AIRPORTS } from '@/data/airports';
 
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
@@ -277,6 +278,7 @@ const CITY_TO_AIRPORT: Record<string, string> = {
   'toronto': 'YYZ', 'sydney': 'SYD', 'melbourne': 'MEL',
   'bali': 'DPS', 'phuket': 'HKT', 'maldives': 'MLE',
   'thane': 'BOM', 'navi mumbai': 'BOM', // Mumbai suburbs → BOM
+  'reykjavik': 'KEF', // Keflavik is the international airport, not RKV
   // US cities & states
   'california': 'LAX', 'malibu': 'LAX', 'santa monica': 'LAX', 'hollywood': 'LAX', 'beverly hills': 'LAX',
   'san diego': 'SAN', 'san jose': 'SJC', 'sacramento': 'SMF', 'oakland': 'OAK',
@@ -314,16 +316,25 @@ function resolveAirportCode(input: string): string {
   // Already an IATA code (2-3 uppercase letters)
   if (/^[A-Z]{2,3}$/.test(input)) return input;
 
-  // Look up city name
   const lower = input.toLowerCase().trim();
+
+  // 1. Check curated mapping (has special cases like Bruges→BRU, Thane→BOM)
   if (CITY_TO_AIRPORT[lower]) return CITY_TO_AIRPORT[lower];
 
-  // Try partial match
+  // 2. Check global OpenFlights database (5,599 cities worldwide)
+  if (GLOBAL_CITY_AIRPORTS[lower]) return GLOBAL_CITY_AIRPORTS[lower];
+
+  // 3. Try partial match on curated mapping
   for (const [city, code] of Object.entries(CITY_TO_AIRPORT)) {
     if (lower.includes(city) || city.includes(lower)) return code;
   }
 
-  return input; // Return as-is, let the API handle it
+  // 4. Try partial match on global database
+  for (const [city, code] of Object.entries(GLOBAL_CITY_AIRPORTS)) {
+    if (lower === city) return code;
+  }
+
+  return ''; // Return empty - will trigger dynamic Google resolver
 }
 
 // ─── Estimated fallback (simplified) ──────────────────────────────────────────
