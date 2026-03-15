@@ -26,9 +26,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing params: from, to, date required' }, { status: 400 });
   }
 
-  // Resolve city names to airport codes if needed
-  const fromResolved = resolveAirportCode(from);
-  const toResolved = resolveAirportCode(to);
+  // Resolve city names to airport codes — try static map first, then Google API
+  let fromResolved = resolveAirportCode(from);
+  let toResolved = resolveAirportCode(to);
+
+  // If static resolution failed, try dynamic resolution via Google Places
+  if ((!fromResolved || fromResolved === from) && !/^[A-Z]{2,3}$/.test(from)) {
+    try {
+      const baseUrl = req.nextUrl.origin;
+      const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(from)}`);
+      const data = await res.json();
+      if (data.code) fromResolved = data.code;
+    } catch {}
+  }
+  if ((!toResolved || toResolved === to) && !/^[A-Z]{2,3}$/.test(to)) {
+    try {
+      const baseUrl = req.nextUrl.origin;
+      const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(to)}`);
+      const data = await res.json();
+      if (data.code) toResolved = data.code;
+    } catch {}
+  }
 
   try {
     // Try live API first (use resolved airport codes)
