@@ -259,6 +259,19 @@ const CITY_TO_AIRPORT: Record<string, string> = {
   'toronto': 'YYZ', 'sydney': 'SYD', 'melbourne': 'MEL',
   'bali': 'DPS', 'phuket': 'HKT', 'maldives': 'MLE',
   'thane': 'BOM', 'navi mumbai': 'BOM', // Mumbai suburbs → BOM
+  // US cities & states
+  'california': 'LAX', 'malibu': 'LAX', 'santa monica': 'LAX', 'hollywood': 'LAX', 'beverly hills': 'LAX',
+  'san diego': 'SAN', 'san jose': 'SJC', 'sacramento': 'SMF', 'oakland': 'OAK',
+  'seattle': 'SEA', 'portland': 'PDX', 'denver': 'DEN', 'phoenix': 'PHX',
+  'las vegas': 'LAS', 'miami': 'MIA', 'orlando': 'MCO', 'tampa': 'TPA',
+  'atlanta': 'ATL', 'dallas': 'DFW', 'houston': 'IAH', 'austin': 'AUS',
+  'boston': 'BOS', 'washington': 'IAD', 'philadelphia': 'PHL', 'detroit': 'DTW',
+  'minneapolis': 'MSP', 'hawaii': 'HNL', 'honolulu': 'HNL',
+  // Other popular
+  'cairo': 'CAI', 'johannesburg': 'JNB', 'cape town': 'CPT', 'nairobi': 'NBO',
+  'moscow': 'SVO', 'beijing': 'PEK', 'shanghai': 'PVG', 'taipei': 'TPE',
+  'hanoi': 'HAN', 'ho chi minh': 'SGN', 'manila': 'MNL', 'jakarta': 'CGK',
+  'colombo': 'CMB', 'kathmandu': 'KTM', 'dhaka': 'DAC',
 };
 
 // Cities that use another city's airport (truly "nearby" airports)
