@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://aiezzy.com/sitemap.xml
+
+# Aiezzy - AI Trip Planner (Coming Soon)
+# Free tools still available at aiezzy.com/tools
