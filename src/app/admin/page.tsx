@@ -1,0 +1,236 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+
+interface Stats {
+  totalUsers: number;
+  totalTrips: number;
+  tripsWithFlights: number;
+  tripsWithHotels: number;
+  totalTripValue: number;
+  recentSignups: number;
+}
+
+interface User {
+  id: string; email: string; name: string; provider: string; createdAt: string; lastSignIn: string;
+}
+
+interface Trip {
+  id: string; title: string; userName: string; userEmail: string; fromAddress: string;
+  departureDate: string; destinations: string[]; destinationCount: number; totalNights: number;
+  adults: number; tripType: string; status: string; flightCost: number; trainCost: number;
+  hotelCost: number; totalCost: number; createdAt: string; updatedAt: string;
+}
+
+export default function AdminPage() {
+  const [adminKey, setAdminKey] = useState('');
+  const [authenticated, setAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [tab, setTab] = useState<'overview' | 'users' | 'trips'>('overview');
+  const [error, setError] = useState('');
+
+  const fetchData = async (key: string) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/admin?key=${encodeURIComponent(key)}`);
+      if (!res.ok) { setError('Invalid admin key'); setLoading(false); return; }
+      const data = await res.json();
+      setStats(data.stats);
+      setUsers(data.users);
+      setTrips(data.trips);
+      setAuthenticated(true);
+    } catch { setError('Failed to load data'); }
+    setLoading(false);
+  };
+
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-bg-primary">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-8 w-full max-w-[400px]">
+          <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Admin Dashboard</h1>
+          <p className="text-text-muted text-sm font-body mb-6">Enter admin key to access</p>
+          <form onSubmit={e => { e.preventDefault(); fetchData(adminKey); }}>
+            <input type="password" placeholder="Admin key" value={adminKey} onChange={e => setAdminKey(e.target.value)}
+              className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3 text-text-primary placeholder:text-text-muted text-sm font-body outline-none mb-3 input-glow focus:border-accent-cyan" />
+            {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full bg-accent-cyan text-white font-display font-bold py-3 rounded-xl text-sm disabled:opacity-50">
+              {loading ? 'Loading...' : 'Access Dashboard'}
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-bg-primary p-4 md:p-8">
+      <div className="max-w-[1200px] mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="font-display text-2xl font-bold text-text-primary">
+              <span className="text-accent-cyan">AI</span>Ezzy Admin
+            </h1>
+            <p className="text-text-muted text-sm font-body">Dashboard</p>
+          </div>
+          <button onClick={() => setAuthenticated(false)} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Lock</button>
+        </div>
+
+        {/* Stats cards */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total Users</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.totalUsers}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">{stats.recentSignups} in last 30 days</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total Trips</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.totalTrips}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">{stats.tripsWithFlights} with flights</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Hotels Booked</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.tripsWithHotels}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">trips with hotels</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total Trip Value</p>
+              <p className="text-2xl font-display font-bold text-accent-cyan mt-1">&#8377;{stats.totalTripValue.toLocaleString()}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">across all trips</p>
+            </div>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6">
+          {(['overview', 'users', 'trips'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 py-2 rounded-xl text-sm font-display font-bold transition-all ${
+                tab === t ? 'bg-accent-cyan text-white' : 'bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan/30'
+              }`}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
+          ))}
+        </div>
+
+        {/* Overview */}
+        {tab === 'overview' && (
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Recent signups */}
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm">
+              <h3 className="font-display font-bold text-sm text-text-primary mb-4">Recent Signups</h3>
+              <div className="space-y-3">
+                {users.slice(0, 8).map(u => (
+                  <div key={u.id} className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-body text-text-primary">{u.name}</p>
+                      <p className="text-[10px] text-text-muted font-mono">{u.email}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-text-muted font-mono">{new Date(u.createdAt).toLocaleDateString()}</p>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-accent-gold/10 text-accent-gold font-mono">{u.provider}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent trips */}
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm">
+              <h3 className="font-display font-bold text-sm text-text-primary mb-4">Recent Trips</h3>
+              <div className="space-y-3">
+                {trips.slice(0, 8).map(t => (
+                  <div key={t.id} className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-body text-text-primary truncate">{t.destinations.join(' → ') || 'No destinations'}</p>
+                      <p className="text-[10px] text-text-muted font-body">{t.userName} &middot; {t.departureDate}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-3">
+                      {t.totalCost > 0 && <p className="text-xs font-mono text-accent-cyan font-bold">&#8377;{t.totalCost.toLocaleString()}</p>}
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${t.status === 'planned' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{t.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Users tab */}
+        {tab === 'users' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-xl card-warm overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border-subtle bg-bg-card">
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Name</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Email</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Provider</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Signed Up</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Last Active</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id} className="border-b border-border-subtle hover:bg-bg-card/50 transition-colors">
+                    <td className="px-4 py-3 font-body text-text-primary">{u.name}</td>
+                    <td className="px-4 py-3 font-mono text-text-secondary text-xs">{u.email}</td>
+                    <td className="px-4 py-3"><span className="text-[10px] px-2 py-0.5 rounded bg-accent-gold/10 text-accent-gold font-mono">{u.provider}</span></td>
+                    <td className="px-4 py-3 font-mono text-text-muted text-xs">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 font-mono text-text-muted text-xs">{u.lastSignIn ? new Date(u.lastSignIn).toLocaleDateString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Trips tab */}
+        {tab === 'trips' && (
+          <div className="bg-bg-surface border border-border-subtle rounded-xl card-warm overflow-hidden overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border-subtle bg-bg-card">
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">User</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Route</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Date</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Cities</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Nights</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Pax</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Flights</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Hotels</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Total</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trips.map(t => (
+                  <tr key={t.id} className="border-b border-border-subtle hover:bg-bg-card/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="font-body text-text-primary text-xs">{t.userName}</p>
+                      <p className="font-mono text-text-muted text-[10px]">{t.userEmail}</p>
+                    </td>
+                    <td className="px-4 py-3 font-body text-text-primary text-xs max-w-[200px] truncate">{t.destinations.join(' → ')}</td>
+                    <td className="px-4 py-3 font-mono text-text-muted text-xs">{t.departureDate}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary text-center">{t.destinationCount}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary text-center">{t.totalNights}</td>
+                    <td className="px-4 py-3 font-mono text-text-primary text-center">{t.adults}</td>
+                    <td className="px-4 py-3 font-mono text-accent-cyan text-xs">{t.flightCost > 0 ? `₹${t.flightCost.toLocaleString()}` : '—'}</td>
+                    <td className="px-4 py-3 font-mono text-accent-cyan text-xs">{t.hotelCost > 0 ? `₹${t.hotelCost.toLocaleString()}` : '—'}</td>
+                    <td className="px-4 py-3 font-mono font-bold text-accent-cyan text-xs">{t.totalCost > 0 ? `₹${t.totalCost.toLocaleString()}` : '—'}</td>
+                    <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded font-mono ${t.status === 'planned' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{t.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
