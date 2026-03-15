@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 interface Stats {
@@ -32,6 +32,7 @@ export default function AdminPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tab, setTab] = useState<'overview' | 'users' | 'trips'>('overview');
   const [error, setError] = useState('');
+  const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
 
   const fetchData = async (key: string) => {
     setLoading(true);
@@ -44,7 +45,7 @@ export default function AdminPage() {
       setUsers(data.users);
       setTrips(data.trips);
       setAuthenticated(true);
-    } catch { setError('Failed to load data'); }
+    } catch (e) { setError('Failed to load data'); }
     setLoading(false);
   };
 
@@ -206,11 +207,13 @@ export default function AdminPage() {
                   <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Hotels</th>
                   <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Total</th>
                   <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs">Status</th>
+                  <th className="text-left px-4 py-3 font-display font-bold text-text-secondary text-xs"></th>
                 </tr>
               </thead>
               <tbody>
                 {trips.map(t => (
-                  <tr key={t.id} className="border-b border-border-subtle hover:bg-bg-card/50 transition-colors">
+                  <React.Fragment key={t.id}>
+                  <tr className="border-b border-border-subtle hover:bg-bg-card/50 transition-colors">
                     <td className="px-4 py-3">
                       <p className="font-body text-text-primary text-xs">{t.userName}</p>
                       <p className="font-mono text-text-muted text-[10px]">{t.userEmail}</p>
@@ -224,7 +227,54 @@ export default function AdminPage() {
                     <td className="px-4 py-3 font-mono text-accent-cyan text-xs">{t.hotelCost > 0 ? `₹${t.hotelCost.toLocaleString()}` : '—'}</td>
                     <td className="px-4 py-3 font-mono font-bold text-accent-cyan text-xs">{t.totalCost > 0 ? `₹${t.totalCost.toLocaleString()}` : '—'}</td>
                     <td className="px-4 py-3"><span className={`text-[10px] px-2 py-0.5 rounded font-mono ${t.status === 'planned' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{t.status}</span></td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => setSelectedTrip(selectedTrip?.id === t.id ? null : t)}
+                        className="text-accent-cyan text-xs font-body hover:underline">{selectedTrip?.id === t.id ? 'Hide' : 'View'}</button>
+                    </td>
                   </tr>
+                  {/* Expanded trip detail */}
+                  {selectedTrip?.id === t.id && (
+                    <tr><td colSpan={11} className="px-4 py-4 bg-bg-card/50">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="font-display font-bold text-sm text-text-primary mb-2">Itinerary</h4>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-accent-cyan text-white text-[9px] font-mono flex items-center justify-center">1</span>
+                              <span className="text-xs font-body text-text-primary">{t.fromAddress}</span>
+                            </div>
+                            {t.destinations.map((d: string, di: number) => (
+                              <div key={di} className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-accent-cyan text-white text-[9px] font-mono flex items-center justify-center">{di + 2}</span>
+                                <span className="text-xs font-body text-text-primary">{d}</span>
+                              </div>
+                            ))}
+                            {t.tripType === 'roundTrip' && (
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-accent-cyan text-white text-[9px] font-mono flex items-center justify-center">{t.destinations.length + 2}</span>
+                                <span className="text-xs font-body text-text-muted italic">Return to {t.fromAddress?.split(',')[0]}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="font-display font-bold text-sm text-text-primary mb-2">Cost Breakdown</h4>
+                          <div className="space-y-1.5 text-xs font-body">
+                            <div className="flex justify-between"><span className="text-text-secondary">Flights</span><span className="font-mono text-text-primary">{t.flightCost > 0 ? `₹${t.flightCost.toLocaleString()}` : '—'}</span></div>
+                            <div className="flex justify-between"><span className="text-text-secondary">Trains</span><span className="font-mono text-text-primary">{t.trainCost > 0 ? `₹${t.trainCost.toLocaleString()}` : '—'}</span></div>
+                            <div className="flex justify-between"><span className="text-text-secondary">Hotels</span><span className="font-mono text-text-primary">{t.hotelCost > 0 ? `₹${t.hotelCost.toLocaleString()}` : '—'}</span></div>
+                            <div className="flex justify-between pt-1.5 border-t border-border-subtle"><span className="text-text-primary font-semibold">Total</span><span className="font-mono font-bold text-accent-cyan">₹{t.totalCost.toLocaleString()}</span></div>
+                          </div>
+                          <div className="mt-3 text-[10px] text-text-muted space-y-0.5">
+                            <p>Type: {t.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</p>
+                            <p>Created: {new Date(t.createdAt).toLocaleString()}</p>
+                            <p>Updated: {new Date(t.updatedAt).toLocaleString()}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </td></tr>
+                  )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
