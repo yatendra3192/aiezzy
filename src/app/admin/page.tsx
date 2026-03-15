@@ -147,15 +147,40 @@ export default function AdminPage() {
               <h3 className="font-display font-bold text-sm text-text-primary mb-4">Recent Trips</h3>
               <div className="space-y-3">
                 {trips.slice(0, 8).map(t => (
-                  <div key={t.id} className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-body text-text-primary truncate">{t.destinations.join(' → ') || 'No destinations'}</p>
-                      <p className="text-[10px] text-text-muted font-body">{t.userName} &middot; {t.departureDate}</p>
-                    </div>
-                    <div className="text-right flex-shrink-0 ml-3">
-                      {t.totalCost > 0 && <p className="text-xs font-mono text-accent-cyan font-bold">&#8377;{t.totalCost.toLocaleString()}</p>}
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${t.status === 'planned' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{t.status}</span>
-                    </div>
+                  <div key={t.id}>
+                    <button onClick={() => setSelectedTrip(selectedTrip?.id === t.id ? null : t)} className="w-full text-left flex items-center justify-between hover:bg-bg-card/50 rounded-lg p-1.5 -mx-1.5 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-body text-text-primary truncate">{t.destinations.join(' → ') || 'No destinations'}</p>
+                        <p className="text-[10px] text-text-muted font-body">{t.userName} &middot; {t.departureDate}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0 ml-3">
+                        {t.totalCost > 0 && <p className="text-xs font-mono text-accent-cyan font-bold">&#8377;{t.totalCost.toLocaleString()}</p>}
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${t.status === 'planned' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>{t.status}</span>
+                      </div>
+                    </button>
+                    {selectedTrip?.id === t.id && (
+                      <div className="mt-2 mb-3 p-3 bg-bg-card rounded-xl border border-border-subtle text-xs">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="font-display font-bold text-text-primary mb-1.5">Itinerary</p>
+                            {t.destinations.map((d, di) => (
+                              <div key={di} className="flex items-center gap-1.5 mb-1">
+                                <span className="w-4 h-4 rounded-full bg-accent-cyan text-white text-[8px] font-mono flex items-center justify-center">{di+1}</span>
+                                <span className="text-text-primary font-body">{d}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <p className="font-display font-bold text-text-primary mb-1.5">Costs</p>
+                            {t.flightCost > 0 && <p className="text-text-secondary">Flights: <span className="font-mono text-text-primary">&#8377;{t.flightCost.toLocaleString()}</span></p>}
+                            {t.trainCost > 0 && <p className="text-text-secondary">Trains: <span className="font-mono text-text-primary">&#8377;{t.trainCost.toLocaleString()}</span></p>}
+                            {t.hotelCost > 0 && <p className="text-text-secondary">Hotels: <span className="font-mono text-text-primary">&#8377;{t.hotelCost.toLocaleString()}</span></p>}
+                            <p className="text-text-primary font-semibold mt-1 pt-1 border-t border-border-subtle">Total: <span className="font-mono text-accent-cyan">&#8377;{t.totalCost.toLocaleString()}</span></p>
+                            <p className="text-text-muted mt-1">{t.totalNights}N &middot; {t.adults} pax &middot; {t.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
