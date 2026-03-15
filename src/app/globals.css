@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #FAF7F2;
+  --bg-surface: #FFFFFF;
+  --bg-card: #F3EFE8;
+  --accent-cyan: #E8654A;
+  --accent-gold: #0D9488;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg-primary);
+  color: #1E293B;
+  overflow-x: hidden;
+}
+
+/* Warm scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(232, 101, 74, 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(232, 101, 74, 0.45);
+}
+
+/* Warm input focus glow */
+.input-glow:focus {
+  box-shadow: 0 0 0 3px rgba(232, 101, 74, 0.15), 0 1px 3px rgba(0, 0, 0, 0.06);
+  border-color: var(--accent-cyan);
+}
+
+/* Subtle dot pattern for page backgrounds */
+.grid-pattern {
+  background-image: radial-gradient(circle, rgba(232, 101, 74, 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* Timeline dotted line */
+.timeline-line {
+  border-left: 2px dashed #CBD5E1;
+}
+
+/* Modal backdrop - frosted glass */
+.modal-backdrop {
+  background: rgba(30, 41, 59, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Pin pulse with warm coral glow */
+.pin-pulse::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: rgba(232, 101, 74, 0.15);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Hide number spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 6px rgba(232, 101, 74, 0.25); }
+  50% { box-shadow: 0 0 18px rgba(232, 101, 74, 0.5); }
+}
+
+@layer utilities {
+  .text-shadow-glow {
+    text-shadow: 0 0 20px rgba(232, 101, 74, 0.3);
+  }
+  .card-warm {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.04);
+  }
+  .card-warm-lg {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04), 0 10px 24px rgba(0, 0, 0, 0.06);
+  }
+}

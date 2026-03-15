@@ -1,0 +1,552 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Flight, TrainOption } from '@/data/mockData';
+import { timeStr12 } from '@/lib/timeUtils';
+
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  fromCity: string;
+  toCity: string;
+  fromCode: string;
+  toCode: string;
+  fromAirport: string;
+  toAirport: string;
+  date: string;
+  adults: number;
+  currentType: string;
+  selectedFlight: Flight | null;
+  selectedTrain: TrainOption | null;
+  onSelectFlight: (flight: Flight) => void;
+  onSelectTrain: (train: TrainOption) => void;
+  onSelectDrive: () => void;
+  onSelectBus: () => void;
+}
+
+const AIRLINE_COLORS: Record<string, string> = {
+  '6E': '#4f46e5', 'AI': '#dc2626', 'IX': '#2563eb', 'UK': '#7c3aed', 'SG': '#f59e0b', 'QP': '#0d9488',
+  'LH': '#00205b', 'KL': '#00a1de', 'AF': '#002157', 'BA': '#003366', 'VY': '#f7c600', 'FR': '#003580',
+  'U2': '#ff6600', 'EW': '#a5027d', 'EK': '#d71921', 'EY': '#b5985a', 'QR': '#5c0632', 'TK': '#e31e24',
+  'SQ': '#f0ab00', 'TG': '#4a1a6b', 'CX': '#006564', 'LX': '#c4002e', 'OS': '#e20a16',
+};
+
+type TabType = 'flight' | 'train' | 'bus' | 'drive' | 'walk' | 'cycle' | 'boat' | 'tram';
+
+function padTime(t: string): string {
+  // "5:31 AM" → "05:31 AM"
+  const parts = t.match(/^(\d{1,2})(:\d{2}.*)$/);
+  if (parts && parts[1].length === 1) return `0${parts[1]}${parts[2]}`;
+  return t;
+}
+
+export default function TransportCompareModal({
+  isOpen, onClose, fromCity, toCity, fromCode, toCode, fromAirport, toAirport,
+  date, adults, currentType, selectedFlight, selectedTrain,
+  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus,
+}: Props) {
+  const [tab, setTab] = useState<TabType>(currentType as TabType || 'flight');
+  const [flights, setFlights] = useState<(Flight & {
+    depAirportCode?: string; arrAirportCode?: string;
+    layovers?: Array<{ airport: string; airportCode: string; duration: number; overnight: boolean }>;
+    isNextDay?: boolean; co2Kg?: number | null; co2Diff?: number | null; travelClass?: string; durationMin?: number;
+  })[]>([]);
+  const [trains, setTrains] = useState<any[]>([]);
+  const [driveInfo, setDriveInfo] = useState<{ duration: string; distance: string } | null>(null);
+  const [walkInfo, setWalkInfo] = useState<{ duration: string; distance: string } | null>(null);
+  const [cycleInfo, setCycleInfo] = useState<{ duration: string; distance: string } | null>(null);
+  const [loadingFlights, setLoadingFlights] = useState(false);
+  const [loadingTrains, setLoadingTrains] = useState(false);
+  const [nearbyAirportPrompt, setNearbyAirportPrompt] = useState<{ fromNearby: string; toNearby: string; fromCity: string; toCity: string } | null>(null);
+  const [userAcceptedNearby, setUserAcceptedNearby] = useState(false);
+  const [flightSort, setFlightSort] = useState<'price' | 'shortest'>('price');
+  const [trainSort, setTrainSort] = useState<'price' | 'shortest'>('shortest');
+  const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
+  const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
+
+  // Fetch flights - check if nearby airport needed first
+  const fetchFlights = () => {
+    setLoadingFlights(true);
+    setNearbyAirportPrompt(null);
+    const searchFrom = fromCode || fromCity;
+    const searchTo = toCode || toCity;
+    fetch(`/api/flights?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(searchTo)}&date=${date}&adults=${adults}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.flights?.length > 0) {
+          // Check if nearby airport was used
+          if ((data.fromIsNearby || data.toIsNearby) && !userAcceptedNearby) {
+            setNearbyAirportPrompt({
+              fromNearby: data.fromIsNearby ? data.fromResolved : '',
+              toNearby: data.toIsNearby ? data.toResolved : '',
+              fromCity: fromCity,
+              toCity: toCity,
+            });
+            // Store flights but don't show yet
+            setFlights(data.flights.map((f: any, i: number) => ({
+              id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+              departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
+              route: `${data.fromResolved}-${data.toResolved}`, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
+              depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
+              layovers: f.layovers, isNextDay: f.isNextDay,
+              co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+            })));
+          } else {
+            setFlights(data.flights.map((f: any, i: number) => ({
+              id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+              departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
+              route: `${data.fromResolved || fromCode}-${data.toResolved || toCode}`, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
+              depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
+              layovers: f.layovers, isNextDay: f.isNextDay,
+              co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+            })));
+          }
+        }
+        setLoadingFlights(false);
+      }).catch(() => setLoadingFlights(false));
+  };
+
+  useEffect(() => {
+    if (!isOpen || tab !== 'flight' || flights.length > 0) return;
+    fetchFlights();
+  }, [isOpen, tab]);
+
+  // Fetch trains
+  useEffect(() => {
+    if (!isOpen || tab !== 'train' || trains.length > 0) return;
+    setLoadingTrains(true);
+    fetch(`/api/trains?from=${encodeURIComponent(fromCity)}&to=${encodeURIComponent(toCity)}&date=${date}`)
+      .then(r => r.json())
+      .then(data => {
+        const results = data.trains || [];
+        setTrains(results);
+        // Check if all routes require changes (no direct trains)
+        if (results.length > 0 && results.every((t: any) => t.stops !== 'Direct')) {
+          setConnectingTrainPrompt(true);
+        }
+        setLoadingTrains(false);
+      })
+      .catch(() => setLoadingTrains(false));
+  }, [isOpen, tab]);
+
+  // Prefetch driving distance on open (needed for availability check)
+  useEffect(() => {
+    if (!isOpen || driveInfo) return;
+    fetch(`/api/directions?origin=${encodeURIComponent(fromCity)}&destination=${encodeURIComponent(toCity)}&mode=driving`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'OK' && data.routes?.[0]?.legs?.[0]) {
+          const leg = data.routes[0].legs[0];
+          setDriveInfo({ duration: leg.duration.text, distance: leg.distance.text });
+        }
+      }).catch(() => {});
+  }, [isOpen]);
+
+  // Fetch walk/cycle on tab switch
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchMode = (mode: string, setter: (v: any) => void) => {
+      fetch(`/api/directions?origin=${encodeURIComponent(fromCity)}&destination=${encodeURIComponent(toCity)}&mode=${mode}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === 'OK' && data.routes?.[0]?.legs?.[0]) {
+            const leg = data.routes[0].legs[0];
+            setter({ duration: leg.duration.text, distance: leg.distance.text });
+          }
+        }).catch(() => {});
+    };
+    if (tab === 'walk' && !walkInfo) fetchMode('walking', setWalkInfo);
+    if (tab === 'cycle' && !cycleInfo) fetchMode('bicycling', setCycleInfo);
+  }, [isOpen, tab]);
+
+  // Reset on open
+  useEffect(() => {
+    if (isOpen) {
+      setTab(currentType as TabType || 'flight');
+      setFlights([]); setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null);
+      setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
+      setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
+    }
+  }, [isOpen]);
+
+  const sortedFlights = useMemo(() => [...flights].sort((a, b) =>
+    flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
+  ), [flights, flightSort]);
+
+  const sortedTrains = useMemo(() => [...trains].sort((a, b) =>
+    trainSort === 'price' ? a.price - b.price : (a.durationSeconds || 0) - (b.durationSeconds || 0)
+  ), [trains, trainSort]);
+
+  // Find best value flight (cheapest nonstop or cheapest overall)
+  const bestFlightId = useMemo(() => {
+    if (flights.length === 0) return '';
+    const nonstop = flights.filter(f => f.stops === 'Nonstop').sort((a, b) => a.pricePerAdult - b.pricePerAdult);
+    return (nonstop[0] || flights.sort((a, b) => a.pricePerAdult - b.pricePerAdult)[0])?.id || '';
+  }, [flights]);
+
+  const handleSelectTrain = (t: any) => {
+    onSelectTrain({
+      id: t.id, operator: t.operator, trainName: t.trainName, trainNumber: t.trainNumber,
+      departure: t.departure, arrival: t.arrival, duration: t.duration, stops: t.stops,
+      fromStation: t.fromStation, toStation: t.toStation, price: t.price,
+      color: t.transitSteps?.[0]?.color || '#6b7280',
+    });
+  };
+
+  // Determine availability based on real driving distance
+  const driveDistKm = driveInfo ? parseFloat(driveInfo.distance.replace(/[^0-9.]/g, '')) || 0 : null;
+
+  const availability = useMemo<Record<TabType, boolean>>(() => {
+    const dist = driveDistKm;
+    return {
+      flight: true,           // Always available - API returns empty if no flights
+      train: true,            // Always try - Google Transit returns empty if unavailable
+      bus: false,             // No bus data source yet
+      drive: dist === null || dist < 5000,
+      walk: dist !== null && dist < 50,
+      cycle: dist !== null && dist < 200,
+      boat: false,
+      tram: false,
+    };
+  }, [driveDistKm]);
+
+  const PRIMARY_TABS: { id: TabType; label: string; emoji: string }[] = [
+    { id: 'flight', label: 'Flights', emoji: '✈️' },
+    { id: 'train', label: 'Trains', emoji: '🚆' },
+    { id: 'bus', label: 'Bus', emoji: '🚌' },
+    { id: 'drive', label: 'Drive', emoji: '🚗' },
+  ];
+
+  const SECONDARY_TABS: { id: TabType; label: string; emoji: string }[] = [
+    { id: 'walk', label: 'Walk', emoji: '🚶' },
+    { id: 'cycle', label: 'Cycle', emoji: '🚲' },
+    { id: 'boat', label: 'Boat', emoji: '⛵' },
+    { id: 'tram', label: 'Tram', emoji: '🚊' },
+  ];
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={onClose}>
+          <motion.div
+            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            onClick={e => e.stopPropagation()}
+            className="w-full max-w-[430px] md:max-w-[600px] max-h-[90vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col">
+
+            {/* Header */}
+            <div className="px-5 pt-5 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-display font-bold text-lg text-text-primary">{fromCity} &rarr; {toCity}</h2>
+                <button onClick={onClose} className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary hover:border-accent-cyan transition-all text-sm">&times;</button>
+              </div>
+
+              {/* Primary transport tabs */}
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {PRIMARY_TABS.map(t => {
+                  const avail = availability[t.id];
+                  const isActive = tab === t.id;
+                  return (
+                    <button key={t.id} onClick={() => avail && setTab(t.id)}
+                      className={`flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all ${
+                        isActive
+                          ? 'bg-accent-cyan text-white shadow-md'
+                          : avail
+                          ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40 hover:shadow-sm'
+                          : 'bg-bg-card/50 border border-border-subtle/50 text-text-muted/40 cursor-not-allowed opacity-50'
+                      }`}>
+                      <span className={`text-lg ${!avail && !isActive ? 'grayscale opacity-50' : ''}`}>{t.emoji}</span>
+                      <span className="text-[10px] font-display font-bold">{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Secondary transport tabs */}
+              <div className="grid grid-cols-4 gap-2">
+                {SECONDARY_TABS.map(t => {
+                  const avail = availability[t.id];
+                  const isActive = tab === t.id;
+                  return (
+                    <button key={t.id} onClick={() => avail && setTab(t.id)}
+                      className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-all text-[9px] ${
+                        isActive
+                          ? 'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30'
+                          : avail
+                          ? 'text-text-secondary hover:text-accent-cyan'
+                          : 'text-text-muted/30 cursor-not-allowed'
+                      }`}>
+                      <span className={`text-sm ${!avail && !isActive ? 'grayscale opacity-40' : ''}`}>{t.emoji}</span>
+                      <span className="font-body">{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto border-t border-border-subtle">
+
+              {/* ── FLIGHTS ── */}
+              {tab === 'flight' && (
+                <div className="p-4">
+                  {/* Nearby airport prompt - skip if user already has a flight selected */}
+                  {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
+                      <p className="text-sm font-display font-bold text-text-primary mb-1">No airport in {nearbyAirportPrompt.toNearby ? nearbyAirportPrompt.toCity : nearbyAirportPrompt.fromCity}</p>
+                      <p className="text-xs text-text-secondary font-body mb-3">
+                        We found flights via nearby airport{' '}
+                        <span className="font-mono font-bold text-accent-cyan">
+                          {nearbyAirportPrompt.toNearby || nearbyAirportPrompt.fromNearby}
+                        </span>
+                        . Would you like to see these flights?
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setUserAcceptedNearby(true); setNearbyAirportPrompt(null); }}
+                          className="flex-1 bg-accent-cyan text-white font-display font-bold text-xs py-2 rounded-lg transition-all hover:bg-accent-cyan/90">
+                          Yes, show flights
+                        </button>
+                        <button onClick={() => { setNearbyAirportPrompt(null); setFlights([]); }}
+                          className="flex-1 bg-bg-card border border-border-subtle text-text-secondary font-display font-bold text-xs py-2 rounded-lg transition-all hover:border-accent-cyan/30">
+                          No thanks
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sort toggle */}
+                  {(flights.length > 0 && (userAcceptedNearby || !nearbyAirportPrompt)) && (
+                  <div className="flex rounded-xl overflow-hidden border border-border-subtle mb-3">
+                    <button onClick={() => setFlightSort('price')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${flightSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
+                    <button onClick={() => setFlightSort('shortest')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${flightSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
+                  </div>
+                  )}
+
+                  {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
+                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights...</span></div>
+                  ) : flights.length === 0 ? (
+                    <p className="text-text-muted text-sm text-center py-12">No flights found for this route</p>
+                  ) : (
+                    <>
+                      <p className="text-text-muted text-[10px] font-body mb-2">Showing {sortedFlights.length} flights</p>
+                      <div className="space-y-2">
+                        {sortedFlights.map(f => {
+                          const isBest = f.id === bestFlightId;
+                          const isSelected = selectedFlight?.id === f.id;
+                          return (
+                            <button key={f.id} onClick={() => onSelectFlight(f)}
+                              className={`w-full text-left p-4 rounded-xl border transition-all relative ${
+                                isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'
+                              }`}>
+                              {/* Best value badge */}
+                              {isBest && !isSelected && (
+                                <span className="absolute -top-2 left-3 px-2 py-0.5 bg-accent-gold text-white text-[9px] font-display font-bold rounded-full">Best Value</span>
+                              )}
+                              {/* Row 1: Airline + price */}
+                              <div className="flex items-center justify-between mb-2.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-[10px] font-mono font-bold" style={{ backgroundColor: f.color }}>{f.airlineCode}</div>
+                                  <div>
+                                    <p className="text-sm font-display font-bold text-text-primary">{f.airline} {f.flightNumber}</p>
+                                    <p className="text-[10px] text-text-muted">{f.travelClass || 'Economy'}</p>
+                                  </div>
+                                </div>
+                                <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {f.pricePerAdult.toLocaleString()}</span>
+                              </div>
+                              {/* Row 2: Time bar with airport codes */}
+                              <div className="flex items-center gap-1 mb-1">
+                                <div className="text-left">
+                                  <p className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(f.departure))}</p>
+                                  <p className="text-[9px] text-text-muted font-mono">{f.depAirportCode || fromCode}</p>
+                                </div>
+                                <div className="flex-1 relative h-[2px] bg-border-subtle mx-2">
+                                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                  {/* Layover dots */}
+                                  {f.layovers && f.layovers.length > 0 && f.layovers.map((_: any, li: number) => (
+                                    <div key={li} className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 border border-white" style={{ left: `${((li + 1) / (f.layovers!.length + 1)) * 100}%` }} />
+                                  ))}
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-mono font-bold text-sm text-text-primary">
+                                    {padTime(timeStr12(f.arrival))}
+                                    {f.isNextDay && <span className="text-accent-cyan text-[9px] ml-1">+1</span>}
+                                  </p>
+                                  <p className="text-[9px] text-text-muted font-mono">{f.arrAirportCode || toCode}</p>
+                                </div>
+                              </div>
+                              {/* Row 3: Duration + stops */}
+                              <p className="text-[11px] text-text-secondary font-body text-center mb-1">
+                                {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
+                              </p>
+                              {/* Row 4: Layover details */}
+                              {f.layovers && f.layovers.length > 0 && (
+                                <div className="text-center">
+                                  {f.layovers.map((l: any, li: number) => (
+                                    <p key={li} className="text-[10px] text-text-muted">
+                                      Layover: {l.airport}{l.airportCode ? ` (${l.airportCode})` : ''} &bull; {Math.floor(l.duration / 60)}h {l.duration % 60}m
+                                      {l.overnight && <span className="text-amber-500 ml-1">Overnight</span>}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              {/* Row 5: CO₂ */}
+                              {f.co2Kg && (
+                                <div className="flex items-center justify-center gap-2 mt-1.5 pt-1.5 border-t border-border-subtle">
+                                  <span className="text-[10px] text-text-muted">CO₂: {f.co2Kg} kg</span>
+                                  {f.co2Diff !== null && f.co2Diff !== undefined && (
+                                    <span className={`text-[9px] font-mono ${f.co2Diff < 0 ? 'text-green-600' : 'text-amber-500'}`}>
+                                      {f.co2Diff < 0 ? `${Math.abs(f.co2Diff)}% lower` : `${f.co2Diff}% higher`} than avg
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── TRAINS ── */}
+              {tab === 'train' && (
+                <div className="p-4">
+                  {/* Connecting train prompt */}
+                  {connectingTrainPrompt && !userAcceptedConnecting && !selectedTrain && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
+                      <p className="text-sm font-display font-bold text-text-primary mb-1">No direct trains</p>
+                      <p className="text-xs text-text-secondary font-body mb-3">
+                        There are no direct trains between {fromCity} and {toCity}. We found connecting routes with changes. Would you like to see them?
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setUserAcceptedConnecting(true); setConnectingTrainPrompt(false); }}
+                          className="flex-1 bg-accent-cyan text-white font-display font-bold text-xs py-2 rounded-lg transition-all hover:bg-accent-cyan/90">
+                          Yes, show connecting trains
+                        </button>
+                        <button onClick={() => { setConnectingTrainPrompt(false); setTrains([]); }}
+                          className="flex-1 bg-bg-card border border-border-subtle text-text-secondary font-display font-bold text-xs py-2 rounded-lg transition-all hover:border-accent-cyan/30">
+                          No thanks
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {connectingTrainPrompt && !userAcceptedConnecting && !selectedTrain ? null : (
+                  <>
+                  {(trains.length > 0) && (
+                  <div className="flex rounded-xl overflow-hidden border border-border-subtle mb-3">
+                    <button onClick={() => setTrainSort('shortest')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${trainSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
+                    <button onClick={() => setTrainSort('price')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${trainSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
+                  </div>
+                  )}
+                  {loadingTrains ? (
+                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching trains...</span></div>
+                  ) : trains.length === 0 ? (
+                    <p className="text-text-muted text-sm text-center py-12">No train routes found</p>
+                  ) : (
+                    <>
+                      <p className="text-text-muted text-[10px] font-body mb-2">Showing {sortedTrains.length} routes</p>
+                      <div className="space-y-2">
+                        {sortedTrains.map((t: any, idx: number) => (
+                          <button key={t.id} onClick={() => handleSelectTrain(t)}
+                            className={`w-full text-left p-4 rounded-xl border transition-all relative ${
+                              selectedTrain?.id === t.id ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'
+                            }`}>
+                            {idx === 0 && (
+                              <span className="absolute -top-2 left-3 px-2 py-0.5 bg-accent-gold text-white text-[9px] font-display font-bold rounded-full">{trainSort === 'shortest' ? 'Fastest' : 'Cheapest'}</span>
+                            )}
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
+                              <div className="text-right">
+                                <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {t.price.toLocaleString()}</span>
+                                <span className="text-[9px] text-text-muted ml-1">est.</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono font-bold text-sm text-text-primary">{padTime(t.departureText || timeStr12(t.departure))}</span>
+                              <div className="flex-1 relative h-[2px] bg-border-subtle mx-1">
+                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-gold" />
+                                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-gold" />
+                              </div>
+                              <span className="font-mono font-bold text-sm text-text-primary">{padTime(t.arrivalText || timeStr12(t.arrival))}</span>
+                            </div>
+                            <p className="text-[11px] text-text-secondary font-body text-center mb-1.5">{t.duration} &bull; {t.stops}</p>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {(t.transitSteps || []).map((s: any, si: number) => (
+                                <span key={si} className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-white" style={{ backgroundColor: s.color || '#6b7280' }}>{s.line || s.vehicle}</span>
+                              ))}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  </>
+                  )}
+                </div>
+              )}
+
+              {/* ── SIMPLE TRANSPORT TABS (bus, drive, walk, cycle, boat, tram) ── */}
+              {['bus', 'drive', 'walk', 'cycle', 'boat', 'tram'].includes(tab) && (
+                <div className="p-4">
+                  {(() => {
+                    const configs: Record<string, { emoji: string; label: string; info: { duration: string; distance: string } | null; free: boolean; action: () => void; available: boolean }> = {
+                      bus: { emoji: '🚌', label: 'Bus', info: null, free: false, action: onSelectBus, available: false },
+                      drive: { emoji: '🚗', label: 'Self Drive', info: driveInfo, free: true, action: onSelectDrive, available: true },
+                      walk: { emoji: '🚶', label: 'Walking', info: walkInfo, free: true, action: onSelectDrive, available: true },
+                      cycle: { emoji: '🚲', label: 'Cycling', info: cycleInfo, free: true, action: onSelectDrive, available: true },
+                      boat: { emoji: '⛵', label: 'Boat / Ferry', info: null, free: false, action: () => {}, available: false },
+                      tram: { emoji: '🚊', label: 'Tram', info: null, free: false, action: () => {}, available: false },
+                    };
+                    const cfg = configs[tab];
+                    if (!cfg) return null;
+
+                    if (!cfg.available) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-3xl mb-3">{cfg.emoji}</p>
+                          <p className="text-text-muted text-sm font-body">No {cfg.label.toLowerCase()} data available</p>
+                          <p className="text-text-muted text-xs font-body mt-1">for this route</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button onClick={cfg.action}
+                        className={`w-full text-left p-5 rounded-xl border transition-all ${currentType === tab ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'}`}>
+                        <div className="flex items-center gap-4">
+                          <span className="text-3xl">{cfg.emoji}</span>
+                          <div className="flex-1">
+                            <p className="font-display font-bold text-base text-text-primary">{cfg.label}</p>
+                            {cfg.info ? (
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-text-secondary text-sm font-mono">{cfg.info.duration}</span>
+                                <span className="text-text-muted">&bull;</span>
+                                <span className="text-text-secondary text-sm font-mono">{cfg.info.distance}</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="w-4 h-4 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                                <span className="text-text-muted text-xs">Calculating...</span>
+                              </div>
+                            )}
+                          </div>
+                          {cfg.free && <span className="text-accent-gold text-sm font-display font-bold">Free</span>}
+                        </div>
+                      </button>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
