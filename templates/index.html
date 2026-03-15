@@ -9,7 +9,7 @@
     <meta name="description" content="Aiezzy plans your entire trip down to the minute — real flight prices, hotel costs, transfers, meals, and a time-based itinerary from your doorstep and back. One screen, total cost, full schedule.">
     <meta name="keywords" content="AI trip planner, travel planner, trip cost calculator, travel itinerary, doorstep to doorstep travel, flight hotel planner, travel budget calculator">
     <link rel="canonical" href="https://aiezzy.com/">
-    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
     <meta property="og:title" content="Aiezzy — The AI Trip Planner That Plans Everything">
     <meta property="og:description" content="Enter your home city and destinations. Get a minute-by-minute plan with real prices — flights, hotels, transfers, meals, activities — from doorstep to doorstep.">
     <meta property="og:type" content="website">
@@ -75,7 +75,7 @@
             font-size: 22px;
             letter-spacing: -0.5px;
         }
-        .logo img { height: 32px; width: auto; }
+        .logo svg { height: 28px; width: 28px; flex-shrink: 0; }
         .logo-dot { color: var(--brand); }
         .header-badge {
             display: inline-flex;
@@ -88,6 +88,8 @@
             font-size: 13px;
             font-weight: 600;
             letter-spacing: 0.3px;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
         .header-badge .pulse {
             width: 8px;
@@ -613,7 +615,11 @@
 <header>
     <div class="header-inner">
         <a href="/" class="logo">
-            <img src="/logo.png" alt="Aiezzy">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="8" fill="#0F766E"/>
+                <path d="M8 22L16 10L24 22" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="16" cy="14" r="2.5" fill="white"/>
+            </svg>
             Aiezzy<span class="logo-dot">.</span>
         </a>
         <div class="header-badge">

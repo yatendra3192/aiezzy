@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect
 import os
 import datetime
+import requests as http_requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'aiezzy-travel-2026')
@@ -33,6 +34,8 @@ def home():
 
 
 # ===== Waitlist signup endpoint =====
+GOOGLE_SHEET_WEBHOOK = os.environ.get('GOOGLE_SHEET_WEBHOOK', 'https://script.google.com/macros/s/AKfycbxyyxHfTwU7bOzbZ2edtE-O4UcHilt81sMMiNUdZD1aQkBK5mDI-GvphU33ZSkwrjbh/exec')
+
 @app.route('/api/waitlist', methods=['POST'])
 def waitlist_signup():
     data = request.get_json()
@@ -40,11 +43,16 @@ def waitlist_signup():
     if not email or '@' not in email:
         return jsonify({'error': 'Invalid email'}), 400
 
-    # Store in a simple file (upgrade to DB later)
-    waitlist_file = os.path.join(os.environ.get('DATA_DIR', '.'), 'waitlist.txt')
-    os.makedirs(os.path.dirname(waitlist_file) if os.path.dirname(waitlist_file) else '.', exist_ok=True)
-    with open(waitlist_file, 'a') as f:
-        f.write(f"{email},{datetime.datetime.now().isoformat()}\n")
+    # Send to Google Sheets via Apps Script webhook
+    if GOOGLE_SHEET_WEBHOOK:
+        try:
+            http_requests.post(GOOGLE_SHEET_WEBHOOK, json={
+                'email': email,
+                'timestamp': datetime.datetime.now().isoformat(),
+                'source': request.headers.get('Referer', 'direct')
+            }, timeout=5)
+        except Exception:
+            pass  # Don't fail the signup if Sheets is down
 
     return jsonify({'success': True, 'message': 'You\'re on the list!'})
 
