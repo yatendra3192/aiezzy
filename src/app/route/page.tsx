@@ -248,6 +248,15 @@ export default function RoutePage() {
               }
               const { fromCity, toCity } = hasTransport ? getLegCities(i) : { fromCity: null, toCity: null };
 
+              // Calculate the date for this transport leg
+              let legDayOffset = 0;
+              for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
+                legDayOffset += trip.destinations[d].nights || 1;
+              }
+              const legDate = new Date(trip.departureDate);
+              legDate.setDate(legDate.getDate() + legDayOffset);
+              const legDateFormatted = legDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
               return (
                 <div key={`stop-${i}`}>
                   {/* Stop pin + name */}
@@ -342,6 +351,7 @@ export default function RoutePage() {
                             </div>
                             <div className="flex items-center gap-2 text-[10px]">
                               <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedFlight.color, fontSize: '9px' }}>{leg.selectedFlight.airlineCode}</span>
+                              <span className="text-text-muted font-mono">{legDateFormatted}</span>
                               <span className="text-text-secondary font-mono">{timeStr12(leg.selectedFlight.departure)} &rarr; {timeStr12(leg.selectedFlight.arrival)}</span>
                               <span className="text-text-muted font-mono">{leg.selectedFlight.duration}</span>
                               <span className="text-text-muted font-mono">{leg.selectedFlight.stops === 'Nonstop' ? 'Direct' : leg.selectedFlight.stops.split(' · ')[0]}</span>
@@ -361,6 +371,7 @@ export default function RoutePage() {
                             </div>
                             <div className="flex items-center gap-2 text-[10px]">
                               <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain.color, fontSize: '9px' }}>{leg.selectedTrain.operator.split(' ')[0].slice(0,3)}</span>
+                              <span className="text-text-muted font-mono">{legDateFormatted}</span>
                               <span className="text-text-secondary font-mono">{timeStr12(leg.selectedTrain.departure)} &rarr; {timeStr12(leg.selectedTrain.arrival)}</span>
                               <span className="text-text-muted font-mono">{leg.selectedTrain.duration}</span>
                             </div>
