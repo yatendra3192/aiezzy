@@ -39,6 +39,10 @@ body {
   background: rgba(232, 101, 74, 0.45);
 }
 
+/* Hide scrollbar for horizontal scroll areas */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
 /* Warm input focus glow */
 .input-glow:focus {
   box-shadow: 0 0 0 3px rgba(232, 101, 74, 0.15), 0 1px 3px rgba(0, 0, 0, 0.06);

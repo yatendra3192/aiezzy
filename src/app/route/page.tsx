@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { useTrip } from '@/context/TripContext';
 import { CITIES, City } from '@/data/mockData';
@@ -28,6 +28,41 @@ export default function RoutePage() {
   const router = useRouter();
   const { data: session } = useSession();
   const trip = useTrip();
+
+  // Auto-save: save 5s after any selection changes
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSavingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saved' | 'error'>('idle');
+
+  // Count selected items to detect when data is ready
+  const selectedCount = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length +
+    trip.destinations.filter(d => d.selectedHotel).length;
+
+  useEffect(() => {
+    // Skip first render
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    // Only save when there's at least one selection
+    if (selectedCount === 0) return;
+
+    setAutoSaveStatus('pending');
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      try {
+        const result = await trip.saveTrip();
+        setAutoSaveStatus(result ? 'saved' : 'error');
+        console.log('[auto-save]', result ? `saved trip ${result}` : 'save returned null');
+      } catch (e) {
+        setAutoSaveStatus('error');
+        console.error('[auto-save] failed:', e);
+      }
+      isSavingRef.current = false;
+      setTimeout(() => setAutoSaveStatus('idle'), 3000);
+    }, 5000);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  }, [selectedCount, trip.destinations.map(d => d.nights).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
@@ -59,6 +94,8 @@ export default function RoutePage() {
   // Auto-select cheapest flight and hotel for each leg/destination on first load
   const autoSelectedRef = useRef(false);
   const [autoSelectLoading, setAutoSelectLoading] = useState(false);
+  // Cache flight results per leg so the modal doesn't re-fetch
+  const flightCacheRef = useRef<Record<number, any[]>>({});
   const pendingCountRef = useRef(0);
 
   const trackPending = (delta: number) => {
@@ -81,21 +118,19 @@ export default function RoutePage() {
       setAutoSelectLoading(true);
     }
 
-    // Auto-select flights for legs that don't have one
+    // Auto-select best transport for each leg (flight OR train, whichever is cheaper/better)
     trip.transportLegs.forEach((leg, i) => {
       if (leg.selectedFlight || leg.selectedTrain) return; // Already selected
-      if (leg.type !== 'flight' && leg.type !== 'drive') return;
 
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
       const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
       if (!fromC || !toC) return;
-      // Use airport code if available, otherwise use city/place name (API resolves it server-side)
       const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
       const tc = findAirportCode(toC) || toC.name || toC.fullName;
+      const fromName = fromC.name || fromC.fullName || fc;
+      const toName = toC.name || toC.fullName || tc;
       if (!fc || !tc || fc === tc) return;
 
-      // Calculate the correct date for this leg
-      // Leg 0: departure date, Leg 1: departure + dest[0].nights, Leg 2: + dest[0].nights + dest[1].nights, etc.
       let dayOffset = 0;
       for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
         dayOffset += trip.destinations[d].nights || 1;
@@ -105,21 +140,77 @@ export default function RoutePage() {
       const legDateStr = legDate.toISOString().split('T')[0];
 
       pendingCountRef.current++;
-      fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.flights?.length > 0) {
-            const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+
+      // Fetch BOTH flights and trains in parallel, pick the best option
+      const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+        .then(r => r.json()).catch(() => ({ flights: [] }));
+      const trainP = fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
+        .then(r => r.json()).catch(() => ({ trains: [] }));
+
+      Promise.all([flightP, trainP]).then(([flightData, trainData]) => {
+        const flights = flightData.flights || [];
+        const trains = trainData.trains || [];
+
+        // Cache flights for the modal
+        if (flights.length > 0) flightCacheRef.current[i] = flights;
+
+        const cheapestFlight = flights.length > 0 ? flights.sort((a: any, b: any) => a.price - b.price)[0] : null;
+        const cheapestTrain = trains.length > 0 ? trains.sort((a: any, b: any) => a.price - b.price)[0] : null;
+
+        // Pick best: prefer train if it's cheaper OR similar price but faster
+        // For short distances (<500km), trains are usually better
+        if (cheapestTrain && cheapestFlight) {
+          const trainPrice = cheapestTrain.price;
+          const flightPrice = cheapestFlight.price;
+          const trainDurSec = cheapestTrain.durationSeconds || 99999;
+          const flightDurMatch = cheapestFlight.duration?.match(/(\d+)h\s*(\d+)?m?/);
+          const flightDurSec = flightDurMatch ? (parseInt(flightDurMatch[1]) * 3600 + parseInt(flightDurMatch[2] || '0') * 60) : 99999;
+
+          // Prefer train if: cheaper, or within 30% price AND faster/similar duration
+          const preferTrain = trainPrice < flightPrice || (trainPrice < flightPrice * 1.3 && trainDurSec <= flightDurSec * 1.2);
+
+          if (preferTrain) {
+            const train = {
+              id: `auto-${cheapestTrain.trainName}-${i}`, operator: cheapestTrain.operator,
+              trainName: cheapestTrain.trainName, trainNumber: cheapestTrain.trainNumber,
+              departure: cheapestTrain.departure, arrival: cheapestTrain.arrival,
+              duration: cheapestTrain.duration, stops: cheapestTrain.stops,
+              price: cheapestTrain.price, fromStation: cheapestTrain.fromStation, toStation: cheapestTrain.toStation,
+              color: cheapestTrain.transitSteps?.[0]?.color || '#6b7280',
+              transitSteps: cheapestTrain.transitSteps,
+            };
+            trip.selectTrain(leg.id, train);
+          } else {
             const flight = {
-              id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
-              flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
-              duration: cheapest.duration, stops: cheapest.stops, route: `${fc}-${tc}`,
-              pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+              id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
+              flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
+              duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${fc}-${tc}`,
+              pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
             };
             trip.selectFlight(leg.id, flight);
           }
-          trackPending(-1);
-        }).catch(() => trackPending(-1));
+        } else if (cheapestTrain) {
+          const train = {
+            id: `auto-${cheapestTrain.trainName}-${i}`, operator: cheapestTrain.operator,
+            trainName: cheapestTrain.trainName, trainNumber: cheapestTrain.trainNumber,
+            departure: cheapestTrain.departure, arrival: cheapestTrain.arrival,
+            duration: cheapestTrain.duration, stops: cheapestTrain.stops,
+            price: cheapestTrain.price, fromStation: cheapestTrain.fromStation, toStation: cheapestTrain.toStation,
+            color: cheapestTrain.transitSteps?.[0]?.color || '#6b7280',
+            transitSteps: cheapestTrain.transitSteps,
+          };
+          trip.selectTrain(leg.id, train);
+        } else if (cheapestFlight) {
+          const flight = {
+            id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
+            flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
+            duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${fc}-${tc}`,
+            pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
+          };
+          trip.selectFlight(leg.id, flight);
+        }
+        trackPending(-1);
+      }).catch(() => trackPending(-1));
     });
 
     // Auto-select cheapest hotel for destinations without one
@@ -146,12 +237,25 @@ export default function RoutePage() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Toast notification for flight updates
+  const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
+
   // Re-fetch flights when nights change (dates shift for subsequent legs)
   const nightsKey = trip.destinations.map(d => d.nights).join(',');
   const prevNightsRef = useRef(nightsKey);
   useEffect(() => {
     if (prevNightsRef.current === nightsKey) return;
     prevNightsRef.current = nightsKey;
+    // Clear flight cache for affected legs (dates have shifted)
+    for (let li = 1; li < trip.transportLegs.length; li++) {
+      delete flightCacheRef.current[li];
+    }
+
+    // Show toast
+    const affectedLegs = trip.transportLegs.filter((l, i) => i > 0 && l.selectedFlight).length;
+    if (affectedLegs > 0) {
+      setFlightUpdateToast(`Updating ${affectedLegs} flight${affectedLegs > 1 ? 's' : ''} for new dates...`);
+    }
 
     // Re-fetch flights for ALL legs after the first (their dates may have shifted)
     trip.transportLegs.forEach((leg, i) => {
@@ -166,13 +270,7 @@ export default function RoutePage() {
       const tc = findAirportCode(toC) || toC.name || toC.fullName;
       if (!fc || !tc || fc === tc) return;
 
-      let dayOffset = 0;
-      for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
-        dayOffset += trip.destinations[d].nights || 1;
-      }
-      const legDate = new Date(trip.departureDate);
-      legDate.setDate(legDate.getDate() + dayOffset);
-      const legDateStr = legDate.toISOString().split('T')[0];
+      const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
 
       fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
         .then(r => r.json())
@@ -186,8 +284,10 @@ export default function RoutePage() {
               pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
             };
             trip.selectFlight(leg.id, flight);
+            flightCacheRef.current[i] = data.flights;
           }
-        }).catch(() => {});
+          setFlightUpdateToast(null);
+        }).catch(() => { setFlightUpdateToast(null); });
     });
   }, [nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -224,23 +324,43 @@ export default function RoutePage() {
     return { fromCity, toCity };
   };
 
+  // Calculate the departure date from a given stop (accounts for overnight flights + hotel nights)
+  const calcDepartureDate = (stopIdx: number): Date => {
+    const d = new Date(trip.departureDate);
+    for (let s = 0; s < stopIdx; s++) {
+      // Add nights at destination s (if it's a destination, not home)
+      if (s > 0 && s - 1 < trip.destinations.length) {
+        d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights || 1));
+      }
+      // Add travel days for overnight transport from stop s
+      const tLeg = s < trip.transportLegs.length ? trip.transportLegs[s] : null;
+      if (tLeg) {
+        const sel = tLeg.selectedFlight || tLeg.selectedTrain;
+        if (sel) {
+          const depH = parseInt(sel.departure?.split(':')[0] || '0');
+          const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
+          const durMatch = sel.duration?.match(/(\d+)h/);
+          const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+          if ((sel as any).isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2)) {
+            d.setDate(d.getDate() + 1);
+          }
+        }
+      }
+    }
+    // Add nights at the current stop
+    if (stopIdx > 0 && stopIdx - 1 < trip.destinations.length) {
+      d.setDate(d.getDate() + (trip.destinations[stopIdx - 1]?.nights || 0));
+    }
+    return d;
+  };
+
   // Find nearest airport code for a city
   const findAirportCode = (city: City | undefined): string => {
     if (!city) return '';
     if (city.airportCode) return city.airportCode;
-    // Include parentCity (from Google locality) in search — critical for places like "Vijay Nagar" in Indore
-    const searchText = `${city.parentCity || ''} ${city.fullName || ''} ${city.name || ''}`.toLowerCase();
-    const known = CITIES.find(c => c.airportCode && searchText.includes(c.name.toLowerCase()));
-    if (known) return known.airportCode!;
-    // Regional patterns (state → nearest airport)
-    if (searchText.includes('maharashtra') || searchText.includes('thane') || searchText.includes('navi mumbai')) return 'BOM';
-    if (searchText.includes('karnataka') || searchText.includes('bengaluru')) return 'BLR';
-    if (searchText.includes('tamil nadu') || searchText.includes('chennai')) return 'MAA';
-    if (searchText.includes('west bengal') || searchText.includes('kolkata')) return 'CCU';
-    if (searchText.includes('telangana') || searchText.includes('hyderabad')) return 'HYD';
-    // If parentCity exists, use it directly for API resolution (e.g., "Indore" → API resolves to IDR)
-    if (city.parentCity) return city.parentCity;
-    return '';
+    // Use city name for API resolution — the Supabase-powered resolver handles everything
+    // Just return the best city name; the flights API will geocode + find nearest airports
+    return city.parentCity || city.name || '';
   };
 
   const findAirportName = (city: City | undefined): string => {
@@ -293,13 +413,39 @@ export default function RoutePage() {
               }
               const { fromCity, toCity } = hasTransport ? getLegCities(i) : { fromCity: null, toCity: null };
 
-              // Calculate the date for this transport leg
-              let legDayOffset = 0;
-              for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
-                legDayOffset += trip.destinations[d].nights || 1;
-              }
-              const legDate = new Date(trip.departureDate);
-              legDate.setDate(legDate.getDate() + legDayOffset);
+              // Calculate dates by walking through the trip day-by-day:
+              // Each stop's arrival = previous stop's departure + travel days
+              // Each stop's departure = arrival + nights at this stop
+              // Travel days = 0 for same-day, +1 for overnight flights, etc.
+              const calcArrivalDate = () => {
+                const d = new Date(trip.departureDate);
+                for (let s = 0; s < i; s++) {
+                  // Add nights at destination s (if it's a destination, not home)
+                  if (s > 0 && s - 1 < trip.destinations.length) {
+                    d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights || 1));
+                  }
+                  // Add travel days for the transport leg FROM stop s
+                  // Check if the flight/train arriving at stop s+1 is overnight
+                  const tLeg = s < trip.transportLegs.length ? trip.transportLegs[s] : null;
+                  if (tLeg) {
+                    const sel = tLeg.selectedFlight || tLeg.selectedTrain;
+                    if (sel) {
+                      const depH = parseInt(sel.departure?.split(':')[0] || '0');
+                      const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
+                      const durMatch = sel.duration?.match(/(\d+)h/);
+                      const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                      const isOvernight = (sel as any).isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                      if (isOvernight) d.setDate(d.getDate() + 1);
+                    }
+                  }
+                }
+                return d;
+              };
+
+              const arrivalDate = calcArrivalDate();
+              const thisNights = stop.destIndex !== undefined ? (trip.destinations[stop.destIndex]?.nights || 0) : 0;
+              const legDate = new Date(arrivalDate);
+              legDate.setDate(legDate.getDate() + thisNights);
               const legDateFormatted = legDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
               return (
@@ -322,11 +468,22 @@ export default function RoutePage() {
                         const nights = stop.nights || 0;
 
                         if (nights === 0) {
-                          return <span className="text-text-muted text-xs font-body italic mt-0.5 block">Pass through (0 nights)</span>;
+                          return (
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-text-muted text-xs font-body italic">Pass through</span>
+                              <button onClick={() => dest && trip.updateNights(dest.id, 1)}
+                                className="px-2 py-0.5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] font-body transition-colors">+ Add night</button>
+                            </div>
+                          );
                         }
 
                         if (hotel) {
                           const totalPrice = hotel.pricePerNight * nights;
+                          // Check-in = arrival date at this destination, Check-out = check-in + nights
+                          const checkIn = new Date(arrivalDate);
+                          const checkOut = new Date(arrivalDate);
+                          checkOut.setDate(checkOut.getDate() + nights);
+                          const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                           return (
                             <div className="mt-1.5 bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
                               <div className="flex items-center justify-between">
@@ -345,6 +502,9 @@ export default function RoutePage() {
                                   <button onClick={() => dest && trip.updateNights(dest.id, nights + 1)}
                                     className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
                                 </div>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
                                 <span className="text-text-secondary font-body">&#8377;{hotel.pricePerNight.toLocaleString()}/night &times; {nights}</span>
@@ -394,13 +554,25 @@ export default function RoutePage() {
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedFlight.airline} {leg.selectedFlight.flightNumber}</span>
                               <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline flex-shrink-0 ml-2">Change</button>
                             </div>
-                            <div className="flex items-center gap-2 text-[10px]">
-                              <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedFlight.color, fontSize: '9px' }}>{leg.selectedFlight.airlineCode}</span>
-                              <span className="text-text-muted font-mono">{legDateFormatted}</span>
-                              <span className="text-text-secondary font-mono">{timeStr12(leg.selectedFlight.departure)} &rarr; {timeStr12(leg.selectedFlight.arrival)}</span>
-                              <span className="text-text-muted font-mono">{leg.selectedFlight.duration}</span>
-                              <span className="text-text-muted font-mono">{leg.selectedFlight.stops === 'Nonstop' ? 'Direct' : leg.selectedFlight.stops.split(' · ')[0]}</span>
-                            </div>
+                            {(() => {
+                              // Compute arrival date: check if flight arrives next day
+                              const depH = parseInt(leg.selectedFlight!.departure?.split(':')[0] || '0');
+                              const arrH = parseInt(leg.selectedFlight!.arrival?.split(':')[0] || '0');
+                              const durMatch = leg.selectedFlight!.duration?.match(/(\d+)h/);
+                              const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                              const isNextDay = (leg.selectedFlight as any)?.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                              const arrDate = new Date(legDate);
+                              if (isNextDay) arrDate.setDate(arrDate.getDate() + 1);
+                              const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              return (
+                                <div className="flex items-center gap-2 text-[10px]">
+                                  <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedFlight!.color, fontSize: '9px' }}>{leg.selectedFlight!.airlineCode}</span>
+                                  <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedFlight!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedFlight!.arrival)}</span>
+                                  <span className="text-text-muted font-mono">{leg.selectedFlight!.duration}</span>
+                                  <span className="text-text-muted font-mono">{leg.selectedFlight!.stops === 'Nonstop' ? 'Direct' : leg.selectedFlight!.stops.split(' · ')[0]}</span>
+                                </div>
+                              );
+                            })()}
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="text-text-secondary font-body">&#8377;{leg.selectedFlight.pricePerAdult.toLocaleString()}/pax &times; {trip.adults}</span>
                               <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedFlight.pricePerAdult * trip.adults).toLocaleString()}</span>
@@ -414,12 +586,23 @@ export default function RoutePage() {
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}</span>
                               <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline flex-shrink-0 ml-2">Change</button>
                             </div>
-                            <div className="flex items-center gap-2 text-[10px]">
-                              <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain.color, fontSize: '9px' }}>{leg.selectedTrain.operator.split(' ')[0].slice(0,3)}</span>
-                              <span className="text-text-muted font-mono">{legDateFormatted}</span>
-                              <span className="text-text-secondary font-mono">{timeStr12(leg.selectedTrain.departure)} &rarr; {timeStr12(leg.selectedTrain.arrival)}</span>
-                              <span className="text-text-muted font-mono">{leg.selectedTrain.duration}</span>
-                            </div>
+                            {(() => {
+                              const depH = parseInt(leg.selectedTrain!.departure?.split(':')[0] || '0');
+                              const arrH = parseInt(leg.selectedTrain!.arrival?.split(':')[0] || '0');
+                              const durMatch = leg.selectedTrain!.duration?.match(/(\d+)h/);
+                              const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                              const isNext = durHrs >= 12 || (arrH < depH && durHrs > 2);
+                              const arrDate = new Date(legDate);
+                              if (isNext) arrDate.setDate(arrDate.getDate() + 1);
+                              const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              return (
+                                <div className="flex items-center gap-2 text-[10px]">
+                                  <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain!.color, fontSize: '9px' }}>{leg.selectedTrain!.operator.split(' ')[0].slice(0,3)}</span>
+                                  <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedTrain!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedTrain!.arrival)}</span>
+                                  <span className="text-text-muted font-mono">{leg.selectedTrain!.duration}</span>
+                                </div>
+                              );
+                            })()}
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="text-text-secondary font-body">&#8377;{leg.selectedTrain.price.toLocaleString()}/pax &times; {trip.adults}</span>
                               <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedTrain.price * trip.adults).toLocaleString()}</span>
@@ -477,17 +660,17 @@ export default function RoutePage() {
 
           {/* Action buttons */}
           <div className="mt-4 space-y-3">
-            {session && (
-              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                onClick={() => trip.saveTrip()}
-                disabled={trip.isSaving}
-                className={`w-full font-display font-bold py-3 rounded-xl text-sm transition-all ${
-                  trip.isDirty
-                    ? 'bg-accent-cyan text-white hover:shadow-[0_0_20px_rgba(232,101,74,0.3)]'
-                    : 'bg-bg-card border border-border-subtle text-text-secondary'
-                } disabled:opacity-50`}>
-                {trip.isSaving ? 'Saving...' : trip.isDirty ? 'Save Trip' : trip.lastSavedAt ? 'Saved' : 'Save Trip'}
-              </motion.button>
+            {autoSaveStatus === 'pending' && (
+              <p className="text-center text-[10px] font-body text-text-muted py-1">Saving in a moment...</p>
+            )}
+            {autoSaveStatus === 'saved' && (
+              <p className="text-center text-[10px] font-body text-green-600 py-1">Auto-saved</p>
+            )}
+            {autoSaveStatus === 'error' && (
+              <p className="text-center text-[10px] font-body text-red-500 py-1">Save failed — try refreshing</p>
+            )}
+            {autoSaveStatus === 'idle' && trip.lastSavedAt && (
+              <p className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
             )}
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/deep-plan')}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
@@ -510,17 +693,26 @@ export default function RoutePage() {
         </div>
       )}
 
+      {/* Flight update toast */}
+      <AnimatePresence>
+        {flightUpdateToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-text-primary text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+            <span className="text-sm font-body">{flightUpdateToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Unified Transport Compare Modal */}
       {transportModal !== null && (() => {
         const { fromCity, toCity } = getLegCities(transportModal.legIndex);
         const leg = trip.transportLegs[transportModal.legIndex];
-        // Calculate correct date for this leg
-        let legDayOffset = 0;
-        for (let d = 0; d < Math.min(transportModal.legIndex, trip.destinations.length); d++) {
-          legDayOffset += trip.destinations[d].nights || 1;
-        }
-        const legD = new Date(trip.departureDate);
-        legD.setDate(legD.getDate() + legDayOffset);
+        // Calculate correct date for this leg using the same logic as the route cards
+        const legD = calcDepartureDate(transportModal.legIndex);
         const legDateStr = legD.toISOString().split('T')[0];
         return (
           <TransportCompareModal
@@ -537,6 +729,7 @@ export default function RoutePage() {
             currentType={leg?.type || 'drive'}
             selectedFlight={leg?.selectedFlight || null}
             selectedTrain={leg?.selectedTrain || null}
+            cachedFlights={flightCacheRef.current[transportModal.legIndex] || null}
             onSelectFlight={flight => {
               if (leg) trip.selectFlight(leg.id, flight);
               setTransportModal(null);

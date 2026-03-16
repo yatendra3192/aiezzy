@@ -23,7 +23,43 @@ interface Props {
   onSelectTrain: (train: TrainOption) => void;
   onSelectDrive: () => void;
   onSelectBus: () => void;
+  cachedFlights?: any[] | null;
 }
+
+// Airport timezone abbreviations (UTC offset labels)
+const AIRPORT_TZ: Record<string, string> = {
+  // India
+  'BOM': 'IST', 'DEL': 'IST', 'BLR': 'IST', 'MAA': 'IST', 'CCU': 'IST', 'HYD': 'IST',
+  'GOI': 'IST', 'COK': 'IST', 'AMD': 'IST', 'PNQ': 'IST', 'JAI': 'IST', 'IDR': 'IST',
+  'LKO': 'IST', 'GAU': 'IST', 'TRV': 'IST', 'VNS': 'IST', 'NAG': 'IST', 'BHO': 'IST',
+  // Europe
+  'LHR': 'GMT', 'LGW': 'GMT', 'STN': 'GMT', 'MAN': 'GMT', 'EDI': 'GMT', 'DUB': 'GMT', 'LIS': 'WET',
+  'CDG': 'CET', 'ORY': 'CET', 'AMS': 'CET', 'FRA': 'CET', 'MUC': 'CET', 'BER': 'CET',
+  'MAD': 'CET', 'BCN': 'CET', 'FCO': 'CET', 'MXP': 'CET', 'VCE': 'CET', 'ZRH': 'CET',
+  'VIE': 'CET', 'BRU': 'CET', 'CPH': 'CET', 'ARN': 'CET', 'OSL': 'CET', 'HEL': 'EET',
+  'ATH': 'EET', 'IST': 'TRT', 'PRG': 'CET', 'BUD': 'CET', 'WAW': 'CET', 'HAM': 'CET',
+  'GVA': 'CET', 'KEF': 'GMT',
+  // Middle East
+  'DXB': 'GST', 'AUH': 'GST', 'DOH': 'AST', 'BAH': 'AST', 'MCT': 'GST',
+  'JED': 'AST', 'RUH': 'AST', 'AMM': 'EET', 'CAI': 'EET',
+  // Asia
+  'SIN': 'SGT', 'BKK': 'ICT', 'HKG': 'HKT', 'NRT': 'JST', 'HND': 'JST',
+  'ICN': 'KST', 'PEK': 'CST', 'PVG': 'CST', 'KUL': 'MYT', 'CGK': 'WIB',
+  'DPS': 'WITA', 'MNL': 'PHT', 'TPE': 'CST', 'CMB': 'IST', 'KTM': 'NPT',
+  'DAC': 'BST', 'HAN': 'ICT', 'SGN': 'ICT',
+  // Americas
+  'JFK': 'EST', 'EWR': 'EST', 'LAX': 'PST', 'SFO': 'PST', 'ORD': 'CST',
+  'ATL': 'EST', 'DFW': 'CST', 'DEN': 'MST', 'SEA': 'PST', 'MIA': 'EST',
+  'BOS': 'EST', 'IAD': 'EST', 'PHL': 'EST', 'IAH': 'CST', 'YYZ': 'EST', 'YVR': 'PST',
+  'MEX': 'CST', 'GRU': 'BRT', 'EZE': 'ART', 'BOG': 'COT', 'SCL': 'CLT', 'LIM': 'PET',
+  // Africa
+  'JNB': 'SAST', 'CPT': 'SAST', 'NBO': 'EAT', 'ADD': 'EAT', 'DAR': 'EAT',
+  'RAK': 'WET', 'CMN': 'WET', 'LOS': 'WAT',
+  // Oceania
+  'SYD': 'AEST', 'MEL': 'AEST', 'AKL': 'NZST', 'NAN': 'FJT',
+};
+
+const getTimezone = (code: string): string => AIRPORT_TZ[code] || '';
 
 const AIRLINE_COLORS: Record<string, string> = {
   '6E': '#4f46e5', 'AI': '#dc2626', 'IX': '#2563eb', 'UK': '#7c3aed', 'SG': '#f59e0b', 'QP': '#0d9488',
@@ -44,7 +80,7 @@ function padTime(t: string): string {
 export default function TransportCompareModal({
   isOpen, onClose, fromCity, toCity, fromCode, toCode, fromAirport, toAirport,
   date, adults, currentType, selectedFlight, selectedTrain,
-  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus,
+  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, cachedFlights,
 }: Props) {
   const [tab, setTab] = useState<TabType>(currentType as TabType || 'flight');
   const [flights, setFlights] = useState<(Flight & {
@@ -56,6 +92,9 @@ export default function TransportCompareModal({
   const [driveInfo, setDriveInfo] = useState<{ duration: string; distance: string } | null>(null);
   const [walkInfo, setWalkInfo] = useState<{ duration: string; distance: string } | null>(null);
   const [cycleInfo, setCycleInfo] = useState<{ duration: string; distance: string } | null>(null);
+  const [busRoutes, setBusRoutes] = useState<any[]>([]);
+  const [busLoading, setBusLoading] = useState(false);
+  const [busNotFound, setBusNotFound] = useState(false);
   const [loadingFlights, setLoadingFlights] = useState(false);
   const [loadingTrains, setLoadingTrains] = useState(false);
   const [nearbyAirportPrompt, setNearbyAirportPrompt] = useState<{ fromNearby: string; toNearby: string; fromCity: string; toCity: string } | null>(null);
@@ -64,6 +103,29 @@ export default function TransportCompareModal({
   const [trainSort, setTrainSort] = useState<'price' | 'shortest'>('shortest');
   const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
   const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
+
+  // Reset state on open — MUST be before fetch effects so fetches see clean state
+  useEffect(() => {
+    if (isOpen) {
+      setTab(currentType as TabType || 'flight');
+      setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
+      setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
+      setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
+      // Pre-populate flights from cache if available (avoids re-fetching)
+      if (cachedFlights && cachedFlights.length > 0) {
+        setFlights(cachedFlights.map((f: any, i: number) => ({
+          id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+          departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
+          route: `${f.depAirportCode || fromCode}-${f.arrAirportCode || toCode}`, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
+          depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
+          layovers: f.layovers, isNextDay: f.isNextDay,
+          co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+        })));
+      } else {
+        setFlights([]);
+      }
+    }
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch flights - check if nearby airport needed first
   const fetchFlights = () => {
@@ -119,12 +181,7 @@ export default function TransportCompareModal({
     fetch(`/api/trains?from=${encodeURIComponent(fromCity)}&to=${encodeURIComponent(toCity)}&date=${date}`)
       .then(r => r.json())
       .then(data => {
-        const results = data.trains || [];
-        setTrains(results);
-        // Check if all routes require changes (no direct trains)
-        if (results.length > 0 && results.every((t: any) => t.stops !== 'Direct')) {
-          setConnectingTrainPrompt(true);
-        }
+        setTrains(data.trains || []);
         setLoadingTrains(false);
       })
       .catch(() => setLoadingTrains(false));
@@ -158,17 +215,28 @@ export default function TransportCompareModal({
     };
     if (tab === 'walk' && !walkInfo) fetchMode('walking', setWalkInfo);
     if (tab === 'cycle' && !cycleInfo) fetchMode('bicycling', setCycleInfo);
+    // Bus uses the trains API (which fetches all transit) — we filter for BUS vehicles
+    if (tab === 'bus' && busRoutes.length === 0 && !busLoading && !busNotFound) {
+      setBusLoading(true);
+      fetch(`/api/trains?from=${encodeURIComponent(fromCity)}&to=${encodeURIComponent(toCity)}&date=${date}`)
+        .then(r => r.json())
+        .then(data => {
+          // allTransit contains all routes including buses
+          const allRoutes = data.allTransit || data.trains || [];
+          // Filter to routes that have at least one BUS vehicle
+          const busOnly = allRoutes.filter((t: any) =>
+            t.transitSteps?.some((s: any) => s.vehicle === 'BUS')
+          );
+          if (busOnly.length > 0) {
+            setBusRoutes(busOnly);
+          } else {
+            setBusNotFound(true);
+          }
+          setBusLoading(false);
+        }).catch(() => { setBusNotFound(true); setBusLoading(false); });
+    }
   }, [isOpen, tab]);
 
-  // Reset on open
-  useEffect(() => {
-    if (isOpen) {
-      setTab(currentType as TabType || 'flight');
-      setFlights([]); setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null);
-      setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
-      setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
-    }
-  }, [isOpen]);
 
   const sortedFlights = useMemo(() => [...flights].sort((a, b) =>
     flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
@@ -198,18 +266,17 @@ export default function TransportCompareModal({
   const driveDistKm = driveInfo ? parseFloat(driveInfo.distance.replace(/[^0-9.]/g, '')) || 0 : null;
 
   const availability = useMemo<Record<TabType, boolean>>(() => {
-    const dist = driveDistKm;
     return {
-      flight: true,           // Always available - API returns empty if no flights
-      train: true,            // Always try - Google Transit returns empty if unavailable
-      bus: false,             // No bus data source yet
-      drive: dist === null || dist < 5000,
-      walk: dist !== null && dist < 50,
-      cycle: dist !== null && dist < 200,
-      boat: false,
-      tram: false,
+      flight: true,
+      train: true,
+      bus: true,
+      drive: true,
+      walk: true,
+      cycle: true,
+      boat: true,
+      tram: true,
     };
-  }, [driveDistKm]);
+  }, []);
 
   const PRIMARY_TABS: { id: TabType; label: string; emoji: string }[] = [
     { id: 'flight', label: 'Flights', emoji: '✈️' },
@@ -235,7 +302,7 @@ export default function TransportCompareModal({
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
-            className="w-full max-w-[430px] md:max-w-[600px] max-h-[90vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col">
+            className="w-full max-w-[430px] md:max-w-[750px] max-h-[92vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col">
 
             {/* Header */}
             <div className="px-5 pt-5 pb-4">
@@ -244,43 +311,25 @@ export default function TransportCompareModal({
                 <button onClick={onClose} className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary hover:border-accent-cyan transition-all text-sm">&times;</button>
               </div>
 
-              {/* Primary transport tabs */}
-              <div className="grid grid-cols-4 gap-2 mb-2">
-                {PRIMARY_TABS.map(t => {
+              {/* Transport tabs — single scrollable row */}
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
+                {[...PRIMARY_TABS, ...SECONDARY_TABS].map(t => {
                   const avail = availability[t.id];
                   const isActive = tab === t.id;
+                  const isPrimary = PRIMARY_TABS.some(p => p.id === t.id);
                   return (
                     <button key={t.id} onClick={() => avail && setTab(t.id)}
-                      className={`flex flex-col items-center gap-1 py-2.5 rounded-xl transition-all ${
+                      className={`flex flex-col items-center gap-0.5 rounded-xl transition-all flex-shrink-0 ${
+                        isPrimary ? 'py-2.5 px-4 min-w-[70px]' : 'py-2 px-3 min-w-[58px]'
+                      } ${
                         isActive
                           ? 'bg-accent-cyan text-white shadow-md'
                           : avail
                           ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40 hover:shadow-sm'
-                          : 'bg-bg-card/50 border border-border-subtle/50 text-text-muted/40 cursor-not-allowed opacity-50'
+                          : 'bg-bg-card border border-border-subtle text-text-muted/60 cursor-not-allowed'
                       }`}>
-                      <span className={`text-lg ${!avail && !isActive ? 'grayscale opacity-50' : ''}`}>{t.emoji}</span>
-                      <span className="text-[10px] font-display font-bold">{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Secondary transport tabs */}
-              <div className="grid grid-cols-4 gap-2">
-                {SECONDARY_TABS.map(t => {
-                  const avail = availability[t.id];
-                  const isActive = tab === t.id;
-                  return (
-                    <button key={t.id} onClick={() => avail && setTab(t.id)}
-                      className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg transition-all text-[9px] ${
-                        isActive
-                          ? 'bg-accent-cyan/15 text-accent-cyan border border-accent-cyan/30'
-                          : avail
-                          ? 'text-text-secondary hover:text-accent-cyan'
-                          : 'text-text-muted/30 cursor-not-allowed'
-                      }`}>
-                      <span className={`text-sm ${!avail && !isActive ? 'grayscale opacity-40' : ''}`}>{t.emoji}</span>
-                      <span className="font-body">{t.label}</span>
+                      <span className={`${isPrimary ? 'text-lg' : 'text-sm'} ${!avail && !isActive ? 'grayscale opacity-70' : ''}`}>{t.emoji}</span>
+                      <span className={`font-display font-bold ${isPrimary ? 'text-[10px]' : 'text-[9px]'}`}>{t.label}</span>
                     </button>
                   );
                 })}
@@ -331,7 +380,7 @@ export default function TransportCompareModal({
                     <p className="text-text-muted text-sm text-center py-12">No flights found for this route</p>
                   ) : (
                     <>
-                      <p className="text-text-muted text-[10px] font-body mb-2">Showing {sortedFlights.length} flights</p>
+                      <p className="text-text-muted text-[10px] font-body mb-2">{sortedFlights.length} flights found</p>
                       <div className="space-y-2">
                         {sortedFlights.map(f => {
                           const isBest = f.id === bestFlightId;
@@ -356,54 +405,50 @@ export default function TransportCompareModal({
                                 </div>
                                 <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {f.pricePerAdult.toLocaleString()}</span>
                               </div>
-                              {/* Row 2: Time bar with airport codes */}
-                              <div className="flex items-center gap-1 mb-1">
-                                <div className="text-left">
-                                  <p className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(f.departure))}</p>
-                                  <p className="text-[9px] text-text-muted font-mono">{f.depAirportCode || fromCode}</p>
+                              {/* Row 2: Time + timezone, timeline, arrival */}
+                              {(() => {
+                                // Compute if flight arrives next day from times + duration
+                                const depH = parseInt(f.departure?.split(':')[0] || '0');
+                                const arrH = parseInt(f.arrival?.split(':')[0] || '0');
+                                const durMatch = f.duration?.match(/(\d+)h/);
+                                const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                                const isOvernight = f.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                                const depDate = new Date(date);
+                                const arrDate = new Date(date);
+                                if (isOvernight) arrDate.setDate(arrDate.getDate() + 1);
+                                const depDateStr = depDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                                const arrDateStr = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                                return (
+                              <div className="flex items-center gap-1 mb-2">
+                                <div className="text-left min-w-[85px]">
+                                  <p className="font-mono font-bold text-base text-text-primary">
+                                    {padTime(timeStr12(f.departure))}
+                                    {getTimezone(f.depAirportCode || fromCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.depAirportCode || fromCode)}</span>}
+                                  </p>
+                                  <p className="text-[10px] text-text-secondary font-mono">{f.depAirportCode || fromCode} &middot; {depDateStr}</p>
                                 </div>
                                 <div className="flex-1 relative h-[2px] bg-border-subtle mx-2">
                                   <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
                                   <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
-                                  {/* Layover dots */}
                                   {f.layovers && f.layovers.length > 0 && f.layovers.map((_: any, li: number) => (
                                     <div key={li} className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 border border-white" style={{ left: `${((li + 1) / (f.layovers!.length + 1)) * 100}%` }} />
                                   ))}
                                 </div>
-                                <div className="text-right">
-                                  <p className="font-mono font-bold text-sm text-text-primary">
+                                <div className="text-right min-w-[85px]">
+                                  <p className="font-mono font-bold text-base text-text-primary">
                                     {padTime(timeStr12(f.arrival))}
-                                    {f.isNextDay && <span className="text-accent-cyan text-[9px] ml-1">+1</span>}
+                                    {getTimezone(f.arrAirportCode || toCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.arrAirportCode || toCode)}</span>}
+                                    {isOvernight && <span className="text-accent-cyan text-[10px] ml-1">+1</span>}
                                   </p>
-                                  <p className="text-[9px] text-text-muted font-mono">{f.arrAirportCode || toCode}</p>
+                                  <p className="text-[10px] text-text-secondary font-mono">{f.arrAirportCode || toCode} &middot; {arrDateStr}</p>
                                 </div>
                               </div>
+                                );
+                              })()}
                               {/* Row 3: Duration + stops */}
-                              <p className="text-[11px] text-text-secondary font-body text-center mb-1">
+                              <p className="text-xs text-text-primary font-body text-center">
                                 {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
                               </p>
-                              {/* Row 4: Layover details */}
-                              {f.layovers && f.layovers.length > 0 && (
-                                <div className="text-center">
-                                  {f.layovers.map((l: any, li: number) => (
-                                    <p key={li} className="text-[10px] text-text-muted">
-                                      Layover: {l.airport}{l.airportCode ? ` (${l.airportCode})` : ''} &bull; {Math.floor(l.duration / 60)}h {l.duration % 60}m
-                                      {l.overnight && <span className="text-amber-500 ml-1">Overnight</span>}
-                                    </p>
-                                  ))}
-                                </div>
-                              )}
-                              {/* Row 5: CO₂ */}
-                              {f.co2Kg && (
-                                <div className="flex items-center justify-center gap-2 mt-1.5 pt-1.5 border-t border-border-subtle">
-                                  <span className="text-[10px] text-text-muted">CO₂: {f.co2Kg} kg</span>
-                                  {f.co2Diff !== null && f.co2Diff !== undefined && (
-                                    <span className={`text-[9px] font-mono ${f.co2Diff < 0 ? 'text-green-600' : 'text-amber-500'}`}>
-                                      {f.co2Diff < 0 ? `${Math.abs(f.co2Diff)}% lower` : `${f.co2Diff}% higher`} than avg
-                                    </span>
-                                  )}
-                                </div>
-                              )}
                             </button>
                           );
                         })}
@@ -416,28 +461,6 @@ export default function TransportCompareModal({
               {/* ── TRAINS ── */}
               {tab === 'train' && (
                 <div className="p-4">
-                  {/* Connecting train prompt */}
-                  {connectingTrainPrompt && !userAcceptedConnecting && !selectedTrain && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
-                      <p className="text-sm font-display font-bold text-text-primary mb-1">No direct trains</p>
-                      <p className="text-xs text-text-secondary font-body mb-3">
-                        There are no direct trains between {fromCity} and {toCity}. We found connecting routes with changes. Would you like to see them?
-                      </p>
-                      <div className="flex gap-2">
-                        <button onClick={() => { setUserAcceptedConnecting(true); setConnectingTrainPrompt(false); }}
-                          className="flex-1 bg-accent-cyan text-white font-display font-bold text-xs py-2 rounded-lg transition-all hover:bg-accent-cyan/90">
-                          Yes, show connecting trains
-                        </button>
-                        <button onClick={() => { setConnectingTrainPrompt(false); setTrains([]); }}
-                          className="flex-1 bg-bg-card border border-border-subtle text-text-secondary font-display font-bold text-xs py-2 rounded-lg transition-all hover:border-accent-cyan/30">
-                          No thanks
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {connectingTrainPrompt && !userAcceptedConnecting && !selectedTrain ? null : (
-                  <>
                   {(trains.length > 0) && (
                   <div className="flex rounded-xl overflow-hidden border border-border-subtle mb-3">
                     <button onClick={() => setTrainSort('shortest')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${trainSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
@@ -447,7 +470,11 @@ export default function TransportCompareModal({
                   {loadingTrains ? (
                     <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching trains...</span></div>
                   ) : trains.length === 0 ? (
-                    <p className="text-text-muted text-sm text-center py-12">No train routes found</p>
+                    <div className="text-center py-12">
+                      <p className="text-3xl mb-3">🚆</p>
+                      <p className="text-text-primary text-sm font-display font-bold">No train routes found</p>
+                      <p className="text-text-muted text-xs font-body mt-1">Train data for this route is not available yet</p>
+                    </div>
                   ) : (
                     <>
                       <p className="text-text-muted text-[10px] font-body mb-2">Showing {sortedTrains.length} routes</p>
@@ -486,8 +513,6 @@ export default function TransportCompareModal({
                       </div>
                     </>
                   )}
-                  </>
-                  )}
                 </div>
               )}
 
@@ -495,23 +520,77 @@ export default function TransportCompareModal({
               {['bus', 'drive', 'walk', 'cycle', 'boat', 'tram'].includes(tab) && (
                 <div className="p-4">
                   {(() => {
-                    const configs: Record<string, { emoji: string; label: string; info: { duration: string; distance: string } | null; free: boolean; action: () => void; available: boolean }> = {
-                      bus: { emoji: '🚌', label: 'Bus', info: null, free: false, action: onSelectBus, available: false },
-                      drive: { emoji: '🚗', label: 'Self Drive', info: driveInfo, free: true, action: onSelectDrive, available: true },
-                      walk: { emoji: '🚶', label: 'Walking', info: walkInfo, free: true, action: onSelectDrive, available: true },
-                      cycle: { emoji: '🚲', label: 'Cycling', info: cycleInfo, free: true, action: onSelectDrive, available: true },
-                      boat: { emoji: '⛵', label: 'Boat / Ferry', info: null, free: false, action: () => {}, available: false },
-                      tram: { emoji: '🚊', label: 'Tram', info: null, free: false, action: () => {}, available: false },
+                    const dist = driveDistKm;
+                    // Bus tab with multiple routes
+                    if (tab === 'bus' && busRoutes.length > 0) {
+                      return (
+                        <>
+                          <p className="text-text-muted text-[10px] font-body mb-2">{busRoutes.length} bus routes found</p>
+                          <div className="space-y-2">
+                            {busRoutes.map((t: any, idx: number) => (
+                              <button key={t.id || idx} onClick={onSelectBus}
+                                className="w-full text-left p-4 rounded-xl border transition-all bg-bg-card border-border-subtle hover:border-accent-cyan/30">
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
+                                  <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {t.price?.toLocaleString()}<span className="text-[9px] text-text-muted ml-0.5">est.</span></span>
+                                </div>
+                                <div className="flex items-center gap-3 mb-1">
+                                  <span className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(t.departure))}</span>
+                                  <div className="flex-1 h-[2px] bg-border-subtle relative">
+                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                  </div>
+                                  <span className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(t.arrival))}</span>
+                                </div>
+                                <p className="text-[11px] text-text-secondary font-body text-center mb-1">{t.duration} &bull; {t.stops}</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {(t.transitSteps || []).map((s: any, si: number) => (
+                                    <span key={si} className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-white" style={{ backgroundColor: s.color || '#6b7280' }}>{s.line || s.operator?.split(' ')[0] || 'Bus'}</span>
+                                  ))}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    }
+
+                    const configs: Record<string, { emoji: string; label: string; info: { duration: string; distance: string } | null; free: boolean; action: () => void; loading: boolean; notFound: boolean; tooFar: boolean }> = {
+                      bus: { emoji: '🚌', label: 'Bus / Transit', info: null, free: false, action: onSelectBus, loading: busLoading, notFound: busNotFound, tooFar: false },
+                      drive: { emoji: '🚗', label: 'Self Drive', info: driveInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
+                      walk: { emoji: '🚶', label: 'Walking', info: walkInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
+                      cycle: { emoji: '🚲', label: 'Cycling', info: cycleInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
+                      boat: { emoji: '⛵', label: 'Boat / Ferry', info: null, free: false, action: () => {}, loading: false, notFound: true, tooFar: false },
+                      tram: { emoji: '🚊', label: 'Tram', info: null, free: false, action: () => {}, loading: false, notFound: true, tooFar: false },
                     };
                     const cfg = configs[tab];
                     if (!cfg) return null;
 
-                    if (!cfg.available) {
+                    if (cfg.loading) {
+                      return (
+                        <div className="flex items-center justify-center py-12">
+                          <div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                          <span className="text-text-muted text-sm ml-3">Searching {cfg.label.toLowerCase()} routes...</span>
+                        </div>
+                      );
+                    }
+
+                    if (cfg.notFound) {
                       return (
                         <div className="text-center py-12">
                           <p className="text-3xl mb-3">{cfg.emoji}</p>
-                          <p className="text-text-muted text-sm font-body">No {cfg.label.toLowerCase()} data available</p>
-                          <p className="text-text-muted text-xs font-body mt-1">for this route</p>
+                          <p className="text-text-primary text-sm font-display font-bold">No {cfg.label.toLowerCase()} routes found</p>
+                          <p className="text-text-muted text-xs font-body mt-1">Not available for this route</p>
+                        </div>
+                      );
+                    }
+
+                    if (cfg.tooFar) {
+                      return (
+                        <div className="text-center py-12">
+                          <p className="text-3xl mb-3">{cfg.emoji}</p>
+                          <p className="text-text-primary text-sm font-display font-bold">{cfg.label} not practical</p>
+                          <p className="text-text-muted text-xs font-body mt-1">Distance is too far ({dist ? `${Math.round(dist)} km` : 'unknown'})</p>
                         </div>
                       );
                     }

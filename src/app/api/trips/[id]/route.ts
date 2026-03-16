@@ -79,18 +79,26 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   // Verify trip belongs to user
   const { data: existing } = await supabase
     .from('trips')
-    .select('id')
+    .select('id, title')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single();
 
   if (!existing) return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
 
-  // Generate title
+  // Generate title: keep existing trip number if present, update route info
   const destNames = (body.destinations || []).map((d: any) => d.city?.name).filter(Boolean);
-  const title = destNames.length > 0
-    ? `${body.fromAddress?.split(',')[0] || 'Home'} → ${destNames.join(' → ')}`
-    : 'Trip';
+  const fromName = body.fromAddress?.split(',')[0] || 'Home';
+  const lastDest = destNames[destNames.length - 1] || '';
+  const depDate = body.departureDate ? new Date(body.departureDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+
+  // Extract trip number from existing title if present (e.g., "Trip 3 · ...")
+  const existingNum = existing.title?.match(/^Trip (\d+)/)?.[1] || '';
+  const tripPrefix = existingNum ? `Trip ${existingNum}` : 'Trip';
+
+  const title = lastDest
+    ? `${tripPrefix} · ${depDate} · ${fromName} to ${lastDest}`
+    : `${tripPrefix} · ${depDate}`;
 
   // 1. Update trip metadata
   const { error: updateError } = await supabase

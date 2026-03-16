@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
       origin,
       destination,
       mode,
+      alternatives: 'true',
       key: API_KEY,
     });
 

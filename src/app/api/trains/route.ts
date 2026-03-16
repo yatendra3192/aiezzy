@@ -149,10 +149,29 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Sort by duration
-    trains.sort((a: any, b: any) => a.durationSeconds - b.durationSeconds);
+    // Filter: only keep routes that have at least one RAIL/TRAIN vehicle
+    // (not bus-only routes — those belong in the Bus tab)
+    const RAIL_TYPES = new Set(['RAIL', 'HEAVY_RAIL', 'COMMUTER_TRAIN', 'HIGH_SPEED_TRAIN', 'LONG_DISTANCE_TRAIN', 'METRO_RAIL', 'MONORAIL', 'SUBWAY']);
+    const trainOnly = trains.filter((t: any) =>
+      t.transitSteps?.some((s: any) => RAIL_TYPES.has(s.vehicle))
+    );
 
-    return NextResponse.json({ trains, source: 'google_transit' });
+    // Sort by duration
+    const result = trainOnly.length > 0 ? trainOnly : trains;
+    result.sort((a: any, b: any) => a.durationSeconds - b.durationSeconds);
+
+    // Tag each route: is it a real train or mixed/bus?
+    result.forEach((t: any) => {
+      const hasRail = t.transitSteps?.some((s: any) => RAIL_TYPES.has(s.vehicle));
+      t.isRail = hasRail;
+    });
+
+    return NextResponse.json({
+      trains: trainOnly.length > 0 ? trainOnly : [], // Only return actual train routes
+      allTransit: trains, // Include all transit for reference
+      source: 'google_transit',
+      hasTrains: trainOnly.length > 0,
+    });
   } catch (e) {
     return NextResponse.json({ trains: [], error: 'Failed to fetch transit routes' }, { status: 500 });
   }

@@ -89,11 +89,22 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const supabase = createServiceClient();
 
-  // Generate title from destinations
+  // Generate title: "Trip 4 · 26 Jan · Mumbai to Paris"
+  // Count existing trips for numbering
+  const { count: tripCount } = await supabase
+    .from('trips')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+  const tripNum = (tripCount || 0) + 1;
+
   const destNames = (body.destinations || []).map((d: any) => d.city?.name).filter(Boolean);
-  const title = destNames.length > 0
-    ? `${body.fromAddress?.split(',')[0] || 'Home'} → ${destNames.join(' → ')}`
-    : 'New Trip';
+  const fromName = body.fromAddress?.split(',')[0] || 'Home';
+  const lastDest = destNames[destNames.length - 1] || '';
+  const depDate = body.departureDate ? new Date(body.departureDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+
+  const title = lastDest
+    ? `Trip ${tripNum} · ${depDate} · ${fromName} to ${lastDest}`
+    : `Trip ${tripNum} · ${depDate}`;
 
   // 1. Create trip
   const { data: trip, error: tripError } = await supabase

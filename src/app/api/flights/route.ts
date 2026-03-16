@@ -36,10 +36,10 @@ export async function GET(req: NextRequest) {
     ]);
 
     if (fromAirports.length === 0 || toAirports.length === 0) {
-      const estimated = generateEstimatedFlights(from, to, date);
       return NextResponse.json({
         status: 'OK', from, to, date, adults: parseInt(adults),
-        flights: estimated, source: 'estimated',
+        flights: [], source: 'none',
+        error: `Could not resolve airports for ${fromAirports.length === 0 ? from : to}`,
       });
     }
 
@@ -109,17 +109,15 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback to estimated pricing
-    const estimated = generateEstimatedFlights(from, to, date);
+    // No flights found from any nearby airport
     return NextResponse.json({
       status: 'OK', from, to, date, adults: parseInt(adults),
-      flights: estimated, source: 'estimated',
+      flights: [], source: 'none',
     });
-  } catch (e) {
-    const estimated = generateEstimatedFlights(from, to, date);
+  } catch (e: any) {
     return NextResponse.json({
-      status: 'OK', from, to, date, adults: parseInt(adults),
-      flights: estimated, source: 'estimated',
+      status: 'ERROR', from, to, date, adults: parseInt(adults),
+      flights: [], source: 'error', error: e.message || 'Unknown error',
     });
   }
 }
@@ -454,34 +452,3 @@ function resolveAirportCode(input: string): string {
   return ''; // Return empty - will trigger dynamic Google resolver
 }
 
-// ─── Estimated fallback (simplified) ──────────────────────────────────────────
-
-function generateEstimatedFlights(from: string, to: string, date: string) {
-  const DISTANCES: Record<string, number> = {
-    'BOM-AMS': 7366, 'BOM-LHR': 7196, 'BOM-CDG': 7020, 'BOM-BCN': 6576,
-    'AMS-BCN': 1240, 'AMS-CDG': 430, 'CDG-BCN': 830, 'BCN-BOM': 6576,
-  };
-  const dist = DISTANCES[`${from}-${to}`] || DISTANCES[`${to}-${from}`] || 3000;
-  const base = dist > 5000 ? 22000 + dist * 1.2 : dist > 2000 ? 8000 + dist * 3 : 4000 + dist * 4;
-
-  const airlines = [
-    { name: 'IndiGo', code: '6E', m: 0.92 },
-    { name: 'Air India', code: 'AI', m: 1.05 },
-    { name: 'Etihad', code: 'EY', m: 1.12 },
-    { name: 'KLM', code: 'KL', m: 1.08 },
-  ];
-
-  const seed = date.split('-').reduce((a, b) => a + parseInt(b), 0);
-
-  return airlines.map((a, i) => ({
-    airline: a.name, airlineCode: a.code,
-    flightNumber: `${a.code}${100 + ((seed + i * 37) % 900)}`,
-    departure: `${String(5 + i * 3).padStart(2, '0')}:${String((seed * 7 + i * 13) % 60).padStart(2, '0')}`,
-    arrival: `${String((11 + i * 4) % 24).padStart(2, '0')}:${String((seed * 3 + i * 17) % 60).padStart(2, '0')}`,
-    duration: `${Math.floor(dist / 800 + i)}h ${30 + i * 10}m`,
-    stops: i === 0 ? 'Nonstop' : `1 stop`,
-    price: Math.round(base * a.m / 100) * 100,
-    currency: 'INR',
-    source: 'estimated' as const,
-  })).sort((a, b) => a.price - b.price);
-}
