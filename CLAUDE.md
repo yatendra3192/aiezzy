@@ -53,10 +53,12 @@ Self-hosted Google Flights/Hotels scraper at `FLIGHTS_API_URL` (Railway). Code i
 ### Route Page (`/route`) — Key Behaviors
 
 - **Smart auto-select:** Fetches flights AND trains in parallel for each leg. Picks train if cheaper OR within 30% price and faster. Caches results in `flightCacheRef` so the modal doesn't re-fetch.
-- **Auto-save:** 5s debounced save after any selection change (flight, train, hotel, nights). Watches `selectedCount` changes. No manual save button.
+- **Auto-save:** 5s debounced save after any selection change (flight, train, hotel, nights). Watches `selectedCount` + nights changes. No manual save button. Status shown: "Saving in a moment..." → "Auto-saved".
 - **Date calculation:** `calcDepartureDate(stopIdx)` walks through the trip accounting for hotel nights AND overnight flights (+1 day detection from departure/arrival times and duration).
 - **Night change re-fetch:** When user changes nights, all downstream transport legs re-fetch flights for their new dates. Toast shows "Updating X flights for new dates...".
 - **Flight cache:** Auto-select caches API results per leg index. Modal uses cached flights instantly on open (no re-fetch spinner).
+- **Airport display:** Transport line shows "Ahmedabad (AMD) - Amsterdam (AMS)" using resolved city names from Supabase `municipality` field. Distance warning below stop name when airport is far, with nearest airport info if it differs from the flight airport.
+- **Return leg:** Ensures return leg exists in `transportLegs` for round trips. Reuses resolved departure airport for the return (AMS→AMD if outbound was AMD→AMS). Tries all destination airports in parallel.
 
 ### Transport Compare Modal
 
@@ -65,7 +67,7 @@ Self-hosted Google Flights/Hotels scraper at `FLIGHTS_API_URL` (Railway). Code i
 ### Key Patterns
 
 - **City data from Google:** `parentCity` on City from Place Details `locality` component. Used for display and airport lookup.
-- **Airport resolution chain:** `findAirportCode()` returns `city.airportCode` → `city.parentCity` → `city.name`. The flights API then geocodes + Supabase parallel search handles the rest. No hardcoded IATA mappings on the client.
+- **Airport resolution chain:** `findAirportCode()` returns `city.airportCode` → `city.fullName` (with country, to avoid wrong geocoding e.g., "Barcelona" restaurant in Mumbai). The flights API geocodes + Supabase parallel search, returns resolved codes + city names (municipality from airports table). Response includes `nearestFrom` when the closest airport has no flights but a farther one does.
 - **Curated city→airport map** (`CITY_TO_AIRPORT` in flights route): Fast cache for known cities (Mumbai→BOM, etc.) to avoid API calls. Falls back to Supabase for unknown cities.
 - **Major airports fallback** (`src/data/major-airports.ts`): ~100 international hub airports with lat/lng. Used when Supabase is unavailable.
 - **OpenFlights DB** (`src/data/airports.ts`): 5,599 city→IATA mappings. Used for IATA extraction from Google Places results.
