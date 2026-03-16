@@ -20,70 +20,168 @@ export async function GET(req: NextRequest) {
   const to = req.nextUrl.searchParams.get('to') || '';
   const date = req.nextUrl.searchParams.get('date') || '';
   const adults = req.nextUrl.searchParams.get('adults') || '1';
-  const type = req.nextUrl.searchParams.get('type') || '2'; // default one-way
+  const type = req.nextUrl.searchParams.get('type') || '2';
   const returnDate = req.nextUrl.searchParams.get('returnDate') || '';
 
   if (!from || !to || !date) {
     return NextResponse.json({ error: 'Missing params: from, to, date required' }, { status: 400 });
   }
 
-  // Resolve city names to airport codes — try static map first, then Google API
-  let fromResolved = resolveAirportCode(from);
-  let toResolved = resolveAirportCode(to);
-
-  // If static resolution failed, try dynamic resolution via Google Places
-  if ((!fromResolved || fromResolved === from) && !/^[A-Z]{2,3}$/.test(from)) {
-    try {
-      const baseUrl = req.nextUrl.origin;
-      const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(from)}`);
-      const data = await res.json();
-      if (data.code) fromResolved = data.code;
-    } catch {}
-  }
-  if ((!toResolved || toResolved === to) && !/^[A-Z]{2,3}$/.test(to)) {
-    try {
-      const baseUrl = req.nextUrl.origin;
-      const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(to)}`);
-      const data = await res.json();
-      if (data.code) toResolved = data.code;
-    } catch {}
-  }
-
   try {
-    // Try live API first (use resolved airport codes)
-    if (FLIGHTS_API_URL && FLIGHTS_API_KEY && fromResolved && toResolved) {
-      const liveResult = await fetchLiveFlights(fromResolved, toResolved, date, adults, type, returnDate);
-      if (liveResult && liveResult.length > 0) {
-        return NextResponse.json({
-          status: 'OK',
-          from, to, date, adults: parseInt(adults),
-          fromResolved, toResolved,
-          fromIsNearby: isNearbyAirport(from, fromResolved),
-          toIsNearby: isNearbyAirport(to, toResolved),
-          flights: liveResult,
-          source: 'live',
-        });
+    // Step 1: Resolve both cities to lists of nearby airports
+    const baseUrl = req.nextUrl.origin;
+    const [fromAirports, toAirports] = await Promise.all([
+      resolveToAirports(from, baseUrl),
+      resolveToAirports(to, baseUrl),
+    ]);
+
+    if (fromAirports.length === 0 || toAirports.length === 0) {
+      const estimated = generateEstimatedFlights(from, to, date);
+      return NextResponse.json({
+        status: 'OK', from, to, date, adults: parseInt(adults),
+        flights: estimated, source: 'estimated',
+      });
+    }
+
+    // Step 2: Try departure airports × first arrival airport in PARALLEL
+    // Pick closest 2 + every ~150km after that to spread coverage to major hubs
+    // All run simultaneously — parallel calls take the same time as 1 call (~5-15s)
+    const toCode = toAirports[0].code;
+    // Try all nearby large airports in parallel (~5-10 airports)
+    // All execute simultaneously — takes same time as 1 call (~5-15s)
+    const fromCandidates = fromAirports;
+
+    if (FLIGHTS_API_URL && FLIGHTS_API_KEY) {
+      const results = await Promise.allSettled(
+        fromCandidates.map(ap =>
+          fetchLiveFlights(ap.code, toCode, date, adults, type, returnDate)
+            .then(flights => ({ flights, airport: ap }))
+        )
+      );
+
+      // Return the first successful result (closest airport that has flights)
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.flights && r.value.flights.length > 0) {
+          const ap = r.value.airport;
+          return NextResponse.json({
+            status: 'OK',
+            from, to, date, adults: parseInt(adults),
+            fromResolved: ap.code,
+            toResolved: toCode,
+            fromAirport: ap.name,
+            fromDistance: ap.distance,
+            fromIsNearby: ap.code !== resolveAirportCode(from),
+            toIsNearby: toCode !== resolveAirportCode(to),
+            flights: r.value.flights,
+            source: 'live',
+          });
+        }
+      }
+
+      // If departure side all failed, try parallelizing the arrival side too
+      if (toAirports.length > 1) {
+        const toCandidates = toAirports.slice(0, 3);
+        const fromCode = fromAirports[0].code;
+        const toResults = await Promise.allSettled(
+          toCandidates.map(ap =>
+            fetchLiveFlights(fromCode, ap.code, date, adults, type, returnDate)
+              .then(flights => ({ flights, airport: ap }))
+          )
+        );
+
+        for (const r of toResults) {
+          if (r.status === 'fulfilled' && r.value.flights && r.value.flights.length > 0) {
+            const ap = r.value.airport;
+            return NextResponse.json({
+              status: 'OK',
+              from, to, date, adults: parseInt(adults),
+              fromResolved: fromCode,
+              toResolved: ap.code,
+              toAirport: ap.name,
+              toDistance: ap.distance,
+              fromIsNearby: fromCode !== resolveAirportCode(from),
+              toIsNearby: true,
+              flights: r.value.flights,
+              source: 'live',
+            });
+          }
+        }
       }
     }
 
     // Fallback to estimated pricing
     const estimated = generateEstimatedFlights(from, to, date);
     return NextResponse.json({
-      status: 'OK',
-      from, to, date, adults: parseInt(adults),
-      flights: estimated,
-      source: 'estimated',
+      status: 'OK', from, to, date, adults: parseInt(adults),
+      flights: estimated, source: 'estimated',
     });
   } catch (e) {
-    // Fallback on any error
     const estimated = generateEstimatedFlights(from, to, date);
     return NextResponse.json({
-      status: 'OK',
-      from, to, date, adults: parseInt(adults),
-      flights: estimated,
-      source: 'estimated',
+      status: 'OK', from, to, date, adults: parseInt(adults),
+      flights: estimated, source: 'estimated',
     });
   }
+}
+
+/**
+ * Pick a spread of airports: closest + spaced out to cover major hubs.
+ * E.g., from [IDR(103), UDR(184), BDQ(216), BHO(235), AMD(247), STV(341), BOM(521)]
+ * picks: IDR(103), BDQ(216), STV(341), BOM(521) — covering 100-500km range
+ */
+function pickSpreadCandidates(airports: AirportCandidate[], maxCount: number): AirportCandidate[] {
+  if (airports.length <= maxCount) return airports;
+
+  const picked: AirportCandidate[] = [airports[0]]; // always include closest
+  let lastDist = airports[0].distance;
+
+  for (const ap of airports.slice(1)) {
+    if (picked.length >= maxCount) break;
+    // Include if it's 100+km farther than last picked, OR if it's one of the first 2
+    if (picked.length < 2 || ap.distance > lastDist + 75) {
+      picked.push(ap);
+      lastDist = ap.distance;
+    }
+  }
+
+  return picked;
+}
+
+// ─── Resolve city to list of nearby airports ──────────────────────────────────
+
+interface AirportCandidate {
+  code: string;
+  name: string;
+  distance: number; // km
+}
+
+async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
+  // Fast path: already an IATA code — no alternatives needed
+  if (/^[A-Z]{2,3}$/.test(input)) {
+    return [{ code: input, name: '', distance: 0 }];
+  }
+
+  // For city names: always try Supabase to get multiple nearby airports
+  // This enables parallel search (try IDR, UDR, BDQ simultaneously)
+  try {
+    const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(input)}`);
+    const data = await res.json();
+    if (data.airports && data.airports.length > 0) {
+      return data.airports.map((a: any) => ({
+        code: a.iata_code,
+        name: a.name,
+        distance: a.distance_km,
+      }));
+    }
+  } catch {}
+
+  // Fallback: static resolution (curated map + OpenFlights DB)
+  const staticCode = resolveAirportCode(input);
+  if (staticCode) {
+    return [{ code: staticCode, name: '', distance: 0 }];
+  }
+
+  return [];
 }
 
 // ─── Live API ─────────────────────────────────────────────────────────────────
@@ -281,6 +379,8 @@ const CITY_TO_AIRPORT: Record<string, string> = {
   'reykjavik': 'KEF', // Keflavik is the international airport, not RKV
   // US cities & states
   'california': 'LAX', 'malibu': 'LAX', 'santa monica': 'LAX', 'hollywood': 'LAX', 'beverly hills': 'LAX',
+  'hawthorne': 'LAX', 'inglewood': 'LAX', 'torrance': 'LAX', 'long beach': 'LAX', 'pasadena': 'LAX',
+  'glendale': 'LAX', 'burbank': 'LAX', 'anaheim': 'LAX', 'irvine': 'LAX', 'compton': 'LAX',
   'san diego': 'SAN', 'san jose': 'SJC', 'sacramento': 'SMF', 'oakland': 'OAK',
   'seattle': 'SEA', 'portland': 'PDX', 'denver': 'DEN', 'phoenix': 'PHX',
   'las vegas': 'LAS', 'miami': 'MIA', 'orlando': 'MCO', 'tampa': 'TPA',
@@ -292,6 +392,23 @@ const CITY_TO_AIRPORT: Record<string, string> = {
   'moscow': 'SVO', 'beijing': 'PEK', 'shanghai': 'PVG', 'taipei': 'TPE',
   'hanoi': 'HAN', 'ho chi minh': 'SGN', 'manila': 'MNL', 'jakarta': 'CGK',
   'colombo': 'CMB', 'kathmandu': 'KTM', 'dhaka': 'DAC',
+  // Madhya Pradesh / Central India cities → Indore (IDR)
+  'ratlam': 'IDR', 'ujjain': 'IDR', 'dewas': 'IDR', 'mhow': 'IDR',
+  // Popular tourist destinations → nearest major hub the scraper can handle
+  'cappadocia': 'IST', 'goreme': 'IST', 'nevsehir': 'IST',
+  'siem reap': 'BKK', 'angkor wat': 'BKK',
+  'cusco': 'BOG', 'machu picchu': 'BOG',
+  'fiji': 'AKL', 'nadi': 'AKL', 'suva': 'AKL',
+  'zanzibar': 'DAR',
+  'queenstown': 'AKL',
+  'santorini': 'ATH', 'mykonos': 'ATH', 'crete': 'ATH',
+  'dubrovnik': 'FCO', 'split': 'FCO',
+  'positano': 'FCO', 'amalfi': 'FCO', 'naples': 'FCO', 'sorrento': 'FCO',
+  'interlaken': 'ZRH', 'lucerne': 'ZRH', 'zermatt': 'ZRH',
+  'hallstatt': 'MUC', 'salzburg': 'MUC', 'innsbruck': 'MUC',
+  'petra': 'AMM',
+  'marrakech': 'RAK',
+  'addis ababa': 'ADD', 'dar es salaam': 'DAR',
 };
 
 // Cities that use another city's airport (truly "nearby" airports)
