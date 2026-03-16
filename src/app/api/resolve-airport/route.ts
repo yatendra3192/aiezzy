@@ -92,8 +92,24 @@ export async function GET(req: NextRequest) {
         name: a.name || '',
         distance_km: Math.round(a.distance_km || 0),
         type: a.type || '',
-        municipality: a.municipality || '',
+        municipality: '', // Will be filled from direct query below
       }));
+
+    // Get municipality from airports table directly (city_name from RPC join is sometimes wrong)
+    if (allCommercial.length > 0) {
+      try {
+        const codes = allCommercial.map(a => `"${a.iata_code}"`).join(',');
+        const muniRes = await fetch(
+          `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality`,
+          { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
+        );
+        const muniData = await muniRes.json();
+        if (Array.isArray(muniData)) {
+          const muniMap = new Map(muniData.map((m: any) => [m.iata_code, m.municipality || '']));
+          allCommercial.forEach(a => { a.municipality = muniMap.get(a.iata_code) || ''; });
+        }
+      } catch {}
+    }
 
     // Return large airports (international hubs) — these are the ones
     // most likely to have scrapeable flight results

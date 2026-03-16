@@ -63,13 +63,18 @@ export async function GET(req: NextRequest) {
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value.flights && r.value.flights.length > 0) {
           const ap = r.value.airport;
+          const nearest = fromAirports[0]; // Closest airport (may differ from the one with flights)
           return NextResponse.json({
             status: 'OK',
             from, to, date, adults: parseInt(adults),
             fromResolved: ap.code,
             toResolved: toCode,
             fromAirport: ap.name,
+            fromCity: ap.city,
             fromDistance: ap.distance,
+            toCity: toAirports[0]?.city || '',
+            // Include nearest airport if different from the one with flights
+            nearestFrom: nearest.code !== ap.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
             fromIsNearby: ap.code !== resolveAirportCode(from),
             toIsNearby: toCode !== resolveAirportCode(to),
             flights: r.value.flights,
@@ -80,7 +85,7 @@ export async function GET(req: NextRequest) {
 
       // If departure side all failed, try parallelizing the arrival side too
       if (toAirports.length > 1) {
-        const toCandidates = toAirports.slice(0, 3);
+        const toCandidates = toAirports; // Try all airports in parallel
         const fromCode = fromAirports[0].code;
         const toResults = await Promise.allSettled(
           toCandidates.map(ap =>
@@ -97,7 +102,9 @@ export async function GET(req: NextRequest) {
               from, to, date, adults: parseInt(adults),
               fromResolved: fromCode,
               toResolved: ap.code,
+              fromCity: fromAirports[0]?.city || '',
               toAirport: ap.name,
+              toCity: ap.city,
               toDistance: ap.distance,
               fromIsNearby: fromCode !== resolveAirportCode(from),
               toIsNearby: true,
@@ -150,13 +157,14 @@ function pickSpreadCandidates(airports: AirportCandidate[], maxCount: number): A
 interface AirportCandidate {
   code: string;
   name: string;
+  city: string; // municipality/city name (e.g., "Ahmedabad")
   distance: number; // km
 }
 
 async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
   // Fast path: already an IATA code — no alternatives needed
   if (/^[A-Z]{2,3}$/.test(input)) {
-    return [{ code: input, name: '', distance: 0 }];
+    return [{ code: input, name: '', city: '', distance: 0 }];
   }
 
   // For city names: always try Supabase to get multiple nearby airports
@@ -168,6 +176,7 @@ async function resolveToAirports(input: string, baseUrl: string): Promise<Airpor
       return data.airports.map((a: any) => ({
         code: a.iata_code,
         name: a.name,
+        city: a.municipality || a.name?.split(' ')[0] || '',
         distance: a.distance_km,
       }));
     }
@@ -176,7 +185,7 @@ async function resolveToAirports(input: string, baseUrl: string): Promise<Airpor
   // Fallback: static resolution (curated map + OpenFlights DB)
   const staticCode = resolveAirportCode(input);
   if (staticCode) {
-    return [{ code: staticCode, name: '', distance: 0 }];
+    return [{ code: staticCode, name: '', city: '', distance: 0 }];
   }
 
   return [];

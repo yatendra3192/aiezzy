@@ -96,6 +96,14 @@ export default function RoutePage() {
   const [autoSelectLoading, setAutoSelectLoading] = useState(false);
   // Cache flight results per leg so the modal doesn't re-fetch
   const flightCacheRef = useRef<Record<number, any[]>>({});
+  // Cache resolved airport info per leg (codes, names, cities, distances)
+  const resolvedAirportsRef = useRef<Record<number, {
+    fromCode: string; toCode: string;
+    fromAirport: string; toAirport: string;
+    fromCity: string; toCity: string;
+    fromDistance: number; toDistance: number;
+    nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
+  }>>({});
   const pendingCountRef = useRef(0);
 
   const trackPending = (delta: number) => {
@@ -109,6 +117,14 @@ export default function RoutePage() {
   useEffect(() => {
     if (autoSelectedRef.current) return;
     autoSelectedRef.current = true;
+
+    // Ensure return leg exists for round trips
+    if (trip.tripType === 'roundTrip') {
+      const expectedLegs = trip.destinations.length + 1;
+      if (trip.transportLegs.length < expectedLegs) {
+        trip.setTripType('roundTrip'); // This adds the missing return leg
+      }
+    }
 
     // Check if anything needs auto-selecting
     const needsFlights = trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain && (l.type === 'flight' || l.type === 'drive'));
@@ -125,8 +141,21 @@ export default function RoutePage() {
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
       const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
       if (!fromC || !toC) return;
-      const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
-      const tc = findAirportCode(toC) || toC.name || toC.fullName;
+      let fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
+      let tc = findAirportCode(toC) || toC.name || toC.fullName;
+
+      // For return leg (last leg in round trip going back to origin),
+      // reuse the resolved airport from leg 0 so we get the same airport
+      const isReturnLeg = trip.tripType === 'roundTrip' && i === trip.transportLegs.length - 1 && i > 0;
+      if (isReturnLeg && resolvedAirportsRef.current[0]) {
+        // Return: swap the outgoing leg's airports (AMS→AMD instead of re-resolving Amsterdam→Mumbai)
+        tc = resolvedAirportsRef.current[0].fromCode; // Origin airport (e.g., AMD)
+      }
+      // For any leg, if previous leg resolved the departure city's airport, reuse it
+      if (i > 0 && resolvedAirportsRef.current[i - 1]?.toCode) {
+        fc = resolvedAirportsRef.current[i - 1].toCode; // Previous leg's arrival = this leg's departure
+      }
+
       const fromName = fromC.name || fromC.fullName || fc;
       const toName = toC.name || toC.fullName || tc;
       if (!fc || !tc || fc === tc) return;
@@ -150,6 +179,24 @@ export default function RoutePage() {
       Promise.all([flightP, trainP]).then(([flightData, trainData]) => {
         const flights = flightData.flights || [];
         const trains = trainData.trains || [];
+
+        // Store resolved airport info for display (airport codes, names, distances)
+        const resolvedFrom = flightData.fromResolved || fc;
+        const resolvedTo = flightData.toResolved || tc;
+        // Cache resolved info per leg for display
+        const nearestFrom = flightData.nearestFrom;
+        resolvedAirportsRef.current[i] = {
+          fromCode: resolvedFrom, toCode: resolvedTo,
+          fromAirport: flightData.fromAirport || '',
+          toAirport: flightData.toAirport || '',
+          fromCity: flightData.fromCity || '',
+          toCity: flightData.toCity || '',
+          fromDistance: flightData.fromDistance || 0,
+          toDistance: flightData.toDistance || 0,
+          nearestFromCode: nearestFrom?.code,
+          nearestFromCity: nearestFrom?.city,
+          nearestFromDist: nearestFrom?.distance,
+        };
 
         // Cache flights for the modal
         if (flights.length > 0) flightCacheRef.current[i] = flights;
@@ -184,7 +231,7 @@ export default function RoutePage() {
             const flight = {
               id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
               flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
-              duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${fc}-${tc}`,
+              duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
               pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
             };
             trip.selectFlight(leg.id, flight);
@@ -358,9 +405,9 @@ export default function RoutePage() {
   const findAirportCode = (city: City | undefined): string => {
     if (!city) return '';
     if (city.airportCode) return city.airportCode;
-    // Use city name for API resolution — the Supabase-powered resolver handles everything
-    // Just return the best city name; the flights API will geocode + find nearest airports
-    return city.parentCity || city.name || '';
+    // Use full name with country (e.g., "Barcelona, Spain" not just "Barcelona")
+    // to avoid geocoding to wrong places (a "Barcelona" restaurant near Mumbai)
+    return city.fullName || city.parentCity || city.name || '';
   };
 
   const findAirportName = (city: City | undefined): string => {
@@ -462,6 +509,37 @@ export default function RoutePage() {
                     </div>
                     <div className="flex-1 pb-2">
                       <h3 className="font-display font-bold text-sm text-text-primary">{stop.name}</h3>
+                      {/* Show airport info if different from stop location */}
+                      {(() => {
+                        const info = resolvedAirportsRef.current[i];
+                        const prevInfo = i > 0 ? resolvedAirportsRef.current[i - 1] : null;
+                        const depCode = i === 0 ? info?.fromCode : prevInfo?.toCode;
+                        const depCity = i === 0 ? info?.fromCity : prevInfo?.toCity;
+                        const depDist = i === 0 ? info?.fromDistance : prevInfo?.toDistance;
+                        const nearest = i === 0 ? info : null;
+
+                        if (!depCode || !depDist || depDist < 30) return null;
+
+                        // Show nearest airport if it's different from the flight airport
+                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== depCode) {
+                          return (
+                            <div className="text-[10px] font-body mt-0.5 space-y-0.5">
+                              <p className="text-amber-600">
+                                Flights from {depCity || depCode} ({depCode}), {Math.round(depDist)} km away
+                              </p>
+                              <p className="text-text-muted">
+                                Nearest airport {nearest.nearestFromCity || nearest.nearestFromCode} ({nearest.nearestFromCode}) is {Math.round(nearest.nearestFromDist || 0)} km away but has no available flights
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <p className="text-[10px] text-amber-600 font-body mt-0.5">
+                            Flights from {depCity || depCode} ({depCode}), {Math.round(depDist)} km away
+                          </p>
+                        );
+                      })()}
                       {stop.type === 'destination' && (() => {
                         const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
                         const hotel = dest?.selectedHotel;
@@ -539,11 +617,28 @@ export default function RoutePage() {
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
                             <path d={transportIcons[leg.type] || transportIcons.drive} />
                           </svg>
-                          <span className="text-xs font-mono">
-                            {leg.selectedFlight ? leg.selectedFlight.duration : leg.selectedTrain ? leg.selectedTrain.duration : leg.duration}
-                            {' '}&middot;{' '}
-                            {leg.selectedFlight ? leg.selectedFlight.route : leg.distance}
-                          </span>
+                          {(() => {
+                            const info = resolvedAirportsRef.current[i];
+                            const duration = leg.selectedFlight ? leg.selectedFlight.duration : leg.selectedTrain ? leg.selectedTrain.duration : leg.duration;
+
+                            // Build route display: "Ahmedabad (AMD) - Amsterdam (AMS)"
+                            let routeDisplay = leg.distance || '';
+                            if (leg.selectedFlight && info) {
+                              const fCity = info.fromCity || fromCity?.name || info.fromCode;
+                              const tCity = info.toCity || toCity?.name || info.toCode;
+                              routeDisplay = `${fCity} (${info.fromCode}) - ${tCity} (${info.toCode})`;
+                            } else if (leg.selectedFlight) {
+                              routeDisplay = leg.selectedFlight.route;
+                            } else if (leg.selectedTrain) {
+                              routeDisplay = `${fromCity?.name || ''} - ${toCity?.name || ''}`;
+                            }
+
+                            return (
+                              <span className="text-xs font-mono">
+                                {duration} {' '}&middot;{' '} {routeDisplay}
+                              </span>
+                            );
+                          })()}
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
                         </button>
 
