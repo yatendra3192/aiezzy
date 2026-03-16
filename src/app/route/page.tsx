@@ -146,6 +146,51 @@ export default function RoutePage() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Re-fetch flights when nights change (dates shift for subsequent legs)
+  const nightsKey = trip.destinations.map(d => d.nights).join(',');
+  const prevNightsRef = useRef(nightsKey);
+  useEffect(() => {
+    if (prevNightsRef.current === nightsKey) return;
+    prevNightsRef.current = nightsKey;
+
+    // Re-fetch flights for ALL legs after the first (their dates may have shifted)
+    trip.transportLegs.forEach((leg, i) => {
+      if (i === 0) return; // First leg date doesn't change with nights
+      if (!leg.selectedFlight) return; // No flight to update
+      if (leg.type !== 'flight' && leg.type !== 'drive') return;
+
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+      const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
+      const tc = findAirportCode(toC) || toC.name || toC.fullName;
+      if (!fc || !tc || fc === tc) return;
+
+      let dayOffset = 0;
+      for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
+        dayOffset += trip.destinations[d].nights || 1;
+      }
+      const legDate = new Date(trip.departureDate);
+      legDate.setDate(legDate.getDate() + dayOffset);
+      const legDateStr = legDate.toISOString().split('T')[0];
+
+      fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.flights?.length > 0) {
+            const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+            const flight = {
+              id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+              flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+              duration: cheapest.duration, stops: cheapest.stops, route: `${fc}-${tc}`,
+              pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+            };
+            trip.selectFlight(leg.id, flight);
+          }
+        }).catch(() => {});
+    });
+  }, [nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Build route stops
   const stops = useMemo(() => {
     const result: Array<{
