@@ -842,6 +842,7 @@ export default function RoutePage() {
               ) : (
                 <p className="text-text-muted text-xs font-body italic">Select flights/trains and hotels to see cost</p>
               )}
+              <p className="text-text-muted text-[10px] font-body mt-2">Prices are estimates and may vary at booking</p>
             </div>
           </div>
 

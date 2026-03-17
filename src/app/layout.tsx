@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Syne, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google';
 import { Providers } from '@/components/Providers';
+import GoogleAnalytics from '@/components/GoogleAnalytics';
 import './globals.css';
 
 const syne = Syne({
@@ -23,14 +24,32 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://aiezzy.com'),
   title: 'AIEzzy — Smart Travel Planner',
   description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
+  openGraph: {
+    title: 'AIEzzy — Smart Travel Planner',
+    description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
+    url: 'https://aiezzy.com',
+    siteName: 'AIEzzy',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'AIEzzy — Smart Travel Planner',
+    description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${syne.variable} ${jakarta.variable} ${spaceMono.variable}`}>
       <body className="font-body antialiased min-h-screen">
+        <GoogleAnalytics />
         <Providers>
           <div className="min-h-screen grid-pattern">
             {children}

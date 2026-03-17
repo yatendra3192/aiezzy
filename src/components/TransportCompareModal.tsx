@@ -517,6 +517,7 @@ export default function TransportCompareModal({
                           </button>
                         ))}
                       </div>
+                      <p className="text-[10px] text-text-muted font-body mt-3">Train prices estimated based on distance. Actual fares may vary.</p>
                     </>
                   )}
                 </div>

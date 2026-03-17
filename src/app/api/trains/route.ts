@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
         fromStation: depStation,
         toStation: arrStation,
         price: priceInr,
+        priceEstimated: true,
         currency: 'INR',
         distance: `${Math.round(distKm)} km`,
         transitSteps: transitSteps.map((s: any) => ({
