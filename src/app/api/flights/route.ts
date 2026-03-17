@@ -119,25 +119,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Fallback: Try Amadeus API when Google scraper fails (handles routes Google can't render)
+    // Fallback: Try Amadeus API when Google scraper fails
+    // Try multiple airport combinations (closest airports may not have commercial flights)
     if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
-      const closestFrom = fromAirports[0];
-      const closestTo = toAirports[0];
-      const amadeusFlights = await fetchAmadeusFlights(closestFrom.code, closestTo.code, date, parseInt(adults));
-      if (amadeusFlights && amadeusFlights.length > 0) {
-        return NextResponse.json({
-          status: 'OK',
-          from, to, date, adults: parseInt(adults),
-          fromResolved: closestFrom.code,
-          toResolved: closestTo.code,
-          fromCity: closestFrom.city,
-          toCity: closestTo.city,
-          fromAirport: closestFrom.name,
-          fromDistance: closestFrom.distance,
-          nearestFrom: undefined,
-          flights: amadeusFlights,
-          source: 'amadeus',
-        });
+      for (const fromAp of fromAirports.slice(0, 3)) {
+        for (const toAp of toAirports.slice(0, 3)) {
+          const amadeusFlights = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults));
+          if (amadeusFlights && amadeusFlights.length > 0) {
+            return NextResponse.json({
+              status: 'OK',
+              from, to, date, adults: parseInt(adults),
+              fromResolved: fromAp.code,
+              toResolved: toAp.code,
+              fromCity: fromAp.city,
+              toCity: toAp.city,
+              fromAirport: fromAp.name,
+              fromDistance: fromAp.distance,
+              nearestFrom: fromAp.code !== fromAirports[0].code
+                ? { code: fromAirports[0].code, city: fromAirports[0].city, distance: fromAirports[0].distance }
+                : undefined,
+              flights: amadeusFlights,
+              source: 'amadeus',
+            });
+          }
+        }
       }
     }
 
