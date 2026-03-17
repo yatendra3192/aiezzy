@@ -33,13 +33,13 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 
 ### State Management
 
-`src/context/TripContext.tsx`. Key methods: `selectFlight`/`selectTrain`, `changeTransportType`, `saveTrip` (setState callback for latest state), `loadTrip`/`resetTrip`, `reorderDestinations`, `updateNights`. `isDirty` tracks unsaved changes. Transport legs = destinations + 1 for round trips.
+`src/context/TripContext.tsx`. Key methods: `selectFlight`/`selectTrain`, `changeTransportType`, `saveTrip` (setState callback for latest state), `loadTrip`/`resetTrip`, `reorderDestinations`, `updateNights`. `isDirty` tracks unsaved changes. Transport legs = destinations + 1 for round trips. `sessionStorage('currentTripId')` persists the active trip ID so route/plan/deep-plan pages auto-restore from DB on page reload.
 
 ### API Routes
 
 - `/api/flights` — Parallel Supabase airport search + Google Flights scraper. Geocodes city → queries Supabase `nearby_airports()` → tries multiple airports in parallel via `Promise.allSettled` → returns first success. No dummy/estimated data — returns empty if no live flights found.
 - `/api/resolve-airport` — Geocodes city via Google Places → searches "international airport" with location restriction (rectangle bias) → extracts IATA codes from results using OpenFlights DB city name matching → falls back to nearest major airport from curated database. 24h in-memory cache.
-- `/api/trains` — Google Directions transit mode. Filters results to only RAIL/TRAIN vehicle types (not buses). Bus-only routes excluded from train tab.
+- `/api/trains` — Google Directions transit mode. Filters to routes where ALL segments are rail types (RAIL, HEAVY_RAIL, METRO_RAIL, SUBWAY, TRAM, etc.). Mixed routes (bus+metro) excluded — they appear in Bus tab only.
 - `/api/directions` — Google Directions (driving/transit/walking/bicycling) with `alternatives=true`.
 - `/api/places` — Google Places Autocomplete (New v1) + Details (returns `locality` for city name); `scope=cities|all`
 - `/api/nearby` — Live Google Hotels scraper (USD→INR ×85), falls back to Google Places Nearby
@@ -56,8 +56,9 @@ Self-hosted Google Flights/Hotels scraper at `FLIGHTS_API_URL` (Railway). Code i
 - **Auto-save:** 5s debounced save after any selection change (flight, train, hotel, nights). Watches `selectedCount` + nights changes. No manual save button. Status shown: "Saving in a moment..." → "Auto-saved".
 - **Date calculation:** `calcDepartureDate(stopIdx)` walks through the trip accounting for hotel nights AND overnight flights (+1 day detection from departure/arrival times and duration).
 - **Night change re-fetch:** When user changes nights, all downstream transport legs re-fetch flights for their new dates. Toast shows "Updating X flights for new dates...".
-- **Flight cache:** Auto-select caches API results per leg index. Modal uses cached flights instantly on open (no re-fetch spinner).
-- **Airport display:** Transport line shows "Ahmedabad (AMD) - Amsterdam (AMS)" using resolved city names from Supabase `municipality` field. Distance warning below stop name when airport is far, with nearest airport info if it differs from the flight airport.
+- **Flight cache:** Auto-select caches API results per leg index. Modal uses cached flights instantly on open (no re-fetch spinner). After reload (no cache), modal seeds with the selected flight to maintain price consistency while fetching fresh results.
+- **Airport display:** Transport line shows "Ahmedabad (AMD) - Amsterdam (AMS)" using resolved city names from Supabase `municipality` field. Distance warning below stop name when airport is far (only when transport is flight), with nearest airport info if it differs from the flight airport. Return leg shows "Flight will land in" message.
+- **Resolved airports persistence:** `ResolvedAirports` data (codes, city names, distances) stored as `_resolvedAirports` inside the `selected_flight` JSONB column (no DB migration needed). Extracted on load to `leg.resolvedAirports`. `resolvedAirportsRef` (runtime) is populated from saved data on mount.
 - **Return leg:** Ensures return leg exists in `transportLegs` for round trips. Reuses resolved departure airport for the return (AMS→AMD if outbound was AMD→AMS). Tries all destination airports in parallel.
 
 ### Transport Compare Modal
