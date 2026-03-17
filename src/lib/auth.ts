@@ -32,7 +32,13 @@ export const authOptions: NextAuthOptions = {
           password: credentials.password,
         });
 
-        if (error || !data.user) return null;
+        if (error || !data.user) {
+          // Supabase returns specific error for unverified emails
+          if (error?.message?.includes('Email not confirmed')) {
+            throw new Error('Please verify your email before signing in. Check your inbox for a verification link.');
+          }
+          return null;
+        }
 
         return {
           id: data.user.id,

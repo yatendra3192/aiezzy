@@ -39,7 +39,13 @@ export default function SignUpPage() {
       return;
     }
 
-    // Auto sign in after account creation
+    // If email verification is required, redirect to verify page
+    if (data.needsVerification) {
+      router.push(`/auth/verify-email?email=${encodeURIComponent(email)}`);
+      return;
+    }
+
+    // Auto sign in after account creation (when verification is disabled)
     const signInResult = await signIn('credentials', { email, password, redirect: false });
     setLoading(false);
 
