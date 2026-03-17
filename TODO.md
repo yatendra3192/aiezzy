@@ -28,14 +28,14 @@
 - [ ] Travel insurance integration — needs partnership
 - [ ] Sponsored/featured hotel placements — needs partnership
 
-## Phase 4 — Delight (2 weeks)
-- [ ] Weather forecast per destination during travel dates
-- [ ] Visa requirements checker (auto-detect passport country)
-- [ ] Packing list generator (based on destinations, weather, duration)
-- [ ] Activity/restaurant recommendations per city (Google Places)
-- [ ] Budget tracker (real-time budget vs actual, over/under indicators)
-- [ ] Trip notes/comments per destination
-- [ ] Trip duplicate/copy functionality
+## Phase 4 — Delight ✅ COMPLETE
+- [x] Weather forecast per destination (Open-Meteo API, no key needed)
+- [x] Visa requirements checker (34 countries, Indian passport)
+- [x] Packing list generator (weather-adaptive, 6 categories, persistent checkboxes)
+- [x] Activity recommendations per city (30 cities, Google Maps links)
+- [x] Budget tracker (visual bar chart, percentage breakdown)
+- [x] Trip notes/comments per destination
+- [x] Trip duplicate/copy functionality
 
 ## Phase 5 — Technical Quality
 - [ ] Accessibility audit + WCAG fixes (aria-labels, screen reader, focus indicators)
