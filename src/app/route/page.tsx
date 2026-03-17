@@ -5,11 +5,16 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { useTrip } from '@/context/TripContext';
+import { useCurrency } from '@/context/CurrencyContext';
 import { CITIES, City } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
 import { getDirections } from '@/lib/googleApi';
+import { generateICS, downloadICS } from '@/lib/calendarExport';
+import { exportTripPDF } from '@/lib/pdfExport';
+import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
 import HotelModal from '@/components/HotelModal';
 import TransportCompareModal from '@/components/TransportCompareModal';
+import ShareTripModal from '@/components/ShareTripModal';
 
 const transportIcons: Record<string, string> = {
   drive: 'M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2M7 14h.01M17 14h.01M6 3h12l1 5H5z',
@@ -28,6 +33,8 @@ export default function RoutePage() {
   const router = useRouter();
   const { data: session } = useSession();
   const trip = useTrip();
+  const { currency, setCurrency } = useCurrency();
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // Restore trip from sessionStorage on page reload
   const [isRestoring, setIsRestoring] = useState(false);
@@ -80,6 +87,7 @@ export default function RoutePage() {
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
   const [hotelModal, setHotelModal] = useState<{ destIndex: number } | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Fetch real driving directions for legs that don't have flight/train selected
   const fetchedRef = useRef<Set<string>>(new Set());
@@ -459,7 +467,7 @@ export default function RoutePage() {
   return (
     <div className="min-h-screen flex justify-center p-4 py-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[760px]">
-        <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
+        <div id="trip-content" className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
           {/* Nav */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -666,8 +674,8 @@ export default function RoutePage() {
                                 <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-text-secondary font-body">&#8377;{hotel.pricePerNight.toLocaleString()}/night &times; {nights}</span>
-                                <span className="text-accent-cyan font-mono font-bold">&#8377;{totalPrice.toLocaleString()}</span>
+                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {nights}</span>
+                                <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
                               </div>
                             </div>
                           );
@@ -761,8 +769,8 @@ export default function RoutePage() {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">&#8377;{leg.selectedFlight.pricePerAdult.toLocaleString()}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedFlight.pricePerAdult * trip.adults).toLocaleString()}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedFlight.pricePerAdult, currency)}/pax &times; {trip.adults}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedFlight.pricePerAdult * trip.adults, currency)}</span>
                             </div>
                           </div>
                         )}
@@ -791,8 +799,8 @@ export default function RoutePage() {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">&#8377;{leg.selectedTrain.price.toLocaleString()}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedTrain.price * trip.adults).toLocaleString()}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, currency)}</span>
                             </div>
                           </div>
                         )}
@@ -820,20 +828,31 @@ export default function RoutePage() {
           <div className="md:sticky md:top-8 md:self-start">
           {/* Cost Summary */}
           <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
-            <h3 className="font-display font-bold text-xs text-accent-gold uppercase tracking-widest mb-3">Trip Estimate</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-bold text-xs text-accent-gold uppercase tracking-widest">Trip Estimate</h3>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                className="text-[10px] font-mono bg-bg-surface border border-border-subtle rounded px-1.5 py-0.5 text-text-primary focus:outline-none focus:border-accent-cyan cursor-pointer"
+              >
+                {Object.entries(CURRENCIES).map(([code]) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-body">
                 <span className="text-text-secondary">{trip.destinations.length} cities &middot; {totalNights} nights</span>
                 <span className="text-text-muted">{trip.adults} pax</span>
               </div>
-              {flightCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Flights</span><span className="text-text-primary font-mono">&#8377;{flightCost.toLocaleString()}</span></div>}
-              {trainCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Trains</span><span className="text-text-primary font-mono">&#8377;{trainCost.toLocaleString()}</span></div>}
-              {hotelCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Hotels</span><span className="text-text-primary font-mono">&#8377;{hotelCost.toLocaleString()}</span></div>}
+              {flightCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Flights</span><span className="text-text-primary font-mono">{formatPrice(flightCost, currency)}</span></div>}
+              {trainCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Trains</span><span className="text-text-primary font-mono">{formatPrice(trainCost, currency)}</span></div>}
+              {hotelCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Hotels</span><span className="text-text-primary font-mono">{formatPrice(hotelCost, currency)}</span></div>}
               {totalCost > 0 ? (
                 <>
                 <div className="flex justify-between text-sm font-body pt-2 border-t border-border-subtle">
                   <span className="text-text-primary font-semibold">Estimated Total</span>
-                  <span className="text-accent-cyan font-mono font-bold">&#8377;{totalCost.toLocaleString()}</span>
+                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalCost, currency)}</span>
                 </div>
                 <p className="text-text-muted text-[10px] font-body mt-2 leading-relaxed">
                   Want a detailed hour-by-hour itinerary with activities, meals, and a complete budget? Use <span className="text-accent-cyan font-semibold">Deep Plan</span> below.
@@ -860,6 +879,65 @@ export default function RoutePage() {
             {autoSaveStatus === 'idle' && trip.lastSavedAt && (
               <p className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
             )}
+            {/* Add to Calendar — only show when at least one flight/train or hotel is selected */}
+            {(trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain) || trip.destinations.some(d => d.selectedHotel)) && (
+              <button
+                onClick={() => {
+                  const ics = generateICS(trip);
+                  if (ics) {
+                    const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                    downloadICS(ics, `trip-${cityNames || 'plan'}.ics`);
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+                Add to Calendar
+              </button>
+            )}
+            {/* Share trip — only show if trip is saved */}
+            {trip.tripId && (
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                Share Trip
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                setPdfLoading(true);
+                try {
+                  const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                  await exportTripPDF('trip-content', `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
+                } catch (e) {
+                  console.error('PDF export failed:', e);
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+              disabled={pdfLoading}
+              className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {pdfLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
+                  Generating PDF...
+                </>
+              ) : (
+                <>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download PDF
+                </>
+              )}
+            </button>
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/deep-plan')}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
@@ -956,6 +1034,15 @@ export default function RoutePage() {
           />
         );
       })()}
+
+      {/* Share Trip Modal */}
+      {trip.tripId && (
+        <ShareTripModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          tripId={trip.tripId}
+        />
+      )}
     </div>
   );
 }

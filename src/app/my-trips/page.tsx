@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
+import ShareTripModal from '@/components/ShareTripModal';
 
 interface TripSummary {
   id: string;
@@ -33,6 +34,7 @@ export default function MyTripsPage() {
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [sharingTripId, setSharingTripId] = useState<string | null>(null);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -181,6 +183,13 @@ export default function MyTripsPage() {
                       </span>
                       <button onClick={async () => { await trip.loadTrip(t.id); router.push('/plan'); }}
                         className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors">Edit</button>
+                      <button onClick={() => setSharingTripId(t.id)}
+                        className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                        </svg>
+                        Share
+                      </button>
                     </div>
                     <span className="text-text-muted text-[10px] font-body">
                       Updated {new Date(t.updatedAt).toLocaleDateString()}
@@ -192,6 +201,15 @@ export default function MyTripsPage() {
           )}
         </div>
       </motion.div>
+
+      {/* Share Trip Modal */}
+      {sharingTripId && (
+        <ShareTripModal
+          isOpen={!!sharingTripId}
+          onClose={() => setSharingTripId(null)}
+          tripId={sharingTripId}
+        />
+      )}
     </div>
   );
 }

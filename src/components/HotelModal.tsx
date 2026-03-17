@@ -25,6 +25,9 @@ export default function HotelModal({
   const [googleHotels, setGoogleHotels] = useState<NearbyHotel[]>([]);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [useGoogle, setUseGoogle] = useState(false);
+  // Hotel filters
+  const [minRatingFilter, setMinRatingFilter] = useState<'all' | '3' | '4' | '4.5'>('all');
+  const [hotelPriceFilter, setHotelPriceFilter] = useState<'all' | '5k' | '10k' | '15k'>('all');
 
   // Fetch nearby hotels from Google when modal opens
   useEffect(() => {
@@ -53,9 +56,18 @@ export default function HotelModal({
 
   const hotels = useGoogle ? googleAsHotels : mockHotels;
 
-  const filtered = hotels.filter(h =>
-    h.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = hotels.filter(h => {
+    if (!h.name.toLowerCase().includes(search.toLowerCase())) return false;
+    // Rating filter
+    if (minRatingFilter === '3' && h.rating < 3) return false;
+    if (minRatingFilter === '4' && h.rating < 4) return false;
+    if (minRatingFilter === '4.5' && h.rating < 4.5) return false;
+    // Price filter
+    if (hotelPriceFilter === '5k' && h.pricePerNight >= 5000) return false;
+    if (hotelPriceFilter === '10k' && h.pricePerNight >= 10000) return false;
+    if (hotelPriceFilter === '15k' && h.pricePerNight >= 15000) return false;
+    return true;
+  });
 
   const sorted = [...filtered].sort((a, b) =>
     sortBy === 'price' ? a.pricePerNight - b.pricePerNight : b.rating - a.rating
@@ -152,6 +164,36 @@ export default function HotelModal({
                   </button>
                 </div>
               )}
+
+              {/* Hotel filters */}
+              <div className="mt-3 space-y-2">
+                <div>
+                  <p className="text-[10px] font-body text-text-muted mb-1">Min Rating</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {([['all', 'All'], ['3', '3+'], ['4', '4+'], ['4.5', '4.5+']] as const).map(([val, label]) => (
+                      <button key={val} onClick={() => setMinRatingFilter(val)}
+                        className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
+                          minRatingFilter === val
+                            ? 'bg-accent-cyan text-white border-accent-cyan'
+                            : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
+                        }`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[10px] font-body text-text-muted mb-1">Max Price</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {([['all', 'All'], ['5k', 'Under \u20B95K'], ['10k', 'Under \u20B910K'], ['15k', 'Under \u20B915K']] as const).map(([val, label]) => (
+                      <button key={val} onClick={() => setHotelPriceFilter(val)}
+                        className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
+                          hotelPriceFilter === val
+                            ? 'bg-accent-cyan text-white border-accent-cyan'
+                            : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
+                        }`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Hotel list */}
@@ -162,7 +204,9 @@ export default function HotelModal({
                   <span className="text-text-muted text-sm ml-3 font-body">Finding nearby hotels...</span>
                 </div>
               ) : sorted.length === 0 ? (
-                <p className="text-text-muted text-sm text-center py-8 font-body">No hotels found</p>
+                <p className="text-text-muted text-sm text-center py-8 font-body">
+                  {(minRatingFilter !== 'all' || hotelPriceFilter !== 'all' || search) ? 'No hotels match your filters. Try adjusting them.' : 'No hotels found'}
+                </p>
               ) : (
                 sorted.map(hotel => {
                   const isSelected = current?.id === hotel.id;

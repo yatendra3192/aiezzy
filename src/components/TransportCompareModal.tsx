@@ -101,6 +101,9 @@ export default function TransportCompareModal({
   const [userAcceptedNearby, setUserAcceptedNearby] = useState(false);
   const [flightSort, setFlightSort] = useState<'price' | 'shortest'>('price');
   const [trainSort, setTrainSort] = useState<'price' | 'shortest'>('shortest');
+  // Flight filters
+  const [flightStopsFilter, setFlightStopsFilter] = useState<'all' | 'direct' | '1stop' | '2plus'>('all');
+  const [flightPriceFilter, setFlightPriceFilter] = useState<'all' | '10k' | '20k' | '50k'>('all');
   const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
   const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
 
@@ -111,6 +114,7 @@ export default function TransportCompareModal({
       setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
+      setFlightStopsFilter('all'); setFlightPriceFilter('all');
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
         setFlights(cachedFlights.map((f: any, i: number) => ({
@@ -244,9 +248,20 @@ export default function TransportCompareModal({
   }, [isOpen, tab]);
 
 
-  const sortedFlights = useMemo(() => [...flights].sort((a, b) =>
-    flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
-  ), [flights, flightSort]);
+  const sortedFlights = useMemo(() => {
+    let filtered = [...flights];
+    // Stops filter
+    if (flightStopsFilter === 'direct') filtered = filtered.filter(f => f.stops === 'Nonstop');
+    else if (flightStopsFilter === '1stop') filtered = filtered.filter(f => f.stops === '1 stop');
+    else if (flightStopsFilter === '2plus') filtered = filtered.filter(f => f.stops !== 'Nonstop' && f.stops !== '1 stop');
+    // Price filter
+    if (flightPriceFilter === '10k') filtered = filtered.filter(f => f.pricePerAdult < 10000);
+    else if (flightPriceFilter === '20k') filtered = filtered.filter(f => f.pricePerAdult < 20000);
+    else if (flightPriceFilter === '50k') filtered = filtered.filter(f => f.pricePerAdult < 50000);
+    return filtered.sort((a, b) =>
+      flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
+    );
+  }, [flights, flightSort, flightStopsFilter, flightPriceFilter]);
 
   const sortedTrains = useMemo(() => [...trains].sort((a, b) =>
     trainSort === 'price' ? a.price - b.price : (a.durationSeconds || 0) - (b.durationSeconds || 0)
@@ -380,13 +395,47 @@ export default function TransportCompareModal({
                   </div>
                   )}
 
+                  {/* Flight filters — only show when 3+ flights */}
+                  {flights.length >= 3 && (userAcceptedNearby || !nearbyAirportPrompt) && (
+                    <div className="mb-3 space-y-2">
+                      <div>
+                        <p className="text-[10px] font-body text-text-muted mb-1">Stops</p>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {([['all', 'All'], ['direct', 'Direct'], ['1stop', '1 stop'], ['2plus', '2+ stops']] as const).map(([val, label]) => (
+                            <button key={val} onClick={() => setFlightStopsFilter(val)}
+                              className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
+                                flightStopsFilter === val
+                                  ? 'bg-accent-cyan text-white border-accent-cyan'
+                                  : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
+                              }`}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-body text-text-muted mb-1">Max Price</p>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {([['all', 'All'], ['10k', 'Under \u20B910K'], ['20k', 'Under \u20B920K'], ['50k', 'Under \u20B950K']] as const).map(([val, label]) => (
+                            <button key={val} onClick={() => setFlightPriceFilter(val)}
+                              className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
+                                flightPriceFilter === val
+                                  ? 'bg-accent-cyan text-white border-accent-cyan'
+                                  : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
+                              }`}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
                     <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights...</span></div>
                   ) : flights.length === 0 ? (
                     <p className="text-text-muted text-sm text-center py-12">No flights found for this route</p>
+                  ) : sortedFlights.length === 0 ? (
+                    <p className="text-text-muted text-sm text-center py-8">No flights match your filters. Try adjusting the filters above.</p>
                   ) : (
                     <>
-                      <p className="text-text-muted text-[10px] font-body mb-2">{sortedFlights.length} flights found</p>
+                      <p className="text-text-muted text-[10px] font-body mb-2">{sortedFlights.length} of {flights.length} flights</p>
                       <div className="space-y-2">
                         {sortedFlights.map(f => {
                           const isBest = f.id === bestFlightId;
