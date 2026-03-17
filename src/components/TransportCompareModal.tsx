@@ -586,7 +586,7 @@ export default function TransportCompareModal({
                             </div>
                             {/* Booking link */}
                             <a
-                              href={getTrainBookingUrl(fromCity, toCity, date)}
+                              href={getTrainBookingUrl(fromCity, toCity, date, fromCode, toCode)}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}

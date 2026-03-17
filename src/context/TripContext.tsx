@@ -71,8 +71,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const setFromAddress = useCallback((address: string) => setState(s => dirty({ ...s, fromAddress: address })), []);
 
   const addDestination = useCallback((city: City, nights = 2) => {
-    const newDest: Destination = { id: `d${Date.now()}`, city, nights, selectedHotel: null };
-    const newLeg = { id: `tl${Date.now()}`, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
+    const newDest: Destination = { id: `d${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, city, nights, selectedHotel: null };
+    const newLeg = { id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
     setState(s => {
       const newDests = [...s.destinations, newDest];
       const newLegs = [...s.transportLegs, newLeg];
@@ -80,7 +80,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       // Expected: destinations.length + 1 legs (one between each pair + return)
       const expectedLegs = s.tripType === 'roundTrip' ? newDests.length + 1 : newDests.length;
       while (newLegs.length < expectedLegs) {
-        newLegs.push({ id: `tl-ret-${Date.now()}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
+        newLegs.push({ id: `tl-ret-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
       }
       return dirty({ ...s, destinations: newDests, transportLegs: newLegs });
     });
@@ -125,7 +125,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     const expectedLegs = type === 'roundTrip' ? s.destinations.length + 1 : s.destinations.length;
     // Add return leg if switching to round trip
     while (newLegs.length < expectedLegs) {
-      newLegs.push({ id: `tl-ret-${Date.now()}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
+      newLegs.push({ id: `tl-ret-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
     }
     // Remove extra leg if switching to one way
     while (newLegs.length > expectedLegs && newLegs.length > 0) {

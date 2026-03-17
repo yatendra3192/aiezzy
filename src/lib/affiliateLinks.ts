@@ -16,12 +16,14 @@ export function getHotelBookingUrl(hotelName: string, city: string, checkIn: str
   return `https://www.booking.com/searchresults.html?ss=${query}&checkin=${checkIn}&checkout=${checkOut}&ref=aiezzy`;
 }
 
-export function getTrainBookingUrl(from: string, to: string, date: string): string {
+export function getTrainBookingUrl(from: string, to: string, date: string, fromCode?: string, toCode?: string): string {
   // For Indian trains: IRCTC
   // For European trains: Trainline
-  const isIndia = ['BOM', 'DEL', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'GOI', 'JAI', 'IDR'].some(
-    code => from.includes(code) || to.includes(code)
-  );
+  const indianCities = ['mumbai', 'delhi', 'bangalore', 'bengaluru', 'chennai', 'kolkata', 'hyderabad', 'ahmedabad', 'pune', 'goa', 'jaipur', 'indore', 'lucknow', 'chandigarh', 'kochi', 'thiruvananthapuram', 'varanasi', 'agra', 'udaipur', 'jodhpur', 'manali', 'shimla', 'rishikesh', 'amritsar', 'bhopal', 'patna', 'ranchi', 'guwahati', 'srinagar', 'dehradun'];
+  const INDIAN_CODES = ['BOM', 'DEL', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'GOI', 'JAI', 'IDR'];
+  const isIndia = indianCities.some(city => from.toLowerCase().includes(city) || to.toLowerCase().includes(city))
+    || (fromCode && INDIAN_CODES.includes(fromCode))
+    || (toCode && INDIAN_CODES.includes(toCode));
   if (isIndia) {
     return `https://www.irctc.co.in/nget/train-search`;
   }

@@ -76,6 +76,8 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
     if (!suggestion) return;
 
     trip.resetTrip();
+    trip.setFrom({ name: 'Mumbai', country: 'India', fullName: 'Mumbai, Maharashtra, India' });
+    trip.setFromAddress('Mumbai, Maharashtra, India');
 
     // Small delay to ensure resetTrip state update has propagated
     setTimeout(() => {

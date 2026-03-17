@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  const { prompt } = await req.json();
+  let prompt: string;
+  try {
+    const body = await req.json();
+    prompt = body.prompt;
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
   if (!prompt) return NextResponse.json({ error: 'Prompt required' }, { status: 400 });
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -42,6 +48,11 @@ Include 2-5 destinations. Keep nights realistic (1-4 per city). Match the budget
         }],
       }),
     });
+
+    if (!response.ok) {
+      console.error('Anthropic API error:', response.status);
+      return NextResponse.json(getFallbackSuggestion(prompt));
+    }
 
     const data = await response.json();
     const text = data.content?.[0]?.text || '';

@@ -52,25 +52,46 @@ export default function MyTripsPage() {
 
   const fetchTrips = async () => {
     setLoading(true);
-    const res = await fetch('/api/trips');
-    if (res.ok) {
-      const data = await res.json();
-      setTrips(data.trips || []);
+    try {
+      const res = await fetch('/api/trips');
+      if (res.ok) {
+        const data = await res.json();
+        setTrips(data.trips || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch trips:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleLoadTrip = async (tripId: string) => {
-    await trip.loadTrip(tripId);
-    router.push('/route');
+    try {
+      await trip.loadTrip(tripId);
+      router.push('/route');
+    } catch (err) {
+      console.error('Failed to load trip:', err);
+      alert('Failed to load trip. Please try again.');
+    }
   };
 
   const handleDeleteTrip = async (tripId: string) => {
     if (!confirm('Delete this trip?')) return;
     setDeleting(tripId);
-    await fetch(`/api/trips/${tripId}`, { method: 'DELETE' });
-    setTrips(prev => prev.filter(t => t.id !== tripId));
-    setDeleting(null);
+    try {
+      const res = await fetch(`/api/trips/${tripId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTrips(prev => prev.filter(t => t.id !== tripId));
+      } else {
+        console.error('Delete failed:', res.status);
+        alert('Failed to delete trip. Please try again.');
+      }
+    } catch (err) {
+      console.error('Failed to delete trip:', err);
+      alert('Failed to delete trip. Please try again.');
+    } finally {
+      setDeleting(null);
+    }
   };
 
   const handleNewTrip = () => {
