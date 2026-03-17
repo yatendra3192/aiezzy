@@ -37,14 +37,14 @@
 - [x] Trip notes/comments per destination
 - [x] Trip duplicate/copy functionality
 
-## Phase 5 — Technical Quality
-- [ ] Accessibility audit + WCAG fixes (aria-labels, screen reader, focus indicators)
-- [ ] PWA + offline mode (Service Worker, cache trip data locally)
-- [ ] i18n (English + Hindi for India market, expandable)
-- [ ] Sentry/error tracking integration
-- [ ] Performance monitoring
-- [ ] Amadeus production API (replace test environment)
-- [ ] Real-time hotel availability (not just scraper snapshots)
+## Phase 5 — Technical Quality (partial)
+- [x] Accessibility: aria-labels, role attributes, focus-visible outlines
+- [x] PWA: manifest.json, Service Worker, offline caching
+- [x] i18n: English + Hindi translations, locale context, language selector
+- [x] Error tracking: lightweight reporter, global error listeners, error boundary
+- [x] Performance monitoring: Web Vitals (LCP, FID, TTFB)
+- [ ] Amadeus production API — needs production account
+- [ ] Real-time hotel availability — needs booking API partnership
 
 ## Revenue Model Options
 - Affiliate commission: Booking.com, Skyscanner, MakeMyTrip (5-15%)
