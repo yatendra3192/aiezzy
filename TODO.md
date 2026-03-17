@@ -19,14 +19,14 @@
 - [ ] Hotel filters (amenities, star rating, price range)
 - [ ] Flight filters (airline, departure time range, stops)
 
-## Phase 3 — Monetization (3 weeks)
-- [ ] Affiliate booking links (Skyscanner, Booking.com, MakeMyTrip)
-- [ ] Premium plan with Stripe/Razorpay (₹299/month)
-- [ ] AI trip suggestions ("7 days, ₹1.5L budget from Mumbai" → full trip)
-- [ ] Price alerts ("notify me when Mumbai→Paris drops below ₹50K")
-- [ ] Trip templates ("Weekend in Goa", "10-day Europe", "Honeymoon in Bali")
-- [ ] Travel insurance integration (commission per policy)
-- [ ] Sponsored/featured hotel placements
+## Phase 3 — Monetization (partial)
+- [x] Affiliate booking links (Skyscanner, Booking.com, IRCTC/Trainline)
+- [ ] Premium plan with Stripe/Razorpay (₹299/month) — needs account setup
+- [x] AI trip suggestions (Claude API + fallback templates)
+- [ ] Price alerts ("notify me when Mumbai→Paris drops below ₹50K") — needs email service
+- [x] Trip templates (8 curated: Goa, Rajasthan, Europe, Bali, Japan, Kerala, Dubai, Himachal)
+- [ ] Travel insurance integration — needs partnership
+- [ ] Sponsored/featured hotel placements — needs partnership
 
 ## Phase 4 — Delight (2 weeks)
 - [ ] Weather forecast per destination during travel dates
