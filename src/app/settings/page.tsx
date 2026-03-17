@@ -4,10 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
+import { useLocale } from '@/context/LocaleContext';
+import { LOCALES } from '@/lib/i18n';
 
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
+  const { locale, setLocale } = useLocale();
 
   // Profile state
   const [displayName, setDisplayName] = useState('');
@@ -219,6 +222,28 @@ export default function SettingsPage() {
                 >
                   {savingProfile ? 'Saving...' : 'Save Changes'}
                 </motion.button>
+              </div>
+            </div>
+
+            {/* Language Section */}
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-6 md:p-8">
+              <h2 className="font-display text-base font-bold text-text-primary mb-1">Language</h2>
+              <p className="text-text-muted text-xs font-body mb-5">Choose your preferred language</p>
+
+              <div className="flex gap-3">
+                {LOCALES.map((loc) => (
+                  <button
+                    key={loc.code}
+                    onClick={() => setLocale(loc.code)}
+                    className={`px-5 py-2.5 rounded-xl font-display font-bold text-sm transition-all ${
+                      locale === loc.code
+                        ? 'bg-accent-cyan text-white shadow-[0_0_20px_rgba(232,101,74,0.2)]'
+                        : 'bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan/30'
+                    }`}
+                  >
+                    {loc.nativeName}
+                  </button>
+                ))}
               </div>
             </div>
 

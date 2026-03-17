@@ -84,6 +84,7 @@ export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripMod
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
             onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label="Share trip"
             className="relative bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-6 w-full max-w-[380px] space-y-4"
           >
             {/* Header */}

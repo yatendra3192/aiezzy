@@ -290,6 +290,7 @@ export default function PackingListModal({ isOpen, onClose, destinations, totalN
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
             onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label="Packing list"
             className="relative bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg w-full max-w-[420px] max-h-[80vh] flex flex-col"
           >
             {/* Header */}

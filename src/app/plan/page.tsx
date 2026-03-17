@@ -482,7 +482,7 @@ export default function PlanPage() {
                     as="div"
                   >
                     {/* Drag handle */}
-                    <div className="flex flex-col gap-0.5 opacity-30 flex-shrink-0 mr-1">
+                    <div className="flex flex-col gap-0.5 opacity-30 flex-shrink-0 mr-1" aria-label="Drag to reorder" role="img">
                       <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
                       <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
                       <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
@@ -504,13 +504,13 @@ export default function PlanPage() {
                     </div>
                     {/* Nights */}
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button onClick={() => trip.updateNights(dest.id, dest.nights - 1)} className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">-</button>
+                      <button onClick={() => trip.updateNights(dest.id, dest.nights - 1)} aria-label="Decrease nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">-</button>
                       <span className="font-mono text-sm font-bold text-text-primary w-4 text-center">{dest.nights}</span>
-                      <button onClick={() => trip.updateNights(dest.id, dest.nights + 1)} className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">+</button>
+                      <button onClick={() => trip.updateNights(dest.id, dest.nights + 1)} aria-label="Increase nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">+</button>
                       <span className="text-text-muted text-[10px] font-body w-6">nights</span>
                     </div>
                     {/* Remove */}
-                    <button onClick={() => trip.removeDestination(dest.id)} className="w-5 h-5 rounded-full bg-accent-cyan/15 text-accent-cyan text-xs flex items-center justify-center hover:bg-accent-cyan/30 transition-colors flex-shrink-0">&times;</button>
+                    <button onClick={() => trip.removeDestination(dest.id)} aria-label="Remove destination" className="w-5 h-5 rounded-full bg-accent-cyan/15 text-accent-cyan text-xs flex items-center justify-center hover:bg-accent-cyan/30 transition-colors flex-shrink-0">&times;</button>
                   </Reorder.Item>
                 ))}
               </Reorder.Group>

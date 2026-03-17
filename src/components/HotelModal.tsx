@@ -99,6 +99,7 @@ export default function HotelModal({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label="Select hotel"
             className="w-full max-w-[430px] md:max-w-[520px] max-h-[85vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col"
           >
             {/* Header */}
@@ -124,6 +125,7 @@ export default function HotelModal({
               <input
                 type="text"
                 placeholder="Search hotels..."
+                aria-label="Search hotels"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted font-body outline-none mt-3 input-glow focus:border-accent-cyan transition-all"

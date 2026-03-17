@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import { Syne, Plus_Jakarta_Sans, Space_Mono } from 'next/font/google';
 import { Providers } from '@/components/Providers';
 import GoogleAnalytics from '@/components/GoogleAnalytics';
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import ErrorReporterInit from '@/components/ErrorReporterInit';
+import WebVitals from '@/components/WebVitals';
 import './globals.css';
 
 const syne = Syne({
@@ -27,6 +30,8 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://aiezzy.com'),
   title: 'AIEzzy — Smart Travel Planner',
   description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
+  manifest: '/manifest.json',
+  themeColor: '#E8654A',
   openGraph: {
     title: 'AIEzzy — Smart Travel Planner',
     description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
@@ -50,6 +55,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${syne.variable} ${jakarta.variable} ${spaceMono.variable}`}>
       <body className="font-body antialiased min-h-screen">
         <GoogleAnalytics />
+        <ServiceWorkerRegister />
+        <ErrorReporterInit />
+        <WebVitals />
         <Providers>
           <div className="min-h-screen grid-pattern">
             {children}

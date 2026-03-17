@@ -333,6 +333,7 @@ export default function TransportCompareModal({
             initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" aria-label="Compare transport options"
             className="w-full max-w-[430px] md:max-w-[750px] max-h-[92vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col">
 
             {/* Header */}
@@ -343,13 +344,14 @@ export default function TransportCompareModal({
               </div>
 
               {/* Transport tabs — single scrollable row */}
-              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1">
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1" role="tablist" aria-label="Transport type">
                 {[...PRIMARY_TABS, ...SECONDARY_TABS].map(t => {
                   const avail = availability[t.id];
                   const isActive = tab === t.id;
                   const isPrimary = PRIMARY_TABS.some(p => p.id === t.id);
                   return (
                     <button key={t.id} onClick={() => avail && setTab(t.id)}
+                      role="tab" aria-selected={isActive}
                       className={`flex flex-col items-center gap-0.5 rounded-xl transition-all flex-shrink-0 ${
                         isPrimary ? 'py-2.5 px-4 min-w-[70px]' : 'py-2 px-3 min-w-[58px]'
                       } ${

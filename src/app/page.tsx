@@ -72,6 +72,7 @@ export default function SignInPage() {
             <input
               type="text"
               placeholder="Email address"
+              aria-label="Email address"
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan"
@@ -80,6 +81,7 @@ export default function SignInPage() {
               <input
                 type="password"
                 placeholder="Password"
+                aria-label="Password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan"
@@ -92,7 +94,7 @@ export default function SignInPage() {
             </div>
 
             {error && (
-              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-xs font-body">
+              <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} role="alert" className="text-red-400 text-xs font-body">
                 {error}
               </motion.p>
             )}

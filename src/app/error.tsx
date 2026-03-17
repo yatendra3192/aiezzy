@@ -1,6 +1,13 @@
 'use client';
 
+import { useEffect } from 'react';
+import { reportError } from '@/lib/errorReporter';
+
 export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+  useEffect(() => {
+    reportError(error, { type: 'error-boundary' });
+  }, [error]);
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="bg-bg-surface border border-border-subtle rounded-2xl p-8 max-w-md text-center space-y-4">

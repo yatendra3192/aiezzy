@@ -711,9 +711,11 @@ export default function RoutePage() {
                                 )}
                                 <div className="flex items-center gap-1.5">
                                   <button onClick={() => dest && trip.updateNights(dest.id, nights - 1)}
+                                    aria-label="Decrease nights"
                                     className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">-</button>
                                   <span className="text-text-primary font-mono font-bold">{nights}N</span>
                                   <button onClick={() => dest && trip.updateNights(dest.id, nights + 1)}
+                                    aria-label="Increase nights"
                                     className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
                                 </div>
                               </div>
@@ -943,6 +945,7 @@ export default function RoutePage() {
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                aria-label="Select currency"
                 className="text-[10px] font-mono bg-bg-surface border border-border-subtle rounded px-1.5 py-0.5 text-text-primary focus:outline-none focus:border-accent-cyan cursor-pointer"
               >
                 {Object.entries(CURRENCIES).map(([code]) => (
@@ -1013,16 +1016,16 @@ export default function RoutePage() {
           {/* Action buttons */}
           <div className="mt-4 space-y-3">
             {autoSaveStatus === 'pending' && (
-              <p className="text-center text-[10px] font-body text-text-muted py-1">Saving in a moment...</p>
+              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-text-muted py-1">Saving in a moment...</p>
             )}
             {autoSaveStatus === 'saved' && (
-              <p className="text-center text-[10px] font-body text-green-600 py-1">Auto-saved</p>
+              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-green-600 py-1">Auto-saved</p>
             )}
             {autoSaveStatus === 'error' && (
-              <p className="text-center text-[10px] font-body text-red-500 py-1">Save failed — try refreshing</p>
+              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-red-500 py-1">Save failed — try refreshing</p>
             )}
             {autoSaveStatus === 'idle' && trip.lastSavedAt && (
-              <p className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
+              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
             )}
             {/* Add to Calendar — only show when at least one flight/train or hotel is selected */}
             {(trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain) || trip.destinations.some(d => d.selectedHotel)) && (

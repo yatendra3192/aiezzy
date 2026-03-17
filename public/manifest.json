@@ -1,0 +1,13 @@
+{
+  "name": "AIEzzy — Smart Travel Planner",
+  "short_name": "AIEzzy",
+  "description": "Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.",
+  "start_url": "/my-trips",
+  "display": "standalone",
+  "background_color": "#FAF7F2",
+  "theme_color": "#E8654A",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
