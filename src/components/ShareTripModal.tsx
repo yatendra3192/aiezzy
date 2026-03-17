@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface ShareTripModalProps {
@@ -14,6 +14,12 @@ export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripMod
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+
+  // Reset state when tripId changes
+  useEffect(() => { setShareUrl(''); setCopied(false); setError(''); }, [tripId]);
+
+  // Auto-generate link when modal opens
+  useEffect(() => { if (isOpen && !shareUrl && !loading) generateShareLink(); }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const generateShareLink = async () => {
     setLoading(true);
@@ -58,13 +64,6 @@ export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripMod
     }
   };
 
-  // Auto-generate link on open
-  const handleOpen = () => {
-    if (!shareUrl && !loading) {
-      generateShareLink();
-    }
-  };
-
   return (
     <AnimatePresence>
       {isOpen && (
@@ -74,7 +73,6 @@ export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripMod
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={onClose}
-          onAnimationComplete={handleOpen}
         >
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />

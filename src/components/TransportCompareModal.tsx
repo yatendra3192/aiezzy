@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flight, TrainOption } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatPrice } from '@/lib/currency';
 
 interface Props {
   isOpen: boolean;
@@ -70,6 +72,12 @@ const AIRLINE_COLORS: Record<string, string> = {
 
 type TabType = 'flight' | 'train' | 'bus' | 'drive' | 'walk' | 'cycle' | 'boat' | 'tram';
 
+function parseDurationMin(d: string): number {
+  const h = d.match(/(\d+)h/);
+  const m = d.match(/(\d+)m/);
+  return (h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0);
+}
+
 function padTime(t: string): string {
   // "5:31 AM" → "05:31 AM"
   const parts = t.match(/^(\d{1,2})(:\d{2}.*)$/);
@@ -82,6 +90,7 @@ export default function TransportCompareModal({
   date, adults, currentType, selectedFlight, selectedTrain,
   onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, cachedFlights,
 }: Props) {
+  const { currency } = useCurrency();
   const [tab, setTab] = useState<TabType>(currentType as TabType || 'flight');
   const [flights, setFlights] = useState<(Flight & {
     depAirportCode?: string; arrAirportCode?: string;
@@ -259,7 +268,7 @@ export default function TransportCompareModal({
     else if (flightPriceFilter === '20k') filtered = filtered.filter(f => f.pricePerAdult < 20000);
     else if (flightPriceFilter === '50k') filtered = filtered.filter(f => f.pricePerAdult < 50000);
     return filtered.sort((a, b) =>
-      flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
+      flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : (a.durationMin || parseDurationMin(a.duration)) - (b.durationMin || parseDurationMin(b.duration))
     );
   }, [flights, flightSort, flightStopsFilter, flightPriceFilter]);
 
@@ -271,7 +280,7 @@ export default function TransportCompareModal({
   const bestFlightId = useMemo(() => {
     if (flights.length === 0) return '';
     const nonstop = flights.filter(f => f.stops === 'Nonstop').sort((a, b) => a.pricePerAdult - b.pricePerAdult);
-    return (nonstop[0] || flights.sort((a, b) => a.pricePerAdult - b.pricePerAdult)[0])?.id || '';
+    return (nonstop[0] || [...flights].sort((a, b) => a.pricePerAdult - b.pricePerAdult)[0])?.id || '';
   }, [flights]);
 
   const handleSelectTrain = (t: any) => {
@@ -458,7 +467,7 @@ export default function TransportCompareModal({
                                     <p className="text-[10px] text-text-muted">{f.travelClass || 'Economy'}</p>
                                   </div>
                                 </div>
-                                <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {f.pricePerAdult.toLocaleString()}</span>
+                                <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(f.pricePerAdult, currency)}</span>
                               </div>
                               {/* Row 2: Time + timezone, timeline, arrival */}
                               {(() => {
@@ -545,7 +554,7 @@ export default function TransportCompareModal({
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
                               <div className="text-right">
-                                <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {t.price.toLocaleString()}</span>
+                                <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price, currency)}</span>
                                 <span className="text-[9px] text-text-muted ml-1">est.</span>
                               </div>
                             </div>
@@ -588,7 +597,7 @@ export default function TransportCompareModal({
                                 className="w-full text-left p-4 rounded-xl border transition-all bg-bg-card border-border-subtle hover:border-accent-cyan/30">
                                 <div className="flex items-center justify-between mb-2">
                                   <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
-                                  <span className="font-mono font-bold text-accent-cyan text-base">&#8377; {t.price?.toLocaleString()}<span className="text-[9px] text-text-muted ml-0.5">est.</span></span>
+                                  <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price || 0, currency)}<span className="text-[9px] text-text-muted ml-0.5">est.</span></span>
                                 </div>
                                 <div className="flex items-center gap-3 mb-1">
                                   <span className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(t.departure))}</span>

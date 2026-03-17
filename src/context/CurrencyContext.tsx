@@ -1,6 +1,6 @@
 'use client';
-import React, { createContext, useContext, useState } from 'react';
-import { CurrencyCode } from '@/lib/currency';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { CurrencyCode, CURRENCIES } from '@/lib/currency';
 
 const CurrencyContext = createContext<{
   currency: CurrencyCode;
@@ -8,12 +8,12 @@ const CurrencyContext = createContext<{
 }>({ currency: 'INR', setCurrency: () => {} });
 
 export function CurrencyProvider({ children }: { children: React.ReactNode }) {
-  const [currency, setCurrency] = useState<CurrencyCode>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('currency') as CurrencyCode) || 'INR';
-    }
-    return 'INR';
-  });
+  const [currency, setCurrency] = useState<CurrencyCode>('INR');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('currency') as CurrencyCode;
+    if (saved && saved in CURRENCIES) setCurrency(saved);
+  }, []);
 
   const handleSet = (c: CurrencyCode) => {
     setCurrency(c);

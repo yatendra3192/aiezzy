@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hotel, getHotelsForCity } from '@/data/mockData';
 import { searchNearbyHotels, NearbyHotel } from '@/lib/googleApi';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatPrice } from '@/lib/currency';
 
 interface Props {
   isOpen: boolean;
@@ -20,6 +22,7 @@ interface Props {
 export default function HotelModal({
   isOpen, onClose, cityName, nights, selectedHotel, onSelectHotel, locationQuery, checkInDate, checkOutDate,
 }: Props) {
+  const { currency } = useCurrency();
   const [sortBy, setSortBy] = useState<'price' | 'rating'>('price');
   const [search, setSearch] = useState('');
   const [googleHotels, setGoogleHotels] = useState<NearbyHotel[]>([]);
@@ -28,6 +31,11 @@ export default function HotelModal({
   // Hotel filters
   const [minRatingFilter, setMinRatingFilter] = useState<'all' | '3' | '4' | '4.5'>('all');
   const [hotelPriceFilter, setHotelPriceFilter] = useState<'all' | '5k' | '10k' | '15k'>('all');
+
+  // Reset filters and data when modal opens for a different destination
+  useEffect(() => {
+    if (isOpen) { setMinRatingFilter('all'); setHotelPriceFilter('all'); setSearch(''); setGoogleHotels([]); setUseGoogle(false); }
+  }, [isOpen, cityName]);
 
   // Fetch nearby hotels from Google when modal opens
   useEffect(() => {
@@ -105,7 +113,7 @@ export default function HotelModal({
                   </p>
                   {current && (
                     <p className="text-xs text-text-secondary font-body mt-1">
-                      <span className="font-semibold text-text-primary">{current.name}</span> &middot; &#8377;{current.pricePerNight.toLocaleString()}/night &middot; {nights} nights
+                      <span className="font-semibold text-text-primary">{current.name}</span> &middot; {formatPrice(current.pricePerNight, currency)}/night &middot; {nights} nights
                     </p>
                   )}
                 </div>
@@ -248,7 +256,7 @@ export default function HotelModal({
                         </div>
                       </div>
                       <div className="text-right flex-shrink-0">
-                        <p className="font-mono font-bold text-accent-cyan">&#8377;{hotel.pricePerNight.toLocaleString()}</p>
+                        <p className="font-mono font-bold text-accent-cyan">{formatPrice(hotel.pricePerNight, currency)}</p>
                         <p className="text-[10px] text-text-muted">/night</p>
                       </div>
                     </motion.button>
