@@ -1,14 +1,14 @@
 # AIEzzy — Market Launch TODO
 
-## Phase 1 — MVP Fix (2 weeks)
-- [ ] Password reset / forgot password flow
-- [ ] Email verification on signup
-- [ ] User profile & settings page (edit name, change password, delete account)
-- [ ] Error boundaries + retry logic for failed API calls
-- [ ] "Prices are estimates" disclaimers on scraped flight/train/hotel prices
-- [ ] Google Analytics integration
-- [ ] SEO: Open Graph tags, Twitter Cards, sitemap.xml, robots.txt
-- [ ] Train price disclaimer (currently estimated at €0.12/km, not real)
+## Phase 1 — MVP Fix ✅ COMPLETE
+- [x] Password reset / forgot password flow
+- [x] Email verification on signup
+- [x] User profile & settings page (edit name, change password, delete account)
+- [x] Error boundaries + retry logic for failed API calls
+- [x] "Prices are estimates" disclaimers on scraped flight/train/hotel prices
+- [x] Google Analytics integration (G-XQEC68F0S9)
+- [x] SEO: Open Graph tags, Twitter Cards, sitemap.xml, robots.txt
+- [x] Train price disclaimer (currently estimated at €0.12/km, not real)
 
 ## Phase 2 — Viral Features (3 weeks)
 - [ ] Trip sharing via link (public read-only view)
