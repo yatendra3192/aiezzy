@@ -3,6 +3,9 @@ import { GLOBAL_CITY_AIRPORTS } from '@/data/airports';
 
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
+const AMADEUS_API_KEY = process.env.AMADEUS_API_KEY || '';
+const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET || '';
+const AMADEUS_BASE_URL = process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com';
 
 /**
  * GET /api/flights - Search flights using live Google Flights scraper
@@ -116,7 +119,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // No flights found from any nearby airport
+    // Fallback: Try Amadeus API when Google scraper fails (handles routes Google can't render)
+    if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
+      const closestFrom = fromAirports[0];
+      const closestTo = toAirports[0];
+      const amadeusFlights = await fetchAmadeusFlights(closestFrom.code, closestTo.code, date, parseInt(adults));
+      if (amadeusFlights && amadeusFlights.length > 0) {
+        return NextResponse.json({
+          status: 'OK',
+          from, to, date, adults: parseInt(adults),
+          fromResolved: closestFrom.code,
+          toResolved: closestTo.code,
+          fromCity: closestFrom.city,
+          toCity: closestTo.city,
+          fromAirport: closestFrom.name,
+          fromDistance: closestFrom.distance,
+          nearestFrom: undefined,
+          flights: amadeusFlights,
+          source: 'amadeus',
+        });
+      }
+    }
+
+    // No flights found from any source
     return NextResponse.json({
       status: 'OK', from, to, date, adults: parseInt(adults),
       flights: [], source: 'none',
@@ -459,5 +484,105 @@ function resolveAirportCode(input: string): string {
   }
 
   return ''; // Return empty - will trigger dynamic Google resolver
+}
+
+// ─── Amadeus API (fallback when Google scraper can't render a route) ─────────
+
+let amadeusToken: { token: string; expiresAt: number } | null = null;
+
+async function getAmadeusToken(): Promise<string | null> {
+  if (amadeusToken && Date.now() < amadeusToken.expiresAt) return amadeusToken.token;
+  if (!AMADEUS_API_KEY || !AMADEUS_API_SECRET) return null;
+
+  try {
+    const res = await fetch(`${AMADEUS_BASE_URL}/v1/security/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=client_credentials&client_id=${AMADEUS_API_KEY}&client_secret=${AMADEUS_API_SECRET}`,
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      amadeusToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
+      return data.access_token;
+    }
+  } catch {}
+  return null;
+}
+
+async function fetchAmadeusFlights(from: string, to: string, date: string, adults: number): Promise<any[] | null> {
+  const token = await getAmadeusToken();
+  if (!token) return null;
+
+  try {
+    const params = new URLSearchParams({
+      originLocationCode: from,
+      destinationLocationCode: to,
+      departureDate: date,
+      adults: String(adults),
+      currencyCode: 'INR',
+      max: '10',
+    });
+
+    const res = await fetch(`${AMADEUS_BASE_URL}/v2/shopping/flight-offers?${params}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const offers = data.data || [];
+    if (offers.length === 0) return null;
+
+    // Map carrier codes to names from dictionaries
+    const carriers: Record<string, string> = data.dictionaries?.carriers || {};
+
+    return offers.map((offer: any, i: number) => {
+      const itin = offer.itineraries?.[0];
+      const segments = itin?.segments || [];
+      const first = segments[0] || {};
+      const last = segments[segments.length - 1] || {};
+
+      const airline = carriers[first.carrierCode] || first.carrierCode || 'Unknown';
+      const airlineCode = first.carrierCode || '';
+
+      // Parse departure/arrival times from ISO format "2026-08-11T06:30:00"
+      const depTime = first.departure?.at?.split('T')[1]?.substring(0, 5) || '00:00';
+      const arrTime = last.arrival?.at?.split('T')[1]?.substring(0, 5) || '00:00';
+      const depDate = first.departure?.at?.split('T')[0] || date;
+      const arrDate = last.arrival?.at?.split('T')[0] || date;
+      const isNextDay = depDate !== arrDate;
+
+      // Parse duration "PT11H20M" → "11h 20m"
+      const durMatch = (itin?.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+      const durHrs = durMatch?.[1] || '0';
+      const durMins = durMatch?.[2] || '0';
+      const duration = `${durHrs}h ${durMins}m`;
+      const durationMin = parseInt(durHrs) * 60 + parseInt(durMins);
+
+      const stops = segments.length - 1;
+      const stopsText = stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`;
+
+      const price = parseFloat(offer.price?.grandTotal || '0');
+
+      return {
+        airline,
+        airlineCode,
+        flightNumber: `${first.carrierCode || ''}${first.number || ''}`,
+        departure: depTime,
+        arrival: arrTime,
+        depAirportCode: first.departure?.iataCode || from,
+        arrAirportCode: last.arrival?.iataCode || to,
+        duration,
+        durationMin,
+        stops: stopsText,
+        isNextDay,
+        price,
+        currency: 'INR',
+        source: 'amadeus' as const,
+      };
+    });
+  } catch {
+    return null;
+  }
 }
 
