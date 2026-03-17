@@ -9,15 +9,15 @@ interface ActivitySuggestionsProps {
 
 export default function ActivitySuggestions({ cityName }: ActivitySuggestionsProps) {
   const [expanded, setExpanded] = useState(false);
-  const cacheRef = useRef<string[] | null>(null);
+  const cacheRef = useRef<{ city: string; items: string[] } | null>(null);
 
   const getAttractions = (): string[] => {
-    if (cacheRef.current) return cacheRef.current;
+    if (cacheRef.current?.city === cityName) return cacheRef.current.items;
     // Try exact match first, then case-insensitive partial match
     const attractions = CITY_ATTRACTIONS[cityName]
       || Object.entries(CITY_ATTRACTIONS).find(([key]) => key.toLowerCase() === cityName.toLowerCase())?.[1]
       || [];
-    cacheRef.current = attractions;
+    cacheRef.current = { city: cityName, items: attractions };
     return attractions;
   };
 

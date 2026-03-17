@@ -68,7 +68,21 @@ const PLUG_TYPES: Record<string, string> = {
 const TROPICAL_COUNTRIES = new Set([
   'Thailand', 'Indonesia', 'Vietnam', 'Cambodia', 'Laos', 'Malaysia', 'Singapore',
   'Sri Lanka', 'India', 'Maldives', 'Kenya', 'Seychelles', 'Mauritius',
+  'UAE', 'Philippines',
 ]);
+
+// Cold countries (for heavy winter gear)
+const COLD_COUNTRIES = new Set([
+  'Iceland', 'Norway', 'Sweden', 'Finland', 'Russia', 'Canada',
+]);
+
+// Static climate estimation by country (avoids unreliable weather API with wrong dates)
+function estimateClimate(country: string): { temp_max: number; temp_min: number; precipitation: number } {
+  if (COLD_COUNTRIES.has(country)) return { temp_max: 5, temp_min: -5, precipitation: 3 };
+  if (TROPICAL_COUNTRIES.has(country)) return { temp_max: 33, temp_min: 24, precipitation: 8 };
+  // Temperate default (Europe, US, etc.)
+  return { temp_max: 22, temp_min: 12, precipitation: 3 };
+}
 
 function generatePackingList(
   destinations: PackingDestination[],
@@ -231,29 +245,21 @@ export default function PackingListModal({ isOpen, onClose, destinations, totalN
     }
   }, [storageKey]);
 
-  // Generate packing list when modal opens
+  // Generate packing list when modal opens (uses static climate data instead of weather API)
   useEffect(() => {
     if (!isOpen || destinations.length === 0) return;
 
     setLoading(true);
 
-    // Fetch weather for each destination
-    const weatherPromises = destinations.map(d =>
-      fetch(`/api/weather?city=${encodeURIComponent(d.city.name)}&date=${new Date().toISOString().split('T')[0]}`)
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
-    );
-
-    Promise.all(weatherPromises).then(results => {
-      const weatherData: Record<string, any> = {};
-      destinations.forEach((d, i) => {
-        weatherData[d.city.name] = results[i];
-      });
-
-      const list = generatePackingList(destinations, totalNights, weatherData);
-      setCategories(list);
-      setLoading(false);
+    // Use static climate estimation by country (weather API used today's date, not trip dates)
+    const weatherData: Record<string, { temp_max: number; temp_min: number; precipitation: number }> = {};
+    destinations.forEach(d => {
+      weatherData[d.city.name] = estimateClimate(d.city.country);
     });
+
+    const list = generatePackingList(destinations, totalNights, weatherData);
+    setCategories(list);
+    setLoading(false);
   }, [isOpen, destinations, totalNights]);
 
   const toggleItem = (itemId: string) => {

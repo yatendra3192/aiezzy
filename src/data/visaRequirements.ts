@@ -52,6 +52,24 @@ const VISA_FROM_INDIA: Record<string, VisaInfo> = {
   'Russia': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Tourist visa' },
   'New Zealand': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Visitor visa' },
   'South Africa': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Tourist visa' },
+
+  // Aliases
+  'UK': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Standard visitor visa' },
+  'United Arab Emirates': { type: 'e-visa', label: 'E-Visa', color: '#3b82f6', duration: '30 days', note: 'Apply online before travel' },
+
+  // Missing Schengen countries
+  'Austria': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Czech Republic': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Czechia': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Portugal': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Greece': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Denmark': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Sweden': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Norway': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Finland': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Poland': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Hungary': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Schengen visa' },
+  'Ireland': { type: 'visa-required', label: 'Visa Required', color: '#ef4444', note: 'Irish visa' },
 };
 
 export function getVisaInfo(country: string): VisaInfo | null {

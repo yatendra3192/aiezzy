@@ -15,6 +15,7 @@ function weatherEmoji(code: number): string {
   if (code >= 61 && code <= 67) return '\uD83C\uDF27\uFE0F'; // rain
   if (code >= 71 && code <= 77) return '\u2744\uFE0F'; // snow
   if (code >= 80 && code <= 82) return '\uD83C\uDF26\uFE0F'; // showers
+  if (code >= 85 && code <= 86) return '\uD83C\uDF28\uFE0F'; // snow showers
   if (code >= 95 && code <= 99) return '\u26C8\uFE0F'; // thunderstorm
   return '\u2600\uFE0F';
 }
@@ -29,6 +30,12 @@ export default function WeatherBadge({ city, date }: WeatherBadgeProps) {
 
   useEffect(() => {
     if (!city || !date) { setLoading(false); return; }
+
+    // Open-Meteo only supports ~16 days forecast; skip if too far out or in the past
+    const dateObj = new Date(date);
+    const now = new Date();
+    const diffDays = (dateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays > 15 || diffDays < 0) { setLoading(false); return; }
 
     let cancelled = false;
     setLoading(true);

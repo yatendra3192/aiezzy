@@ -5,6 +5,7 @@ export const CITY_ATTRACTIONS: Record<string, string[]> = {
   'Tokyo': ['Shibuya Crossing', 'Senso-ji Temple', 'Meiji Shrine', 'Akihabara', 'Tsukiji Market'],
   'Mumbai': ['Gateway of India', 'Marine Drive', 'Elephanta Caves', 'Haji Ali Dargah', 'Colaba Causeway'],
   'Delhi': ['Red Fort', 'Qutub Minar', 'India Gate', 'Humayun Tomb', 'Chandni Chowk'],
+  'New Delhi': ['Red Fort', 'Qutub Minar', 'India Gate', 'Humayun Tomb', 'Chandni Chowk'],
   'Goa': ['Baga Beach', 'Basilica of Bom Jesus', 'Fort Aguada', 'Dudhsagar Falls', 'Anjuna Flea Market'],
   'Jaipur': ['Amber Fort', 'Hawa Mahal', 'City Palace', 'Jantar Mantar', 'Nahargarh Fort'],
   'Dubai': ['Burj Khalifa', 'Dubai Mall', 'Palm Jumeirah', 'Desert Safari', 'Dubai Marina'],

@@ -760,6 +760,7 @@ export default function RoutePage() {
                             ) : (
                               <div className="space-y-1">
                                 <textarea
+                                  key={dest.id + '-' + (dest.notes?.length || 0)}
                                   defaultValue={dest.notes || ''}
                                   rows={2}
                                   placeholder={`Add notes for ${stop.explore || stop.name}...`}
