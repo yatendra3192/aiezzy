@@ -149,11 +149,14 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Filter: only keep routes that have at least one RAIL/TRAIN vehicle
-    // (not bus-only routes — those belong in the Bus tab)
-    const RAIL_TYPES = new Set(['RAIL', 'HEAVY_RAIL', 'COMMUTER_TRAIN', 'HIGH_SPEED_TRAIN', 'LONG_DISTANCE_TRAIN', 'METRO_RAIL', 'MONORAIL', 'SUBWAY']);
+    // Filter: only keep routes where ALL transit segments are rail/train
+    // Mixed routes (bus + metro) belong in the Bus tab, not Trains
+    const RAIL_TYPES = new Set(['RAIL', 'HEAVY_RAIL', 'COMMUTER_TRAIN', 'HIGH_SPEED_TRAIN', 'LONG_DISTANCE_TRAIN', 'METRO_RAIL', 'MONORAIL', 'SUBWAY', 'TRAM']);
+    const BUS_TYPES = new Set(['BUS', 'INTERCITY_BUS', 'TROLLEYBUS']);
     const trainOnly = trains.filter((t: any) =>
-      t.transitSteps?.some((s: any) => RAIL_TYPES.has(s.vehicle))
+      t.transitSteps?.length > 0 &&
+      t.transitSteps.every((s: any) => RAIL_TYPES.has(s.vehicle)) &&
+      !t.transitSteps.some((s: any) => BUS_TYPES.has(s.vehicle))
     );
 
     // Sort by duration

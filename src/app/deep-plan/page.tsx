@@ -45,6 +45,20 @@ const TRANSPORT_ICONS: Record<string, string> = {
 export default function DeepPlanPage() {
   const router = useRouter();
   const trip = useTrip();
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  // Restore trip from sessionStorage on page reload
+  useEffect(() => {
+    if (trip.tripId || trip.destinations.length > 0) return;
+    try {
+      const savedId = sessionStorage.getItem('currentTripId');
+      if (savedId) {
+        setIsRestoring(true);
+        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);
   const [trainModal, setTrainModal] = useState<{ legIndex: number } | null>(null);
   const [hotelModal, setHotelModal] = useState<{ destIndex: number } | null>(null);
@@ -314,6 +328,17 @@ export default function DeepPlanPage() {
     const toCity = legIdx < trip.destinations.length ? trip.destinations[legIdx]?.city : trip.from;
     return { fromCity, toCity };
   };
+
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex justify-center p-4 py-8">

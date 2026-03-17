@@ -90,6 +90,14 @@ export interface Destination {
   selectedHotel: Hotel | null;
 }
 
+export interface ResolvedAirports {
+  fromCode: string; toCode: string;
+  fromAirport: string; toAirport: string;
+  fromCity: string; toCity: string;
+  fromDistance: number; toDistance: number;
+  nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
+}
+
 export interface TransportLeg {
   id: string;
   type: 'flight' | 'train' | 'bus' | 'drive';
@@ -101,6 +109,8 @@ export interface TransportLeg {
   departureTime: string | null;
   /** Arrival time at arrival terminal */
   arrivalTime: string | null;
+  /** Resolved airport info (persisted for display after reload) */
+  resolvedAirports?: ResolvedAirports | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

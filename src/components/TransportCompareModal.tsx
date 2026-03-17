@@ -122,7 +122,12 @@ export default function TransportCompareModal({
           co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
         })));
       } else {
-        setFlights([]);
+        // No cache (e.g., after page reload) — seed with the currently selected flight
+        // so prices stay consistent while fresh results load
+        setFlights(selectedFlight ? [{
+          ...selectedFlight,
+          id: `selected-${selectedFlight.flightNumber}`,
+        }] : []);
       }
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -137,6 +142,22 @@ export default function TransportCompareModal({
       .then(r => r.json())
       .then(data => {
         if (data.flights?.length > 0) {
+          const resolvedRoute = data.fromResolved && data.toResolved
+            ? `${data.fromResolved}-${data.toResolved}`
+            : `${data.fromResolved || fromCode}-${data.toResolved || toCode}`;
+          const mapped = data.flights.map((f: any, i: number) => ({
+            id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+            departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
+            route: resolvedRoute, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
+            depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
+            layovers: f.layovers, isNextDay: f.isNextDay,
+            co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+          }));
+          // Include the currently selected flight if it's not in the new results
+          // (preserves the original price the user selected at)
+          if (selectedFlight && !mapped.some((f: any) => f.flightNumber === selectedFlight.flightNumber)) {
+            mapped.unshift({ ...selectedFlight, id: `selected-${selectedFlight.flightNumber}` });
+          }
           // Check if nearby airport was used
           if ((data.fromIsNearby || data.toIsNearby) && !userAcceptedNearby) {
             setNearbyAirportPrompt({
@@ -145,32 +166,17 @@ export default function TransportCompareModal({
               fromCity: fromCity,
               toCity: toCity,
             });
-            // Store flights but don't show yet
-            setFlights(data.flights.map((f: any, i: number) => ({
-              id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
-              departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
-              route: `${data.fromResolved}-${data.toResolved}`, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
-              depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
-              layovers: f.layovers, isNextDay: f.isNextDay,
-              co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
-            })));
-          } else {
-            setFlights(data.flights.map((f: any, i: number) => ({
-              id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
-              departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
-              route: `${data.fromResolved || fromCode}-${data.toResolved || toCode}`, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
-              depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
-              layovers: f.layovers, isNextDay: f.isNextDay,
-              co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
-            })));
           }
+          setFlights(mapped);
         }
         setLoadingFlights(false);
       }).catch(() => setLoadingFlights(false));
   };
 
   useEffect(() => {
-    if (!isOpen || tab !== 'flight' || flights.length > 0) return;
+    if (!isOpen || tab !== 'flight') return;
+    // Fetch if no flights, or only the seeded selected flight (no cache)
+    if (flights.length > 0 && !(!cachedFlights && flights.length === 1 && flights[0]?.id?.startsWith('selected-'))) return;
     fetchFlights();
   }, [isOpen, tab]);
 

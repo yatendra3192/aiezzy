@@ -188,7 +188,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       transportLegs: s.transportLegs.map(l => ({
         type: l.type, duration: l.duration, distance: l.distance,
         departureTime: l.departureTime, arrivalTime: l.arrivalTime,
-        selectedFlight: l.selectedFlight, selectedTrain: l.selectedTrain,
+        selectedFlight: l.selectedFlight ? { ...l.selectedFlight, _resolvedAirports: l.resolvedAirports || undefined } : null,
+        selectedTrain: l.selectedTrain,
       })),
       departureDate: s.departureDate,
       adults: s.adults,
@@ -207,6 +208,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
       const tripId = data.id || s.tripId;
       setState(prev => ({ ...prev, tripId, isSaving: false, isDirty: false, lastSavedAt: new Date() }));
+      try { sessionStorage.setItem('currentTripId', tripId); } catch {}
       return tripId;
     } catch (e) {
       setState(prev => ({ ...prev, isSaving: false }));
@@ -231,16 +233,21 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         nights: d.nights,
         selectedHotel: d.selectedHotel,
       })),
-      transportLegs: (data.transportLegs || []).map((l: any) => ({
-        id: l.id || `tl${Date.now()}-${Math.random()}`,
-        type: l.type,
-        duration: l.duration,
-        distance: l.distance,
-        departureTime: l.departureTime,
-        arrivalTime: l.arrivalTime,
-        selectedFlight: l.selectedFlight,
-        selectedTrain: l.selectedTrain,
-      })),
+      transportLegs: (data.transportLegs || []).map((l: any) => {
+        // Extract _resolvedAirports from selectedFlight JSONB (stored together to avoid DB migration)
+        const { _resolvedAirports, ...flightData } = l.selectedFlight || {};
+        return {
+          id: l.id || `tl${Date.now()}-${Math.random()}`,
+          type: l.type,
+          duration: l.duration,
+          distance: l.distance,
+          departureTime: l.departureTime,
+          arrivalTime: l.arrivalTime,
+          selectedFlight: l.selectedFlight ? flightData : null,
+          selectedTrain: l.selectedTrain,
+          resolvedAirports: _resolvedAirports || null,
+        };
+      }),
       departureDate: data.departureDate,
       adults: data.adults,
       children: data.children,
@@ -250,6 +257,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       isDirty: false,
       lastSavedAt: data.updatedAt ? new Date(data.updatedAt) : null,
     });
+    try { sessionStorage.setItem('currentTripId', tripId); } catch {}
   }, []);
 
   // ─── Reset to new trip ──────────────────────────────────────────────────────
@@ -262,6 +270,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       isDirty: false,
       lastSavedAt: null,
     });
+    try { sessionStorage.removeItem('currentTripId'); } catch {}
   }, []);
 
   return (

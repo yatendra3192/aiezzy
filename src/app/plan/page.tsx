@@ -219,7 +219,20 @@ export default function PlanPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const trip = useTrip();
+  const [isRestoring, setIsRestoring] = useState(false);
   const [editingFrom, setEditingFrom] = useState(!trip.fromAddress);
+
+  // Restore trip from sessionStorage on page reload
+  useEffect(() => {
+    if (trip.tripId || trip.destinations.length > 0) return;
+    try {
+      const savedId = sessionStorage.getItem('currentTripId');
+      if (savedId) {
+        setIsRestoring(true);
+        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [optimizedOrder, setOptimizedOrder] = useState<typeof trip.destinations | null>(null);
@@ -365,6 +378,17 @@ export default function PlanPage() {
     setOptimizedOrder(null);
     router.push('/route');
   };
+
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex justify-center p-4 py-8">

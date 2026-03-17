@@ -29,6 +29,19 @@ export default function RoutePage() {
   const { data: session } = useSession();
   const trip = useTrip();
 
+  // Restore trip from sessionStorage on page reload
+  const [isRestoring, setIsRestoring] = useState(false);
+  useEffect(() => {
+    if (trip.tripId || trip.destinations.length > 0) return; // Already have data
+    try {
+      const savedId = sessionStorage.getItem('currentTripId');
+      if (savedId) {
+        setIsRestoring(true);
+        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
+      }
+    } catch {}
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-save: save 5s after any selection changes
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSavingRef = useRef(false);
@@ -105,6 +118,15 @@ export default function RoutePage() {
     nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
   }>>({});
   const pendingCountRef = useRef(0);
+
+  // Restore resolvedAirportsRef from saved transport leg data on load
+  useEffect(() => {
+    trip.transportLegs.forEach((leg, i) => {
+      if (leg.resolvedAirports && !resolvedAirportsRef.current[i]) {
+        resolvedAirportsRef.current[i] = leg.resolvedAirports;
+      }
+    });
+  }, [trip.transportLegs]);
 
   const trackPending = (delta: number) => {
     pendingCountRef.current += delta;
@@ -185,7 +207,7 @@ export default function RoutePage() {
         const resolvedTo = flightData.toResolved || tc;
         // Cache resolved info per leg for display
         const nearestFrom = flightData.nearestFrom;
-        resolvedAirportsRef.current[i] = {
+        const resolvedInfo = {
           fromCode: resolvedFrom, toCode: resolvedTo,
           fromAirport: flightData.fromAirport || '',
           toAirport: flightData.toAirport || '',
@@ -197,6 +219,9 @@ export default function RoutePage() {
           nearestFromCity: nearestFrom?.city,
           nearestFromDist: nearestFrom?.distance,
         };
+        resolvedAirportsRef.current[i] = resolvedInfo;
+        // Persist resolved airport info on the transport leg for reload
+        trip.updateTransportLeg(leg.id, { resolvedAirports: resolvedInfo });
 
         // Cache flights for the modal
         if (flights.length > 0) flightCacheRef.current[i] = flights;
@@ -251,7 +276,7 @@ export default function RoutePage() {
           const flight = {
             id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
             flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
-            duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${fc}-${tc}`,
+            duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
             pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
           };
           trip.selectFlight(leg.id, flight);
@@ -420,6 +445,17 @@ export default function RoutePage() {
     return city.name;
   };
 
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex justify-center p-4 py-8">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[760px]">
@@ -511,21 +547,55 @@ export default function RoutePage() {
                       <h3 className="font-display font-bold text-sm text-text-primary">{stop.name}</h3>
                       {/* Show airport info if different from stop location */}
                       {(() => {
-                        const info = resolvedAirportsRef.current[i];
-                        const prevInfo = i > 0 ? resolvedAirportsRef.current[i - 1] : null;
-                        const depCode = i === 0 ? info?.fromCode : prevInfo?.toCode;
-                        const depCity = i === 0 ? info?.fromCity : prevInfo?.toCity;
-                        const depDist = i === 0 ? info?.fromDistance : prevInfo?.toDistance;
+                        // Current leg (departing from this stop) and previous leg (arriving at this stop)
+                        const curLeg = trip.transportLegs[i];
+                        const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
+                        const info = resolvedAirportsRef.current[i] || curLeg?.resolvedAirports;
+                        const prevInfo = i > 0 ? (resolvedAirportsRef.current[i - 1] || prevLeg?.resolvedAirports) : null;
+                        const firstInfo = resolvedAirportsRef.current[0] || trip.transportLegs[0]?.resolvedAirports;
+                        const isLastHome = stop.type === 'home' && i === stops.length - 1 && trip.tripType === 'roundTrip' && i > 0;
+                        const isDest = stop.type === 'destination';
                         const nearest = i === 0 ? info : null;
 
-                        if (!depCode || !depDist || depDist < 30) return null;
+                        // Only show airport warning when the relevant leg is a flight
+                        const hasFlight = i === 0
+                          ? curLeg?.selectedFlight != null
+                          : isLastHome
+                            ? prevLeg?.selectedFlight != null
+                            : isDest
+                              ? (curLeg?.selectedFlight != null || prevLeg?.selectedFlight != null)
+                              : false;
+                        if (!hasFlight) return null;
+
+                        // Determine airport code, city, and distance for this stop
+                        let airportCode: string | undefined, airportCity: string | undefined, airportDist: number | undefined;
+                        if (i === 0) {
+                          airportCode = info?.fromCode;
+                          airportCity = info?.fromCity;
+                          airportDist = info?.fromDistance;
+                        } else if (isLastHome) {
+                          airportCode = prevInfo?.toCode;
+                          airportCity = prevInfo?.toCity;
+                          airportDist = prevInfo?.toDistance || firstInfo?.fromDistance;
+                        } else if (isDest) {
+                          // Destination: use departure leg's fromDistance (more reliable than arrival leg's toDistance)
+                          airportCode = info?.fromCode || prevInfo?.toCode;
+                          airportCity = info?.fromCity || prevInfo?.toCity;
+                          airportDist = info?.fromDistance || prevInfo?.toDistance;
+                        } else {
+                          airportCode = prevInfo?.toCode;
+                          airportCity = prevInfo?.toCity;
+                          airportDist = prevInfo?.toDistance;
+                        }
+
+                        if (!airportCode || !airportDist || airportDist < 30) return null;
 
                         // Show nearest airport if it's different from the flight airport
-                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== depCode) {
+                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== airportCode) {
                           return (
                             <div className="text-[10px] font-body mt-0.5 space-y-0.5">
                               <p className="text-amber-600">
-                                Flights from {depCity || depCode} ({depCode}), {Math.round(depDist)} km away
+                                Flights from {airportCity || airportCode} ({airportCode}), {Math.round(airportDist)} km away
                               </p>
                               <p className="text-text-muted">
                                 Nearest airport {nearest.nearestFromCity || nearest.nearestFromCode} ({nearest.nearestFromCode}) is {Math.round(nearest.nearestFromDist || 0)} km away but has no available flights
@@ -534,9 +604,20 @@ export default function RoutePage() {
                           );
                         }
 
+                        let msg: string;
+                        if (i === 0) {
+                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
+                        } else if (isLastHome) {
+                          msg = `Flight will land in ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
+                        } else if (isDest) {
+                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
+                        } else {
+                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
+                        }
+
                         return (
                           <p className="text-[10px] text-amber-600 font-body mt-0.5">
-                            Flights from {depCity || depCode} ({depCode}), {Math.round(depDist)} km away
+                            {msg}
                           </p>
                         );
                       })()}
@@ -618,19 +699,30 @@ export default function RoutePage() {
                             <path d={transportIcons[leg.type] || transportIcons.drive} />
                           </svg>
                           {(() => {
-                            const info = resolvedAirportsRef.current[i];
+                            const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
                             const duration = leg.selectedFlight ? leg.selectedFlight.duration : leg.selectedTrain ? leg.selectedTrain.duration : leg.duration;
 
                             // Build route display: "Ahmedabad (AMD) - Amsterdam (AMS)"
                             let routeDisplay = leg.distance || '';
                             if (leg.selectedFlight && info) {
-                              const fCity = info.fromCity || fromCity?.name || info.fromCode;
-                              const tCity = info.toCity || toCity?.name || info.toCode;
+                              const fCity = info.fromCity || fromCity?.parentCity || fromCity?.name || info.fromCode;
+                              const tCity = info.toCity || toCity?.parentCity || toCity?.name || info.toCode;
                               routeDisplay = `${fCity} (${info.fromCode}) - ${tCity} (${info.toCode})`;
                             } else if (leg.selectedFlight) {
-                              routeDisplay = leg.selectedFlight.route;
+                              // Fallback: extract airport codes from saved route (e.g., "BOM-NRT")
+                              const route = leg.selectedFlight.route || '';
+                              const parts = route.split('-');
+                              if (parts.length === 2 && /^[A-Z]{3,4}$/.test(parts[0].trim()) && /^[A-Z]{3,4}$/.test(parts[1].trim())) {
+                                const fCode = parts[0].trim();
+                                const tCode = parts[1].trim();
+                                const fCity = fromCity?.parentCity || fCode;
+                                const tCity = toCity?.parentCity || tCode;
+                                routeDisplay = `${fCity} (${fCode}) - ${tCity} (${tCode})`;
+                              } else {
+                                routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
+                              }
                             } else if (leg.selectedTrain) {
-                              routeDisplay = `${fromCity?.name || ''} - ${toCity?.name || ''}`;
+                              routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
                             }
 
                             return (
