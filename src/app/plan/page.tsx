@@ -8,6 +8,7 @@ import { motion, Reorder } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { CITIES, City } from '@/data/mockData';
 import { searchPlaces, getPlaceDetails, PlacePrediction } from '@/lib/googleApi';
+import AISuggestModal from '@/components/AISuggestModal';
 
 // ─── Google Places Autocomplete ──────────────────────────────────────────────
 
@@ -233,6 +234,7 @@ export default function PlanPage() {
       }
     } catch {}
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [showAISuggest, setShowAISuggest] = useState(false);
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [optimizedOrder, setOptimizedOrder] = useState<typeof trip.destinations | null>(null);
@@ -452,7 +454,18 @@ export default function PlanPage() {
 
             {/* DESTINATIONS */}
             <div>
-              <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase mb-3 block">Destinations</label>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase">Destinations</label>
+                <button
+                  onClick={() => setShowAISuggest(true)}
+                  className="flex items-center gap-1 text-[10px] font-display font-bold text-accent-cyan hover:text-accent-cyan/80 transition-colors bg-accent-cyan/10 px-2.5 py-1 rounded-lg"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z" />
+                  </svg>
+                  AI Suggest
+                </button>
+              </div>
               <Reorder.Group
                 axis="y"
                 values={trip.destinations}
@@ -636,6 +649,12 @@ export default function PlanPage() {
           </motion.div>
         </motion.div>
       )}
+
+      {/* AI Suggest Modal */}
+      <AISuggestModal
+        isOpen={showAISuggest}
+        onClose={() => setShowAISuggest(false)}
+      />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { Flight, TrainOption } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
+import { getFlightBookingUrl, getTrainBookingUrl } from '@/lib/affiliateLinks';
 
 interface Props {
   isOpen: boolean;
@@ -513,6 +514,17 @@ export default function TransportCompareModal({
                               <p className="text-xs text-text-primary font-body text-center">
                                 {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
                               </p>
+                              {/* Booking link */}
+                              <a
+                                href={getFlightBookingUrl(f.depAirportCode || fromCode, f.arrAirportCode || toCode, date, adults)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-accent-gold text-[9px] font-body hover:underline flex items-center justify-center gap-0.5 mt-1.5 pt-1.5 border-t border-border-subtle"
+                              >
+                                Book on Skyscanner
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                              </a>
                             </button>
                           );
                         })}
@@ -572,6 +584,22 @@ export default function TransportCompareModal({
                                 <span key={si} className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-white" style={{ backgroundColor: s.color || '#6b7280' }}>{s.line || s.vehicle}</span>
                               ))}
                             </div>
+                            {/* Booking link */}
+                            <a
+                              href={getTrainBookingUrl(fromCity, toCity, date)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-accent-gold text-[9px] font-body hover:underline flex items-center justify-center gap-0.5 mt-1.5 pt-1.5 border-t border-border-subtle"
+                            >
+                              {(() => {
+                                const isIndia = ['BOM', 'DEL', 'BLR', 'MAA', 'CCU', 'HYD', 'AMD', 'PNQ', 'GOI', 'JAI', 'IDR'].some(
+                                  code => fromCode.includes(code) || toCode.includes(code)
+                                );
+                                return isIndia ? 'Book on IRCTC' : 'Book on Trainline';
+                              })()}
+                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            </a>
                           </button>
                         ))}
                       </div>

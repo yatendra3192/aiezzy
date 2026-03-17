@@ -7,6 +7,9 @@ import { useSession, signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import ShareTripModal from '@/components/ShareTripModal';
+import AISuggestModal from '@/components/AISuggestModal';
+import TripTemplatesSection from '@/components/TripTemplatesSection';
+import { TRIP_TEMPLATES, TripTemplate } from '@/data/tripTemplates';
 
 interface TripSummary {
   id: string;
@@ -35,6 +38,7 @@ export default function MyTripsPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [sharingTripId, setSharingTripId] = useState<string | null>(null);
+  const [showAISuggest, setShowAISuggest] = useState(false);
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -74,6 +78,16 @@ export default function MyTripsPage() {
     router.push('/plan');
   };
 
+  const handleUseTemplate = (template: TripTemplate) => {
+    trip.resetTrip();
+    trip.setFrom(template.from);
+    trip.setFromAddress(template.from.fullName);
+    for (const dest of template.destinations) {
+      trip.addDestination(dest.city, dest.nights);
+    }
+    router.push('/plan');
+  };
+
   if (authStatus === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -102,6 +116,14 @@ export default function MyTripsPage() {
                 </svg>
               </Link>
               <button onClick={() => signOut({ callbackUrl: '/' })} className="text-text-muted text-xs font-body hover:text-accent-cyan transition-colors">Sign Out</button>
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => setShowAISuggest(true)}
+                className="bg-bg-card border border-accent-cyan/40 text-accent-cyan font-display font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z" />
+                </svg>
+                AI Plan
+              </motion.button>
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={handleNewTrip}
                 className="bg-accent-cyan text-white font-display font-bold text-xs px-4 py-2 rounded-xl">
@@ -199,6 +221,9 @@ export default function MyTripsPage() {
               ))}
             </div>
           )}
+
+          {/* Trip Templates */}
+          <TripTemplatesSection templates={TRIP_TEMPLATES} onUseTemplate={handleUseTemplate} />
         </div>
       </motion.div>
 
@@ -210,6 +235,12 @@ export default function MyTripsPage() {
           tripId={sharingTripId}
         />
       )}
+
+      {/* AI Suggest Modal */}
+      <AISuggestModal
+        isOpen={showAISuggest}
+        onClose={() => setShowAISuggest(false)}
+      />
     </div>
   );
 }

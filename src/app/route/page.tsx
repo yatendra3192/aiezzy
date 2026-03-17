@@ -12,6 +12,7 @@ import { getDirections } from '@/lib/googleApi';
 import { generateICS, downloadICS } from '@/lib/calendarExport';
 import { exportTripPDF } from '@/lib/pdfExport';
 import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
+import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
 import HotelModal from '@/components/HotelModal';
 import TransportCompareModal from '@/components/TransportCompareModal';
 import ShareTripModal from '@/components/ShareTripModal';
@@ -655,8 +656,25 @@ export default function RoutePage() {
                             <div className="mt-1.5 bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-display font-bold text-text-primary">{hotel.name}</span>
-                                <button onClick={() => stop.destIndex !== undefined && setHotelModal({ destIndex: stop.destIndex })}
-                                  className="text-accent-cyan text-[10px] font-body hover:underline flex-shrink-0 ml-2">Change</button>
+                                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                  <a
+                                    href={getHotelBookingUrl(
+                                      hotel.name,
+                                      stop.name,
+                                      checkIn.toISOString().split('T')[0],
+                                      checkOut.toISOString().split('T')[0]
+                                    )}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-accent-gold text-[10px] font-body hover:underline flex items-center gap-0.5"
+                                  >
+                                    Book
+                                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                  </a>
+                                  <button onClick={() => stop.destIndex !== undefined && setHotelModal({ destIndex: stop.destIndex })}
+                                    className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                                </div>
                               </div>
                               <div className="flex items-center gap-2 text-[10px]">
                                 {hotel.rating > 0 && (
@@ -747,7 +765,25 @@ export default function RoutePage() {
                           <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1 mt-1">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedFlight.airline} {leg.selectedFlight.flightNumber}</span>
-                              <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline flex-shrink-0 ml-2">Change</button>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                <a
+                                  href={(() => {
+                                    const route = leg.selectedFlight!.route || '';
+                                    const parts = route.split('-');
+                                    const fCode = parts[0]?.trim() || '';
+                                    const tCode = parts[1]?.trim() || '';
+                                    return getFlightBookingUrl(fCode, tCode, legDate.toISOString().split('T')[0], trip.adults);
+                                  })()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-accent-gold text-[10px] font-body hover:underline flex items-center gap-0.5"
+                                >
+                                  Book
+                                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                </a>
+                                <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                              </div>
                             </div>
                             {(() => {
                               // Compute arrival date: check if flight arrives next day
