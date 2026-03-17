@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createServiceClient } from '@/lib/supabase/server';
 
 /** POST /api/auth/signup - Create account with email/password via Supabase Auth */
 export async function POST(req: NextRequest) {
@@ -12,20 +12,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
   }
 
-  // Use anon key so Supabase sends verification email automatically
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
+  const supabase = createServiceClient();
 
-  const { data, error } = await supabase.auth.signUp({
+  // Use admin.createUser for reliable, fast account creation
+  // email_confirm: true auto-confirms so user can sign in immediately
+  // When SMTP is configured, switch to auth.signUp() for email verification flow
+  const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
-    options: {
-      data: { full_name: name || email.split('@')[0] },
-      emailRedirectTo: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auth/verify-callback`,
-    },
+    email_confirm: true,
+    user_metadata: { full_name: name || email.split('@')[0] },
   });
 
   if (error) {
@@ -35,12 +31,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Check if email confirmation is required
-  const needsVerification = data.user && !data.user.email_confirmed_at;
-
   return NextResponse.json({
-    id: data.user?.id,
-    email: data.user?.email,
-    needsVerification,
+    id: data.user.id,
+    email: data.user.email,
+    needsVerification: false,
   }, { status: 201 });
 }
