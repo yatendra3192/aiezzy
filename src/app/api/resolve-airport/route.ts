@@ -14,6 +14,7 @@ interface NearbyAirport {
   distance_km: number;
   type: string;
   municipality: string;
+  country_code: string;
 }
 
 /**
@@ -93,31 +94,46 @@ export async function GET(req: NextRequest) {
         distance_km: Math.round(a.distance_km || 0),
         type: a.type || '',
         municipality: '', // Will be filled from direct query below
+        country_code: '',
       }));
 
-    // Get municipality from airports table directly (city_name from RPC join is sometimes wrong)
+    // Get municipality + country_code from airports table directly
     if (allCommercial.length > 0) {
       try {
         const codes = allCommercial.map(a => `"${a.iata_code}"`).join(',');
         const muniRes = await fetch(
-          `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality`,
+          `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code`,
           { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
         );
         const muniData = await muniRes.json();
         if (Array.isArray(muniData)) {
-          const muniMap = new Map(muniData.map((m: any) => [m.iata_code, m.municipality || '']));
-          allCommercial.forEach(a => { a.municipality = muniMap.get(a.iata_code) || ''; });
+          const muniMap = new Map(muniData.map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
+          allCommercial.forEach(a => {
+            const info = muniMap.get(a.iata_code);
+            a.municipality = info?.muni || '';
+            a.country_code = info?.cc || '';
+          });
         }
       } catch {}
     }
 
-    // Return large airports (international hubs) — these are the ones
-    // most likely to have scrapeable flight results
-    const largeAirports = allCommercial.filter(a => a.type === 'large_airport');
-    // If less than 3 large airports, include medium airports too
-    const commercial = largeAirports.length >= 3
-      ? largeAirports.slice(0, 12)
-      : allCommercial.slice(0, 10);
+    // Detect the origin country from the closest airport
+    const originCountry = allCommercial[0]?.country_code || '';
+
+    // Filter out airports from different countries for domestic-like searches
+    // (prevents Leh→Skardu(Pakistan), etc.) but keep all for international destinations
+    const sameCountry = originCountry
+      ? allCommercial.filter(a => a.country_code === originCountry || !a.country_code)
+      : allCommercial;
+    const pool = sameCountry.length >= 3 ? sameCountry : allCommercial;
+
+    // Smart selection: always include closest 2 airports (any type — catches JMK for Mykonos)
+    // then fill with large airports for scraper compatibility
+    const closest = pool.slice(0, 2);
+    const largeAfter = pool.slice(2).filter(a => a.type === 'large_airport');
+    const seen = new Set(closest.map(a => a.iata_code));
+    const remaining = largeAfter.filter(a => !seen.has(a.iata_code)).slice(0, 10);
+    const commercial = [...closest, ...remaining];
 
     // Cache the result
     cache.set(city.toLowerCase(), { airports: commercial, timestamp: Date.now() });
