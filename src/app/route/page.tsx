@@ -16,6 +16,10 @@ import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
 import HotelModal from '@/components/HotelModal';
 import TransportCompareModal from '@/components/TransportCompareModal';
 import ShareTripModal from '@/components/ShareTripModal';
+import ActivitySuggestions from '@/components/ActivitySuggestions';
+import WeatherBadge from '@/components/WeatherBadge';
+import PackingListModal from '@/components/PackingListModal';
+import { getVisaInfo } from '@/data/visaRequirements';
 
 const transportIcons: Record<string, string> = {
   drive: 'M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2M7 14h.01M17 14h.01M6 3h12l1 5H5z',
@@ -89,6 +93,10 @@ export default function RoutePage() {
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
   const [hotelModal, setHotelModal] = useState<{ destIndex: number } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showPackingList, setShowPackingList] = useState(false);
+
+  // Notes expanded state
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
 
   // Fetch real driving directions for legs that don't have flight/train selected
   const fetchedRef = useRef<Set<string>>(new Set());
@@ -553,7 +561,12 @@ export default function RoutePage() {
                       </div>
                     </div>
                     <div className="flex-1 pb-2">
-                      <h3 className="font-display font-bold text-sm text-text-primary">{stop.name}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display font-bold text-sm text-text-primary">{stop.name}</h3>
+                        {stop.type === 'destination' && (
+                          <WeatherBadge city={stop.name} date={arrivalDate.toISOString().split('T')[0]} />
+                        )}
+                      </div>
                       {/* Show airport info if different from stop location */}
                       {(() => {
                         // Current leg (departing from this stop) and previous leg (arriving at this stop)
@@ -630,6 +643,22 @@ export default function RoutePage() {
                           </p>
                         );
                       })()}
+                      {/* Visa requirement badge */}
+                      {stop.type === 'destination' && (() => {
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        if (!dest) return null;
+                        const country = dest.city.country;
+                        if (!country || country === 'India') return null;
+                        const visa = getVisaInfo(country);
+                        if (!visa) return null;
+                        return (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: visa.color }} />
+                            <span className="text-[10px] font-body" style={{ color: visa.color }}>{visa.label}{visa.duration ? ` (${visa.duration})` : ''}</span>
+                            {visa.note && <span className="text-[10px] font-body text-text-muted">&middot; {visa.note}</span>}
+                          </div>
+                        );
+                      })()}
                       {stop.type === 'destination' && (() => {
                         const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
                         const hotel = dest?.selectedHotel;
@@ -704,6 +733,50 @@ export default function RoutePage() {
                             className="text-accent-cyan text-xs font-body hover:underline mt-0.5 block">
                             Select a hotel in {stop.explore} &middot; <span className="text-text-muted">{nights}N</span>
                           </button>
+                        );
+                      })()}
+                      {/* Activity Suggestions */}
+                      {stop.type === 'destination' && (
+                        <ActivitySuggestions cityName={stop.explore || stop.name} />
+                      )}
+                      {/* Trip Notes */}
+                      {stop.type === 'destination' && stop.destIndex !== undefined && (() => {
+                        const dest = trip.destinations[stop.destIndex!];
+                        if (!dest) return null;
+                        const isExpanded = expandedNotes.has(dest.id);
+                        const hasNotes = !!dest.notes;
+                        return (
+                          <div className="mt-1.5">
+                            {!isExpanded ? (
+                              <button
+                                onClick={() => setExpandedNotes(prev => { const next = new Set(prev); next.add(dest.id); return next; })}
+                                className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1"
+                              >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                                {hasNotes ? `Note: ${dest.notes!.slice(0, 40)}${dest.notes!.length > 40 ? '...' : ''}` : 'Add note'}
+                              </button>
+                            ) : (
+                              <div className="space-y-1">
+                                <textarea
+                                  defaultValue={dest.notes || ''}
+                                  rows={2}
+                                  placeholder={`Add notes for ${stop.explore || stop.name}...`}
+                                  onBlur={(e) => {
+                                    trip.updateDestinationNotes(dest.id, e.target.value);
+                                  }}
+                                  className="w-full text-[11px] font-body text-text-primary bg-bg-surface border border-border-subtle rounded-lg px-2 py-1.5 resize-none placeholder:text-text-muted/50 focus:outline-none focus:border-accent-cyan/40 transition-colors"
+                                />
+                                <button
+                                  onClick={() => setExpandedNotes(prev => { const next = new Set(prev); next.delete(dest.id); return next; })}
+                                  className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors"
+                                >
+                                  Collapse
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })()}
                     </div>
@@ -881,9 +954,44 @@ export default function RoutePage() {
                 <span className="text-text-secondary">{trip.destinations.length} cities &middot; {totalNights} nights</span>
                 <span className="text-text-muted">{trip.adults} pax</span>
               </div>
-              {flightCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Flights</span><span className="text-text-primary font-mono">{formatPrice(flightCost, currency)}</span></div>}
-              {trainCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Trains</span><span className="text-text-primary font-mono">{formatPrice(trainCost, currency)}</span></div>}
-              {hotelCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Hotels</span><span className="text-text-primary font-mono">{formatPrice(hotelCost, currency)}</span></div>}
+              {/* Budget bar chart */}
+              {totalCost > 0 && (
+                <div className="h-2 rounded-full overflow-hidden flex bg-bg-surface">
+                  {flightCost > 0 && <div className="bg-accent-cyan h-full" style={{ width: `${(flightCost / totalCost * 100)}%` }} />}
+                  {trainCost > 0 && <div className="bg-accent-gold h-full" style={{ width: `${(trainCost / totalCost * 100)}%` }} />}
+                  {hotelCost > 0 && <div className="bg-blue-400 h-full" style={{ width: `${(hotelCost / totalCost * 100)}%` }} />}
+                </div>
+              )}
+              {flightCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-accent-cyan inline-block flex-shrink-0" />
+                    Flights
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(flightCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(flightCost, currency)}</span>
+                </div>
+              )}
+              {trainCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-accent-gold inline-block flex-shrink-0" />
+                    Trains
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(trainCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(trainCost, currency)}</span>
+                </div>
+              )}
+              {hotelCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-blue-400 inline-block flex-shrink-0" />
+                    Hotels
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(hotelCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(hotelCost, currency)}</span>
+                </div>
+              )}
               {totalCost > 0 ? (
                 <>
                 <div className="flex justify-between text-sm font-body pt-2 border-t border-border-subtle">
@@ -974,6 +1082,20 @@ export default function RoutePage() {
                 </>
               )}
             </button>
+            {/* Packing List — show when at least one destination exists */}
+            {trip.destinations.length > 0 && (
+              <button
+                onClick={() => setShowPackingList(true)}
+                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                  <rect x="9" y="3" width="6" height="4" rx="1" />
+                  <path d="M9 14l2 2 4-4" />
+                </svg>
+                Packing List
+              </button>
+            )}
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/deep-plan')}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
@@ -1079,6 +1201,15 @@ export default function RoutePage() {
           tripId={trip.tripId}
         />
       )}
+
+      {/* Packing List Modal */}
+      <PackingListModal
+        isOpen={showPackingList}
+        onClose={() => setShowPackingList(false)}
+        destinations={trip.destinations.map(d => ({ city: d.city, nights: d.nights }))}
+        totalNights={totalNights}
+        tripId={trip.tripId}
+      />
     </div>
   );
 }

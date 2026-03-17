@@ -88,6 +88,7 @@ export interface Destination {
   city: City;
   nights: number;
   selectedHotel: Hotel | null;
+  notes?: string;
 }
 
 export interface ResolvedAirports {

@@ -25,6 +25,7 @@ interface TripContextType extends TripState {
   addDestination: (city: City, nights?: number) => void;
   removeDestination: (id: string) => void;
   updateNights: (id: string, nights: number) => void;
+  updateDestinationNotes: (destId: string, notes: string) => void;
   setDepartureDate: (date: string) => void;
   setAdults: (n: number) => void;
   setChildren: (n: number) => void;
@@ -40,6 +41,7 @@ interface TripContextType extends TripState {
   saveTrip: () => Promise<string | null>;
   loadTrip: (tripId: string) => Promise<void>;
   resetTrip: () => void;
+  clearTripId: () => void;
 }
 
 const defaultState: TripState = {
@@ -169,6 +171,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     setState(s => dirty({ ...s, destinations: s.destinations.map(d => d.id === destId ? { ...d, selectedHotel: hotel } : d) }));
   }, []);
 
+  const updateDestinationNotes = useCallback((destId: string, notes: string) => {
+    setState(s => dirty({ ...s, destinations: s.destinations.map(d => d.id === destId ? { ...d, notes } : d) }));
+  }, []);
+
   // ─── Save trip to database ──────────────────────────────────────────────────
   const saveTrip = useCallback(async (): Promise<string | null> => {
     // Get the LATEST state using a ref-like pattern via setState
@@ -184,7 +190,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     const payload = {
       from: s.from,
       fromAddress: s.fromAddress,
-      destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel })),
+      destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, notes: d.notes })),
       transportLegs: s.transportLegs.map(l => ({
         type: l.type, duration: l.duration, distance: l.distance,
         departureTime: l.departureTime, arrivalTime: l.arrivalTime,
@@ -232,6 +238,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         city: d.city,
         nights: d.nights,
         selectedHotel: d.selectedHotel,
+        notes: d.notes || '',
       })),
       transportLegs: (data.transportLegs || []).map((l: any) => {
         // Extract _resolvedAirports from selectedFlight JSONB (stored together to avoid DB migration)
@@ -273,14 +280,21 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     try { sessionStorage.removeItem('currentTripId'); } catch {}
   }, []);
 
+  // ─── Clear trip ID (for duplicating a trip as a new one) ──────────────────
+  const clearTripId = useCallback(() => {
+    setState(s => dirty({ ...s, tripId: null, lastSavedAt: null }));
+    try { sessionStorage.removeItem('currentTripId'); } catch {}
+  }, []);
+
   return (
     <TripContext.Provider value={{
       ...state,
       setFrom, setFromAddress, addDestination, removeDestination, updateNights,
+      updateDestinationNotes,
       setDepartureDate, setAdults, setChildren, setInfants, setTripType,
       updateTransportLeg, changeTransportType, selectFlight, selectTrain,
       updateDestinationHotel, moveDestination, reorderDestinations,
-      saveTrip, loadTrip, resetTrip,
+      saveTrip, loadTrip, resetTrip, clearTripId,
     }}>
       {children}
     </TripContext.Provider>
