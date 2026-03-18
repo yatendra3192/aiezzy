@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Hotel, getHotelsForCity } from '@/data/mockData';
+import { Hotel } from '@/data/mockData';
 import { searchNearbyHotels, NearbyHotel } from '@/lib/googleApi';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
@@ -27,14 +27,13 @@ export default function HotelModal({
   const [search, setSearch] = useState('');
   const [googleHotels, setGoogleHotels] = useState<NearbyHotel[]>([]);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
-  const [useGoogle, setUseGoogle] = useState(false);
   // Hotel filters
   const [minRatingFilter, setMinRatingFilter] = useState<'all' | '3' | '4' | '4.5'>('all');
   const [hotelPriceFilter, setHotelPriceFilter] = useState<'all' | '5k' | '10k' | '15k'>('all');
 
   // Reset filters and data when modal opens for a different destination
   useEffect(() => {
-    if (isOpen) { setMinRatingFilter('all'); setHotelPriceFilter('all'); setSearch(''); setGoogleHotels([]); setUseGoogle(false); }
+    if (isOpen) { setMinRatingFilter('all'); setHotelPriceFilter('all'); setSearch(''); setGoogleHotels([]); }
   }, [isOpen, cityName]);
 
   // Fetch nearby hotels from Google when modal opens
@@ -44,14 +43,10 @@ export default function HotelModal({
       const query = locationQuery || cityName;
       searchNearbyHotels(query, 5000, checkInDate, checkOutDate).then(results => {
         setGoogleHotels(results);
-        setUseGoogle(results.length > 0);
         setLoadingGoogle(false);
       });
     }
   }, [isOpen, locationQuery, cityName]);
-
-  // Mock hotels as fallback
-  const mockHotels = getHotelsForCity(cityName);
 
   // Convert Google hotels to the Hotel interface for selection
   const googleAsHotels: Hotel[] = googleHotels.map((gh, i) => ({
@@ -62,7 +57,7 @@ export default function HotelModal({
     ratingColor: gh.rating >= 4 ? '#22c55e' : gh.rating >= 3 ? '#eab308' : '#ef4444',
   }));
 
-  const hotels = useGoogle ? googleAsHotels : mockHotels;
+  const hotels = googleAsHotels;
 
   const filtered = hotels.filter(h => {
     if (!h.name.toLowerCase().includes(search.toLowerCase())) return false;
@@ -153,27 +148,6 @@ export default function HotelModal({
                 </div>
               </div>
 
-              {/* Google/Mock toggle */}
-              {googleHotels.length > 0 && mockHotels.length > 0 && (
-                <div className="flex mt-2 gap-2">
-                  <button
-                    onClick={() => setUseGoogle(true)}
-                    className={`flex-1 py-1.5 text-[10px] font-body rounded-lg border transition-all ${
-                      useGoogle ? 'border-accent-cyan text-accent-cyan bg-accent-cyan/10' : 'border-border-subtle text-text-muted'
-                    }`}
-                  >
-                    Nearby (Google)
-                  </button>
-                  <button
-                    onClick={() => setUseGoogle(false)}
-                    className={`flex-1 py-1.5 text-[10px] font-body rounded-lg border transition-all ${
-                      !useGoogle ? 'border-accent-cyan text-accent-cyan bg-accent-cyan/10' : 'border-border-subtle text-text-muted'
-                    }`}
-                  >
-                    Curated List
-                  </button>
-                </div>
-              )}
 
               {/* Hotel filters */}
               <div className="mt-3 space-y-2">

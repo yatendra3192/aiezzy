@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 
   // Generate new token
-  const shareToken = crypto.randomUUID().slice(0, 8);
+  const shareToken = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 
   const { error: updateError } = await supabase
     .from('trips')

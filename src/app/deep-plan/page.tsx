@@ -6,6 +6,8 @@ import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, parseTime } from '@/lib/timeUtils';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatPrice } from '@/lib/currency';
 import { getDirections } from '@/lib/googleApi';
 import FlightModal from '@/components/FlightModal';
 import HotelModal from '@/components/HotelModal';
@@ -45,6 +47,7 @@ const TRANSPORT_ICONS: Record<string, string> = {
 export default function DeepPlanPage() {
   const router = useRouter();
   const trip = useTrip();
+  const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
 
   // Restore trip from sessionStorage on page reload
@@ -435,7 +438,7 @@ export default function DeepPlanPage() {
             {(flightCost + trainCost + hotelCost) > 0 && (
               <div className="pt-3 border-t border-border-subtle flex justify-between items-center">
                 <span className="text-xs text-text-secondary font-body">Estimated Total</span>
-                <span className="text-accent-cyan font-mono font-bold">&#8377;{(flightCost + trainCost + hotelCost).toLocaleString()}</span>
+                <span className="text-accent-cyan font-mono font-bold">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
               </div>
             )}
           </div>

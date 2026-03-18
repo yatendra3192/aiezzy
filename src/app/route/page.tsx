@@ -306,7 +306,18 @@ export default function RoutePage() {
     trip.destinations.forEach((dest, i) => {
       if (dest.selectedHotel || dest.nights === 0) return;
       pendingCountRef.current++;
-      fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}&checkIn=${trip.departureDate}&checkOut=${trip.departureDate}`)
+      // Calculate proper check-in/check-out dates for this destination
+      let hotelCheckInOffset = 0;
+      for (let d = 0; d < i; d++) {
+        hotelCheckInOffset += trip.destinations[d]?.nights || 1;
+      }
+      const checkInDate = new Date(trip.departureDate);
+      checkInDate.setDate(checkInDate.getDate() + hotelCheckInOffset);
+      const checkOutDate = new Date(checkInDate);
+      checkOutDate.setDate(checkOutDate.getDate() + (dest.nights || 1));
+      const checkInStr = checkInDate.toISOString().split('T')[0];
+      const checkOutStr = checkOutDate.toISOString().split('T')[0];
+      fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}&checkIn=${checkInStr}&checkOut=${checkOutStr}`)
         .then(r => r.json())
         .then(data => {
           const places = data.places || [];

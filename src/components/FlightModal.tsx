@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flight, getFlightsForRoute } from '@/data/mockData';
+import { Flight } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
 
 interface Props {
@@ -32,7 +32,7 @@ export default function FlightModal({
   const [sortBy, setSortBy] = useState<'price' | 'shortest'>('price');
   const [liveFlights, setLiveFlights] = useState<Flight[]>([]);
   const [loading, setLoading] = useState(false);
-  const [source, setSource] = useState<'live' | 'estimated' | 'mock'>('mock');
+  const [source, setSource] = useState<'live' | 'estimated' | 'none'>('none');
 
   // Fetch flights from API when modal opens
   useEffect(() => {
@@ -62,14 +62,13 @@ export default function FlightModal({
         })
         .catch(() => {
           setLoading(false);
-          setSource('mock');
+          setSource('none');
         });
     }
   }, [isOpen, fromCode, toCode, date, adults]);
 
-  // Use live flights if available, otherwise fall back to mock
-  const mockFlights = getFlightsForRoute(fromCode, toCode);
-  const flights = liveFlights.length > 0 ? liveFlights : mockFlights;
+  // Use live flights only — no mock fallback
+  const flights = liveFlights;
 
   const sorted = [...flights].sort((a, b) =>
     sortBy === 'price' ? a.pricePerAdult - b.pricePerAdult : a.duration.localeCompare(b.duration)
@@ -108,7 +107,7 @@ export default function FlightModal({
                         {current.airline} {current.flightNumber} &middot; &#8377;{current.pricePerAdult.toLocaleString()} &middot; {date}
                       </p>
                     )}
-                    {source !== 'mock' && (
+                    {source !== 'none' && (
                       <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
                         source === 'live' ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'
                       }`}>
@@ -148,6 +147,10 @@ export default function FlightModal({
                   <div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
                   <span className="text-text-muted text-sm ml-3 font-body">Searching flights...</span>
                 </div>
+              ) : sorted.length === 0 ? (
+                <p className="text-text-muted text-sm text-center py-8 font-body">
+                  No flights found for this route. Try different dates or airports.
+                </p>
               ) : (
                 sorted.map(flight => {
                   const isSelected = current?.id === flight.id;

@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatPrice } from '@/lib/currency';
 import ShareTripModal from '@/components/ShareTripModal';
 import AISuggestModal from '@/components/AISuggestModal';
 import TripTemplatesSection from '@/components/TripTemplatesSection';
@@ -34,6 +36,7 @@ export default function MyTripsPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
   const trip = useTrip();
+  const { currency } = useCurrency();
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -209,13 +212,13 @@ export default function MyTripsPage() {
                       {t.totalCost > 0 && (
                         <div className="mt-2 pt-2 border-t border-border-subtle space-y-1">
                           <div className="flex items-center gap-3 text-[10px]">
-                            {t.flightCost > 0 && <span className="text-text-secondary font-body">Flights: <span className="font-mono text-text-primary">&#8377;{t.flightCost.toLocaleString()}</span></span>}
-                            {t.trainCost > 0 && <span className="text-text-secondary font-body">Trains: <span className="font-mono text-text-primary">&#8377;{t.trainCost.toLocaleString()}</span></span>}
-                            {t.hotelCost > 0 && <span className="text-text-secondary font-body">Hotels: <span className="font-mono text-text-primary">&#8377;{t.hotelCost.toLocaleString()}</span></span>}
+                            {t.flightCost > 0 && <span className="text-text-secondary font-body">Flights: <span className="font-mono text-text-primary">{formatPrice(t.flightCost, currency)}</span></span>}
+                            {t.trainCost > 0 && <span className="text-text-secondary font-body">Trains: <span className="font-mono text-text-primary">{formatPrice(t.trainCost, currency)}</span></span>}
+                            {t.hotelCost > 0 && <span className="text-text-secondary font-body">Hotels: <span className="font-mono text-text-primary">{formatPrice(t.hotelCost, currency)}</span></span>}
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-body text-text-secondary">Total</span>
-                            <span className="text-sm font-mono font-bold text-accent-cyan">&#8377;{t.totalCost.toLocaleString()}</span>
+                            <span className="text-sm font-mono font-bold text-accent-cyan">{formatPrice(t.totalCost, currency)}</span>
                           </div>
                         </div>
                       )}

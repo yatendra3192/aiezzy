@@ -58,9 +58,8 @@ export const authOptions: NextAuthOptions = {
       if (user.email) {
         const supabase = createServiceClient();
 
-        // Check if user already exists
-        const { data: existingUsers } = await supabase.auth.admin.listUsers();
-        const existingUser = existingUsers?.users?.find(u => u.email === user.email);
+        // Check if user already exists (query profiles table directly — O(1) vs O(n) listUsers)
+        const { data: existingUser } = await supabase.from('profiles').select('id').eq('email', user.email).maybeSingle();
 
         if (!existingUser) {
           // Create new Supabase Auth user (triggers profile creation)
@@ -81,12 +80,11 @@ export const authOptions: NextAuthOptions = {
 
     async jwt({ token, user, account }) {
       if (user) {
-        // First sign-in: look up the Supabase user ID
+        // First sign-in: look up the Supabase user ID (query profiles table directly — O(1))
         const supabase = createServiceClient();
-        const { data: existingUsers } = await supabase.auth.admin.listUsers();
-        const supabaseUser = existingUsers?.users?.find(u => u.email === user.email);
-        if (supabaseUser) {
-          token.supabaseUserId = supabaseUser.id;
+        const { data: profile } = await supabase.from('profiles').select('id').eq('email', user.email).maybeSingle();
+        if (profile) {
+          token.supabaseUserId = profile.id;
         }
         token.name = user.name;
         token.picture = user.image;

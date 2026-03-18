@@ -18,10 +18,10 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
 
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     if (!/^(?=.*[a-zA-Z])(?=.*[0-9])/.test(password)) { setError('Password must be alphanumeric'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
-    if (!email) { setError('Email is required'); return; }
 
     setLoading(true);
 

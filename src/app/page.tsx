@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
@@ -13,10 +13,13 @@ export default function SignInPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // If already signed in, redirect to plan
-  if (status === 'authenticated') {
-    router.push('/my-trips');
-    return null;
+  // Redirect authenticated users via useEffect (not during render)
+  useEffect(() => {
+    if (status === 'authenticated') router.push('/my-trips');
+  }, [status, router]);
+
+  if (status === 'authenticated' || status === 'loading') {
+    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -70,9 +73,10 @@ export default function SignInPage() {
 
           <form onSubmit={handleSignIn} className="space-y-4">
             <input
-              type="text"
+              type="email"
               placeholder="Email address"
               aria-label="Email address"
+              required
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan"
@@ -82,6 +86,7 @@ export default function SignInPage() {
                 type="password"
                 placeholder="Password"
                 aria-label="Password"
+                required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan"

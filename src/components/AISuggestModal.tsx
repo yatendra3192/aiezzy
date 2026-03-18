@@ -75,9 +75,20 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
   const handleUsePlan = () => {
     if (!suggestion) return;
 
+    // Preserve user's existing origin before reset
+    const savedFrom = trip.from?.name ? { ...trip.from } : null;
+    const savedFromAddress = trip.fromAddress || null;
+
     trip.resetTrip();
-    trip.setFrom({ name: 'Mumbai', country: 'India', fullName: 'Mumbai, Maharashtra, India' });
-    trip.setFromAddress('Mumbai, Maharashtra, India');
+
+    // Restore user's origin, or fall back to Mumbai if none was set
+    if (savedFrom) {
+      trip.setFrom(savedFrom);
+      if (savedFromAddress) trip.setFromAddress(savedFromAddress);
+    } else {
+      trip.setFrom({ name: 'Mumbai', country: 'India', fullName: 'Mumbai, Maharashtra, India' });
+      trip.setFromAddress('Mumbai, Maharashtra, India');
+    }
 
     // Small delay to ensure resetTrip state update has propagated
     setTimeout(() => {

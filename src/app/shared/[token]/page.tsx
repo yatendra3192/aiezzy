@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { timeStr12 } from '@/lib/timeUtils';
+import { formatPrice } from '@/lib/currency';
 
 const transportIcons: Record<string, string> = {
   drive: 'M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2M7 14h.01M17 14h.01M6 3h12l1 5H5z',
@@ -218,8 +219,8 @@ export default function SharedTripPage() {
                                 <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-text-secondary font-body">&#8377;{hotel.pricePerNight.toLocaleString()}/night &times; {nights}</span>
-                                <span className="text-accent-cyan font-mono font-bold">&#8377;{totalPrice.toLocaleString()}</span>
+                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, 'INR')}/night &times; {nights}</span>
+                                <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, 'INR')}</span>
                               </div>
                             </div>
                           );
@@ -287,8 +288,8 @@ export default function SharedTripPage() {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">&#8377;{leg.selectedFlight.pricePerAdult?.toLocaleString()}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedFlight.pricePerAdult * trip.adults).toLocaleString()}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedFlight.pricePerAdult, 'INR')}/pax &times; {trip.adults}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedFlight.pricePerAdult * trip.adults, 'INR')}</span>
                             </div>
                           </div>
                         )}
@@ -317,8 +318,8 @@ export default function SharedTripPage() {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">&#8377;{leg.selectedTrain.price?.toLocaleString()}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">&#8377;{(leg.selectedTrain.price * trip.adults).toLocaleString()}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, 'INR')}/pax &times; {trip.adults}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, 'INR')}</span>
                             </div>
                           </div>
                         )}
@@ -347,13 +348,13 @@ export default function SharedTripPage() {
                 <span className="text-text-secondary">{trip.destinations.length} cities &middot; {trip.totalNights} nights</span>
                 <span className="text-text-muted">{trip.adults} pax</span>
               </div>
-              {trip.flightCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Flights</span><span className="text-text-primary font-mono">&#8377;{trip.flightCost.toLocaleString()}</span></div>}
-              {trip.trainCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Trains</span><span className="text-text-primary font-mono">&#8377;{trip.trainCost.toLocaleString()}</span></div>}
-              {trip.hotelCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Hotels</span><span className="text-text-primary font-mono">&#8377;{trip.hotelCost.toLocaleString()}</span></div>}
+              {trip.flightCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Flights</span><span className="text-text-primary font-mono">{formatPrice(trip.flightCost, 'INR')}</span></div>}
+              {trip.trainCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Trains</span><span className="text-text-primary font-mono">{formatPrice(trip.trainCost, 'INR')}</span></div>}
+              {trip.hotelCost > 0 && <div className="flex justify-between text-xs font-body"><span className="text-text-secondary">Hotels</span><span className="text-text-primary font-mono">{formatPrice(trip.hotelCost, 'INR')}</span></div>}
               {trip.totalCost > 0 ? (
                 <div className="flex justify-between text-sm font-body pt-2 border-t border-border-subtle">
                   <span className="text-text-primary font-semibold">Estimated Total</span>
-                  <span className="text-accent-cyan font-mono font-bold">&#8377;{trip.totalCost.toLocaleString()}</span>
+                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(trip.totalCost, 'INR')}</span>
                 </div>
               ) : (
                 <p className="text-text-muted text-xs font-body italic">No cost data available</p>
