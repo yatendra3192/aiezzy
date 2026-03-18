@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
         'apikey': CATALOG_KEY,
         'Authorization': `Bearer ${CATALOG_KEY}`,
       },
-      body: JSON.stringify({ lat, lng, radius_km: 800 }),
+      body: JSON.stringify({ lat, lng, radius_km: 1000 }),
     });
     const allAirports = await rpcRes.json();
 
