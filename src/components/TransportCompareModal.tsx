@@ -198,9 +198,10 @@ export default function TransportCompareModal({
   }, [isOpen, tab]);
 
   // Fetch nearby airports list for the departure city (within 1000km)
+  // Use city name (not code) so it geocodes and finds ALL nearby airports
   useEffect(() => {
     if (!isOpen || tab !== 'flight' || nearbyAirports.length > 0) return;
-    const searchFrom = fromCode || fromCity;
+    const searchFrom = fromCity || fromCode;
     if (!searchFrom) return;
     fetch(`/api/flights?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(toCode || toCity)}&date=${date}&adults=${adults}&nearbyOnly=true`)
       .then(r => r.json())
