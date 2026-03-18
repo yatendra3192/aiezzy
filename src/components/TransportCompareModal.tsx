@@ -114,6 +114,9 @@ export default function TransportCompareModal({
   // Flight filters
   const [flightStopsFilter, setFlightStopsFilter] = useState<'all' | 'direct' | '1stop' | '2plus'>('all');
   const [flightPriceFilter, setFlightPriceFilter] = useState<'all' | '10k' | '20k' | '50k'>('all');
+  // Nearby airports dropdown
+  const [nearbyAirports, setNearbyAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
+  const [selectedAirportFilter, setSelectedAirportFilter] = useState<string>('');
   const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
   const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
 
@@ -124,7 +127,7 @@ export default function TransportCompareModal({
       setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
-      setFlightStopsFilter('all'); setFlightPriceFilter('all');
+      setFlightStopsFilter('all'); setFlightPriceFilter('all'); setSelectedAirportFilter(''); setNearbyAirports([]);
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
         setFlights(cachedFlights.map((f: any, i: number) => ({
@@ -193,6 +196,49 @@ export default function TransportCompareModal({
     if (flights.length > 0 && !(!cachedFlights && flights.length === 1 && flights[0]?.id?.startsWith('selected-'))) return;
     fetchFlights();
   }, [isOpen, tab]);
+
+  // Fetch nearby airports list for the departure city (within 1000km)
+  useEffect(() => {
+    if (!isOpen || tab !== 'flight' || nearbyAirports.length > 0) return;
+    const searchFrom = fromCode || fromCity;
+    if (!searchFrom) return;
+    fetch(`/api/flights?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(toCode || toCity)}&date=${date}&adults=${adults}&nearbyOnly=true`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.nearbyAirports?.length > 0) {
+          setNearbyAirports(data.nearbyAirports);
+        }
+      }).catch(() => {});
+  }, [isOpen, tab]);
+
+  // Fetch flights from a different departure airport
+  const fetchFromAirport = (airportCode: string) => {
+    setSelectedAirportFilter(airportCode);
+    if (!airportCode) { fetchFlights(); return; }
+    setLoadingFlights(true);
+    fetch(`/api/flights?from=${encodeURIComponent(airportCode)}&to=${encodeURIComponent(toCode || toCity)}&date=${date}&adults=${adults}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.flights?.length > 0) {
+          const resolvedRoute = `${data.fromResolved || airportCode}-${data.toResolved || toCode}`;
+          const mapped = data.flights.map((f: any, i: number) => ({
+            id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+            departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
+            route: resolvedRoute, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
+            depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
+            layovers: f.layovers, isNextDay: f.isNextDay,
+            co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+          }));
+          if (selectedFlight && !mapped.some((f: any) => f.flightNumber === selectedFlight.flightNumber)) {
+            mapped.unshift({ ...selectedFlight, id: `selected-${selectedFlight.flightNumber}` });
+          }
+          setFlights(mapped);
+        } else {
+          setFlights(selectedFlight ? [{ ...selectedFlight, id: `selected-${selectedFlight.flightNumber}` }] : []);
+        }
+        setLoadingFlights(false);
+      }).catch(() => setLoadingFlights(false));
+  };
 
   // Fetch trains
   useEffect(() => {
@@ -407,35 +453,32 @@ export default function TransportCompareModal({
                   </div>
                   )}
 
-                  {/* Flight filters — only show when 3+ flights */}
+                  {/* Flight filters — compact dropdowns */}
                   {flights.length >= 3 && (userAcceptedNearby || !nearbyAirportPrompt) && (
-                    <div className="mb-3 space-y-2">
-                      <div>
-                        <p className="text-[10px] font-body text-text-muted mb-1">Stops</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {([['all', 'All'], ['direct', 'Direct'], ['1stop', '1 stop'], ['2plus', '2+ stops']] as const).map(([val, label]) => (
-                            <button key={val} onClick={() => setFlightStopsFilter(val)}
-                              className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
-                                flightStopsFilter === val
-                                  ? 'bg-accent-cyan text-white border-accent-cyan'
-                                  : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
-                              }`}>{label}</button>
+                    <div className="mb-3 flex gap-2 flex-wrap">
+                      <select value={flightStopsFilter} onChange={e => setFlightStopsFilter(e.target.value as any)}
+                        className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                        <option value="all">All Stops</option>
+                        <option value="direct">Direct</option>
+                        <option value="1stop">1 Stop</option>
+                        <option value="2plus">2+ Stops</option>
+                      </select>
+                      <select value={flightPriceFilter} onChange={e => setFlightPriceFilter(e.target.value as any)}
+                        className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                        <option value="all">Any Price</option>
+                        <option value="10k">Under ₹10K</option>
+                        <option value="20k">Under ₹20K</option>
+                        <option value="50k">Under ₹50K</option>
+                      </select>
+                      {nearbyAirports.length > 0 && (
+                        <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
+                          className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                          <option value="">Current Airport</option>
+                          {nearbyAirports.map(ap => (
+                            <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
                           ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-body text-text-muted mb-1">Max Price</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {([['all', 'All'], ['10k', 'Under \u20B910K'], ['20k', 'Under \u20B920K'], ['50k', 'Under \u20B950K']] as const).map(([val, label]) => (
-                            <button key={val} onClick={() => setFlightPriceFilter(val)}
-                              className={`px-2 py-1 rounded-full border text-[10px] font-body transition-all ${
-                                flightPriceFilter === val
-                                  ? 'bg-accent-cyan text-white border-accent-cyan'
-                                  : 'border-border-subtle text-text-secondary hover:border-accent-cyan/40'
-                              }`}>{label}</button>
-                          ))}
-                        </div>
-                      </div>
+                        </select>
+                      )}
                     </div>
                   )}
 

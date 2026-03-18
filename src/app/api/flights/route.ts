@@ -27,6 +27,8 @@ export async function GET(req: NextRequest) {
   const type = req.nextUrl.searchParams.get('type') || '2';
   const returnDate = req.nextUrl.searchParams.get('returnDate') || '';
 
+  const nearbyOnly = req.nextUrl.searchParams.get('nearbyOnly') === 'true';
+
   if (!from || !to || !date) {
     return NextResponse.json({ error: 'Missing params: from, to, date required' }, { status: 400 });
   }
@@ -43,8 +45,17 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         status: 'OK', from, to, date, adults: parseInt(adults),
         flights: [], source: 'none',
+        nearbyAirports: [],
         error: `Could not resolve airports for ${fromAirports.length === 0 ? from : to}`,
       });
+    }
+
+    // If nearbyOnly, just return the list of nearby departure airports (within 1000km)
+    if (nearbyOnly) {
+      const nearby = fromAirports
+        .filter(ap => ap.distance <= 1000)
+        .map(ap => ({ code: ap.code, city: ap.city || ap.name, distance: ap.distance }));
+      return NextResponse.json({ nearbyAirports: nearby });
     }
 
     // Step 2: Try departure airports × first arrival airport in PARALLEL
