@@ -475,8 +475,9 @@ export default function TransportCompareModal({
                       </select>
                       {nearbyAirports.length > 0 && (
                         <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
+                          aria-label="Nearby airports within 1000 km"
                           className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                          <option value="">Current Airport</option>
+                          <option value="">Nearby Airports (1000 km)</option>
                           {nearbyAirports.map(ap => (
                             <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
                           ))}
