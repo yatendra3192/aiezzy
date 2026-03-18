@@ -1163,8 +1163,8 @@ export default function RoutePage() {
             onClose={() => setTransportModal(null)}
             fromCity={fromCity?.name || ''}
             toCity={toCity?.name || ''}
-            fromCode={findAirportCode(fromCity) || ''}
-            toCode={findAirportCode(toCity) || ''}
+            fromCode={resolvedAirportsRef.current[transportModal.legIndex]?.fromCode || leg?.resolvedAirports?.fromCode || findAirportCode(fromCity) || ''}
+            toCode={resolvedAirportsRef.current[transportModal.legIndex]?.toCode || leg?.resolvedAirports?.toCode || findAirportCode(toCity) || ''}
             fromAirport={findAirportName(fromCity)}
             toAirport={findAirportName(toCity)}
             date={legDateStr}
