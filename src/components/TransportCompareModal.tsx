@@ -217,6 +217,8 @@ export default function TransportCompareModal({
     setSelectedAirportFilter(airportCode);
     if (!airportCode) { fetchFlights(); return; }
     setLoadingFlights(true);
+    setFlights([]); // Clear old flights immediately
+    // Use the exact airport code — don't let the API fall back to other airports
     fetch(`/api/flights?from=${encodeURIComponent(airportCode)}&to=${encodeURIComponent(toCode || toCity)}&date=${date}&adults=${adults}`)
       .then(r => r.json())
       .then(data => {
@@ -484,9 +486,12 @@ export default function TransportCompareModal({
                   )}
 
                   {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
-                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights...</span></div>
+                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights{selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}...</span></div>
                   ) : flights.length === 0 ? (
-                    <p className="text-text-muted text-sm text-center py-12">No flights found for this route</p>
+                    <div className="text-center py-12">
+                      <p className="text-text-muted text-sm">{selectedAirportFilter ? `No flights found from ${selectedAirportFilter}` : 'No flights found for this route'}</p>
+                      {selectedAirportFilter && <p className="text-text-muted text-[10px] mt-1">Try selecting a different airport above</p>}
+                    </div>
                   ) : sortedFlights.length === 0 ? (
                     <p className="text-text-muted text-sm text-center py-8">No flights match your filters. Try adjusting the filters above.</p>
                   ) : (
