@@ -28,12 +28,19 @@ const RATES_VS_INR: Record<CurrencyCode, number> = {
 };
 
 export function convertFromINR(amountINR: number, toCurrency: CurrencyCode): number {
-  return Math.round(amountINR * RATES_VS_INR[toCurrency]);
+  const converted = amountINR * RATES_VS_INR[toCurrency];
+  // JPY doesn't use decimal places
+  return toCurrency === 'JPY' ? Math.round(converted) : Math.round(converted * 100) / 100;
 }
 
 export function formatPrice(amountINR: number, currency: CurrencyCode): string {
   const converted = convertFromINR(amountINR, currency);
-  return `${CURRENCIES[currency].symbol}${converted.toLocaleString()}`;
+  if (currency === 'JPY') return `${CURRENCIES[currency].symbol}${converted.toLocaleString()}`;
+  // Show decimals for non-INR currencies with small amounts
+  if (currency !== 'INR' && converted < 100) {
+    return `${CURRENCIES[currency].symbol}${converted.toFixed(2)}`;
+  }
+  return `${CURRENCIES[currency].symbol}${Math.round(converted).toLocaleString()}`;
 }
 
 export { CURRENCIES, type CurrencyCode };

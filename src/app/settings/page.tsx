@@ -93,6 +93,10 @@ export default function SettingsPage() {
       setPasswordMsg({ type: 'error', text: 'New password must be at least 8 characters' });
       return;
     }
+    if (!/^(?=.*[a-zA-Z])(?=.*[0-9])/.test(newPassword)) {
+      setPasswordMsg({ type: 'error', text: 'Password must contain letters and numbers' });
+      return;
+    }
     if (newPassword !== confirmPassword) {
       setPasswordMsg({ type: 'error', text: 'Passwords do not match' });
       return;

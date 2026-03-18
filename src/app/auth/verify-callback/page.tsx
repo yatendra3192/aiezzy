@@ -17,9 +17,8 @@ export default function VerifyCallbackPage() {
       setStatus('success');
       setTimeout(() => router.push('/'), 2500);
     } else {
-      // Direct navigation or expired link
-      setStatus('success');
-      setTimeout(() => router.push('/'), 2500);
+      // No tokens — just redirect to sign-in
+      router.push('/');
     }
   }, [router]);
 

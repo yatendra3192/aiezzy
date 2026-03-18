@@ -105,6 +105,8 @@ export default function MyTripsPage() {
   const handleDuplicateTrip = async (tripId: string) => {
     try {
       await trip.loadTrip(tripId);
+      // Small delay to ensure React processes loadTrip state update
+      await new Promise(r => setTimeout(r, 50));
       trip.clearTripId();
       router.push('/plan');
     } catch (err) {

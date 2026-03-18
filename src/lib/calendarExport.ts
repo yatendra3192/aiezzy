@@ -118,6 +118,8 @@ export function generateICS(trip: TripData): string {
     const fromName = fromCity?.name || 'Origin';
     const toName = toCity?.name || 'Destination';
 
+    // Note: times are in the trip planner's local timezone. International flights
+    // may show departure/arrival times that don't match the airport's local time.
     if (leg.selectedFlight) {
       const f = leg.selectedFlight;
       const depTime = f.departure || '00:00';

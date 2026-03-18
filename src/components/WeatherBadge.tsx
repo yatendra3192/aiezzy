@@ -35,7 +35,7 @@ export default function WeatherBadge({ city, date }: WeatherBadgeProps) {
     const dateObj = new Date(date);
     const now = new Date();
     const diffDays = (dateObj.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > 15 || diffDays < 0) { setLoading(false); return; }
+    if (diffDays > 15 || diffDays < -1) { setLoading(false); return; }
 
     let cancelled = false;
     setLoading(true);

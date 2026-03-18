@@ -5,6 +5,7 @@ const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
 const AMADEUS_API_KEY = process.env.AMADEUS_API_KEY || '';
 const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET || '';
+// NOTE: Default is Amadeus test/sandbox. Set AMADEUS_BASE_URL=https://api.amadeus.com for production
 const AMADEUS_BASE_URL = process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com';
 
 /**
@@ -159,29 +160,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/**
- * Pick a spread of airports: closest + spaced out to cover major hubs.
- * E.g., from [IDR(103), UDR(184), BDQ(216), BHO(235), AMD(247), STV(341), BOM(521)]
- * picks: IDR(103), BDQ(216), STV(341), BOM(521) — covering 100-500km range
- */
-function pickSpreadCandidates(airports: AirportCandidate[], maxCount: number): AirportCandidate[] {
-  if (airports.length <= maxCount) return airports;
-
-  const picked: AirportCandidate[] = [airports[0]]; // always include closest
-  let lastDist = airports[0].distance;
-
-  for (const ap of airports.slice(1)) {
-    if (picked.length >= maxCount) break;
-    // Include if it's 100+km farther than last picked, OR if it's one of the first 2
-    if (picked.length < 2 || ap.distance > lastDist + 75) {
-      picked.push(ap);
-      lastDist = ap.distance;
-    }
-  }
-
-  return picked;
-}
-
 // ─── Resolve city to list of nearby airports ──────────────────────────────────
 
 interface AirportCandidate {
@@ -193,7 +171,7 @@ interface AirportCandidate {
 
 async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
   // Fast path: already an IATA code — no alternatives needed
-  if (/^[A-Z]{2,3}$/.test(input)) {
+  if (/^[A-Z]{3}$/.test(input)) {
     return [{ code: input, name: '', city: '', distance: 0 }];
   }
 
@@ -324,7 +302,7 @@ async function fetchLiveFlights(
     return {
       airline,
       airlineCode,
-      flightNumber: first.flight_number || `${airlineCode}${Math.floor(Math.random() * 900 + 100)}`,
+      flightNumber: first.flight_number || airlineCode || '',
       departure: depTime,
       arrival: arrTime,
       depAirportCode: dep.id || from,
@@ -456,7 +434,7 @@ const NEARBY_AIRPORT_CITIES = new Set([
 
 /** Check if a city uses a DIFFERENT city's airport (not its own) */
 function isNearbyAirport(input: string, resolved: string): boolean {
-  if (/^[A-Z]{2,3}$/.test(input)) return false; // Already an IATA code
+  if (/^[A-Z]{3}$/.test(input)) return false; // Already an IATA code
   const lower = input.toLowerCase().trim();
   // If the city has its own airport in the mapping, it's NOT nearby
   if (CITY_TO_AIRPORT[lower] && !NEARBY_AIRPORT_CITIES.has(lower)) return false;
@@ -467,8 +445,8 @@ function isNearbyAirport(input: string, resolved: string): boolean {
 }
 
 function resolveAirportCode(input: string): string {
-  // Already an IATA code (2-3 uppercase letters)
-  if (/^[A-Z]{2,3}$/.test(input)) return input;
+  // Already an IATA code (3 uppercase letters)
+  if (/^[A-Z]{3}$/.test(input)) return input;
 
   const lower = input.toLowerCase().trim();
 
@@ -480,7 +458,7 @@ function resolveAirportCode(input: string): string {
 
   // 3. Try partial match on curated mapping
   for (const [city, code] of Object.entries(CITY_TO_AIRPORT)) {
-    if (lower.includes(city) || city.includes(lower)) return code;
+    if (lower.includes(city)) return code;
   }
 
   // 4. Try partial match on global database

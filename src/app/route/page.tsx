@@ -58,6 +58,7 @@ export default function RoutePage() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSavingRef = useRef(false);
   const mountedRef = useRef(false);
+  const autoSelectLoadingRef = useRef(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saved' | 'error'>('idle');
 
   // Count selected items to detect when data is ready
@@ -69,10 +70,11 @@ export default function RoutePage() {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     // Only save when there's at least one selection
     if (selectedCount === 0) return;
-
     setAutoSaveStatus('pending');
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
+      // Don't auto-save while auto-selecting
+      if (autoSelectLoadingRef.current) return;
       if (isSavingRef.current) return;
       isSavingRef.current = true;
       try {
@@ -149,6 +151,7 @@ export default function RoutePage() {
     pendingCountRef.current += delta;
     if (pendingCountRef.current <= 0) {
       pendingCountRef.current = 0;
+      autoSelectLoadingRef.current = false;
       setAutoSelectLoading(false);
     }
   };
@@ -170,6 +173,7 @@ export default function RoutePage() {
     const needsHotels = trip.destinations.some(d => !d.selectedHotel && d.nights > 0);
 
     if (needsFlights || needsHotels) {
+      autoSelectLoadingRef.current = true;
       setAutoSelectLoading(true);
     }
 
@@ -201,7 +205,7 @@ export default function RoutePage() {
 
       let dayOffset = 0;
       for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
-        dayOffset += trip.destinations[d].nights || 1;
+        dayOffset += trip.destinations[d].nights ?? 0;
       }
       const legDate = new Date(trip.departureDate);
       legDate.setDate(legDate.getDate() + dayOffset);
@@ -309,12 +313,12 @@ export default function RoutePage() {
       // Calculate proper check-in/check-out dates for this destination
       let hotelCheckInOffset = 0;
       for (let d = 0; d < i; d++) {
-        hotelCheckInOffset += trip.destinations[d]?.nights || 1;
+        hotelCheckInOffset += trip.destinations[d]?.nights ?? 0;
       }
       const checkInDate = new Date(trip.departureDate);
       checkInDate.setDate(checkInDate.getDate() + hotelCheckInOffset);
       const checkOutDate = new Date(checkInDate);
-      checkOutDate.setDate(checkOutDate.getDate() + (dest.nights || 1));
+      checkOutDate.setDate(checkOutDate.getDate() + (dest.nights ?? 1));
       const checkInStr = checkInDate.toISOString().split('T')[0];
       const checkOutStr = checkOutDate.toISOString().split('T')[0];
       fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}&checkIn=${checkInStr}&checkOut=${checkOutStr}`)
@@ -430,7 +434,7 @@ export default function RoutePage() {
     for (let s = 0; s < stopIdx; s++) {
       // Add nights at destination s (if it's a destination, not home)
       if (s > 0 && s - 1 < trip.destinations.length) {
-        d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights || 1));
+        d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights ?? 0));
       }
       // Add travel days for overnight transport from stop s
       const tLeg = s < trip.transportLegs.length ? trip.transportLegs[s] : null;
@@ -533,7 +537,7 @@ export default function RoutePage() {
                 for (let s = 0; s < i; s++) {
                   // Add nights at destination s (if it's a destination, not home)
                   if (s > 0 && s - 1 < trip.destinations.length) {
-                    d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights || 1));
+                    d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights ?? 0));
                   }
                   // Add travel days for the transport leg FROM stop s
                   // Check if the flight/train arriving at stop s+1 is overnight
