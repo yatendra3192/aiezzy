@@ -52,14 +52,13 @@ export default function DeepPlanPage() {
 
   // Restore trip from sessionStorage on page reload
   useEffect(() => {
-    if (trip.tripId || trip.destinations.length > 0) return;
-    try {
-      const savedId = sessionStorage.getItem('currentTripId');
-      if (savedId) {
-        setIsRestoring(true);
-        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
-      }
-    } catch {}
+    if (trip.destinations.length > 0) return; // Already have destinations in context
+
+    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    if (idToLoad) {
+      setIsRestoring(true);
+      trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);

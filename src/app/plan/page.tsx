@@ -225,14 +225,13 @@ export default function PlanPage() {
 
   // Restore trip from sessionStorage on page reload
   useEffect(() => {
-    if (trip.tripId || trip.destinations.length > 0) return;
-    try {
-      const savedId = sessionStorage.getItem('currentTripId');
-      if (savedId) {
-        setIsRestoring(true);
-        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
-      }
-    } catch {}
+    if (trip.destinations.length > 0) return; // Already have destinations in context
+
+    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    if (idToLoad) {
+      setIsRestoring(true);
+      trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [showAISuggest, setShowAISuggest] = useState(false);
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
@@ -240,10 +239,24 @@ export default function PlanPage() {
   const [optimizedOrder, setOptimizedOrder] = useState<typeof trip.destinations | null>(null);
   const [optimizeSavings, setOptimizeSavings] = useState('');
 
+  // Save trip to DB before navigating to /route (prevents data loss on page refresh)
+  const saveTripBeforeNavigate = async () => {
+    try {
+      const tripId = await trip.saveTrip();
+      if (tripId) {
+        try { sessionStorage.setItem('currentTripId', tripId); } catch {}
+      }
+    } catch (e) {
+      console.error('Pre-navigation save failed:', e);
+      // Continue navigation even if save fails — data is still in context
+    }
+  };
+
   // Route optimization: find the shortest path using nearest neighbor algorithm
   const optimizeRoute = async () => {
     if (trip.destinations.length < 3) {
       // 2 or fewer destinations - no optimization needed
+      await saveTripBeforeNavigate();
       router.push('/route');
       return;
     }
@@ -342,6 +355,7 @@ export default function PlanPage() {
       if (isAlreadyOptimal) {
         setShowOptimizeModal(false);
         setOptimizing(false);
+        await saveTripBeforeNavigate();
         router.push('/route');
         return;
       }
@@ -362,22 +376,25 @@ export default function PlanPage() {
     } catch {
       setOptimizing(false);
       setShowOptimizeModal(false);
+      await saveTripBeforeNavigate();
       router.push('/route');
     }
   };
 
-  const applyOptimization = () => {
+  const applyOptimization = async () => {
     if (optimizedOrder) {
       trip.reorderDestinations(optimizedOrder);
     }
     setShowOptimizeModal(false);
     setOptimizedOrder(null);
+    await saveTripBeforeNavigate();
     router.push('/route');
   };
 
-  const skipOptimization = () => {
+  const skipOptimization = async () => {
     setShowOptimizeModal(false);
     setOptimizedOrder(null);
+    await saveTripBeforeNavigate();
     router.push('/route');
   };
 

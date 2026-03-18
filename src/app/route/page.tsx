@@ -44,14 +44,14 @@ export default function RoutePage() {
   // Restore trip from sessionStorage on page reload
   const [isRestoring, setIsRestoring] = useState(false);
   useEffect(() => {
-    if (trip.tripId || trip.destinations.length > 0) return; // Already have data
-    try {
-      const savedId = sessionStorage.getItem('currentTripId');
-      if (savedId) {
-        setIsRestoring(true);
-        trip.loadTrip(savedId).catch(() => {}).finally(() => setIsRestoring(false));
-      }
-    } catch {}
+    if (trip.destinations.length > 0) return; // Already have destinations in context
+
+    // Try to reload from DB: use tripId from context, or from sessionStorage
+    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    if (idToLoad) {
+      setIsRestoring(true);
+      trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save: save 5s after any selection changes

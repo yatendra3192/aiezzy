@@ -5,6 +5,18 @@ import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
 
+// Map NextAuth error codes to user-friendly messages
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  OAuthSignin: 'Could not start sign in. Please try again.',
+  OAuthCallback: 'Sign in failed. Please try again.',
+  OAuthCreateAccount: 'Could not create account. Please try again.',
+  Callback: 'Sign in failed. Please try again.',
+  OAuthAccountNotLinked: 'This email is already linked to another sign-in method.',
+  CredentialsSignin: 'Invalid email or password.',
+  SessionRequired: 'Please sign in to continue.',
+  Default: 'Something went wrong. Please try again.',
+};
+
 export default function SignInPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
@@ -12,6 +24,17 @@ export default function SignInPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Show error from NextAuth redirect (e.g., OAuth failure redirects to /?error=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const authError = params.get('error');
+      if (authError) {
+        setError(AUTH_ERROR_MESSAGES[authError] || AUTH_ERROR_MESSAGES.Default);
+      }
+    } catch {}
+  }, []);
 
   // Redirect authenticated users via useEffect (not during render)
   useEffect(() => {
@@ -27,17 +50,22 @@ export default function SignInPage() {
     setError('');
     setLoading(true);
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
+      });
 
-    setLoading(false);
-    if (result?.error) {
-      setError('Invalid email or password');
-    } else {
-      router.push('/my-trips');
+      setLoading(false);
+      if (result?.error) {
+        setError('Invalid email or password');
+      } else {
+        router.push('/my-trips');
+      }
+    } catch (err) {
+      setLoading(false);
+      setError('Network error. Please check your connection and try again.');
     }
   };
 
