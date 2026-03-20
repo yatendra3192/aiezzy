@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import { motion, Reorder } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
-import { CITIES, City } from '@/data/mockData';
+import { CITIES, City, Place } from '@/data/mockData';
 import { searchPlaces, getPlaceDetails, PlacePrediction } from '@/lib/googleApi';
 import AISuggestModal from '@/components/AISuggestModal';
 
@@ -98,11 +98,44 @@ function PlacesAutocomplete({
           (realCity && c.name.toLowerCase() === realCity.toLowerCase()) ||
           pred.description.toLowerCase().includes(c.name.toLowerCase())
         );
+        // Resolve parentCity with multiple fallbacks:
+        // 1. Google locality (realCity) — most reliable when present
+        // 2. Known city match from description (cityInName)
+        // 3. Parse from secondaryText (e.g., "Paris, France" → "Paris")
+        // 4. Parse from formattedAddress (second-to-last comma segment before country)
+        // 5. Last resort: use the place name itself
+        let resolvedParentCity = realCity;
+        if (!resolvedParentCity && cityInName) {
+          resolvedParentCity = cityInName.name;
+        }
+        if (!resolvedParentCity && pred.secondaryText) {
+          // secondaryText is typically "City, Country" or "Street, City, Country"
+          const parts = pred.secondaryText.split(',').map(s => s.trim());
+          // Try to find a known city in the parts
+          const knownPart = parts.find(p => CITIES.some(c => c.name.toLowerCase() === p.toLowerCase()));
+          resolvedParentCity = knownPart || parts[0] || '';
+        }
+        if (!resolvedParentCity && details?.formattedAddress) {
+          // formattedAddress: "Musée du Louvre, Rue de Rivoli, 75001 Paris, France"
+          const addrParts = details.formattedAddress.split(',').map(s => s.trim());
+          if (addrParts.length >= 3) {
+            // Second-to-last part often contains "75001 Paris" — strip postal code
+            const cityPart = addrParts[addrParts.length - 2].replace(/^\d{3,6}\s*/, '');
+            resolvedParentCity = cityPart;
+          }
+        }
+        if (!resolvedParentCity) resolvedParentCity = pred.mainText;
+
+        // Resolve country with fallback
+        const resolvedCountry = details?.country || cityInName?.country
+          || (pred.secondaryText ? pred.secondaryText.split(',').map(s => s.trim()).pop() : '')
+          || '';
+
         onSelect({
           name: pred.mainText,
-          country: details?.country || '',
+          country: resolvedCountry,
           fullName: pred.description,
-          parentCity: realCity || pred.mainText,
+          parentCity: resolvedParentCity,
           // Inherit airport/train station from the known city
           ...(cityInName?.airport ? { airport: cityInName.airport, airportCode: cityInName.airportCode } : {}),
           ...(cityInName?.trainStation ? { trainStation: cityInName.trainStation } : {}),
@@ -216,18 +249,20 @@ function Counter({ value, onChange, min = 0 }: { value: number; onChange: (n: nu
 
 // ─── Plan Page ───────────────────────────────────────────────────────────────
 
-export default function PlanPage() {
+function PlanPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTripId = searchParams.get('id');
   const { data: session } = useSession();
   const trip = useTrip();
   const [isRestoring, setIsRestoring] = useState(false);
   const [editingFrom, setEditingFrom] = useState(!trip.fromAddress);
 
-  // Restore trip from sessionStorage on page reload
+  // Restore trip from URL param, context, or sessionStorage on page reload
   useEffect(() => {
-    if (trip.destinations.length > 0) return; // Already have destinations in context
+    if (trip.destinations.length > 0 || trip.userPlaces.length > 0) return; // Already have data in context
 
-    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
       trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
@@ -238,17 +273,29 @@ export default function PlanPage() {
   const [optimizing, setOptimizing] = useState(false);
   const [optimizedOrder, setOptimizedOrder] = useState<typeof trip.destinations | null>(null);
   const [optimizeSavings, setOptimizeSavings] = useState('');
+  const [pendingOptimize, setPendingOptimize] = useState(false);
+
+  // After groupPlacesIntoCities populates destinations, trigger route optimization
+  useEffect(() => {
+    if (pendingOptimize && trip.destinations.length > 0) {
+      setPendingOptimize(false);
+      optimizeRoute();
+    }
+  }, [pendingOptimize, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save trip to DB before navigating to /route (prevents data loss on page refresh)
-  const saveTripBeforeNavigate = async () => {
+  // Returns the tripId so callers can include it in the URL
+  const saveTripBeforeNavigate = async (): Promise<string | null> => {
     try {
       const tripId = await trip.saveTrip();
       if (tripId) {
         try { sessionStorage.setItem('currentTripId', tripId); } catch {}
       }
+      return tripId || null;
     } catch (e) {
       console.error('Pre-navigation save failed:', e);
       // Continue navigation even if save fails — data is still in context
+      return trip.tripId || null;
     }
   };
 
@@ -256,8 +303,8 @@ export default function PlanPage() {
   const optimizeRoute = async () => {
     if (trip.destinations.length < 3) {
       // 2 or fewer destinations - no optimization needed
-      await saveTripBeforeNavigate();
-      router.push('/route');
+      const tripId = await saveTripBeforeNavigate();
+      router.push(tripId ? `/route?id=${tripId}` : '/route');
       return;
     }
 
@@ -355,8 +402,8 @@ export default function PlanPage() {
       if (isAlreadyOptimal) {
         setShowOptimizeModal(false);
         setOptimizing(false);
-        await saveTripBeforeNavigate();
-        router.push('/route');
+        const tripId = await saveTripBeforeNavigate();
+        router.push(tripId ? `/route?id=${tripId}` : '/route');
         return;
       }
 
@@ -376,8 +423,8 @@ export default function PlanPage() {
     } catch {
       setOptimizing(false);
       setShowOptimizeModal(false);
-      await saveTripBeforeNavigate();
-      router.push('/route');
+      const tripId = await saveTripBeforeNavigate();
+      router.push(tripId ? `/route?id=${tripId}` : '/route');
     }
   };
 
@@ -387,15 +434,15 @@ export default function PlanPage() {
     }
     setShowOptimizeModal(false);
     setOptimizedOrder(null);
-    await saveTripBeforeNavigate();
-    router.push('/route');
+    const tripId = await saveTripBeforeNavigate();
+    router.push(tripId ? `/route?id=${tripId}` : '/route');
   };
 
   const skipOptimization = async () => {
     setShowOptimizeModal(false);
     setOptimizedOrder(null);
-    await saveTripBeforeNavigate();
-    router.push('/route');
+    const tripId = await saveTripBeforeNavigate();
+    router.push(tripId ? `/route?id=${tripId}` : '/route');
   };
 
   if (isRestoring) {
@@ -469,10 +516,12 @@ export default function PlanPage() {
               )}
             </div>
 
-            {/* DESTINATIONS */}
+            {/* PLACES TO VISIT / DESTINATIONS */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase">Destinations</label>
+                <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase">
+                  {trip.userPlaces.length > 0 ? 'Places to Visit' : 'Destinations'}
+                </label>
                 <button
                   onClick={() => setShowAISuggest(true)}
                   className="flex items-center gap-1 text-[10px] font-display font-bold text-accent-cyan hover:text-accent-cyan/80 transition-colors bg-accent-cyan/10 px-2.5 py-1 rounded-lg"
@@ -483,58 +532,105 @@ export default function PlanPage() {
                   AI Suggest
                 </button>
               </div>
-              <Reorder.Group
-                axis="y"
-                values={trip.destinations}
-                onReorder={trip.reorderDestinations}
-                className="flex flex-col gap-2 mb-3"
-                as="div"
-              >
-                {trip.destinations.map((dest, idx) => (
-                  <Reorder.Item
-                    key={dest.id}
-                    value={dest}
-                    className="bg-bg-card border border-accent-cyan/30 rounded-xl px-4 py-3 flex items-center gap-3 cursor-grab active:cursor-grabbing active:z-10 transition-shadow select-none"
-                    whileDrag={{ scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF' }}
-                    as="div"
-                  >
-                    {/* Drag handle */}
-                    <div className="flex flex-col gap-0.5 opacity-30 flex-shrink-0 mr-1" aria-label="Drag to reorder" role="img">
-                      <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
-                      <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
-                      <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
-                    </div>
-                    {/* Number */}
-                    <span className="w-6 h-6 rounded-full bg-accent-cyan text-white text-xs font-mono font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
-                    {/* City name + full address */}
-                    <div className="flex-1 min-w-0">
-                      {(() => {
-                        // parentCity comes from Google Place Details API (locality type) — most reliable
-                        const displayCity = dest.city.parentCity || dest.city.name;
-                        return (
-                          <>
-                            <p className="text-sm font-display font-bold text-text-primary truncate">{displayCity}</p>
-                            {dest.city.fullName && <p className="text-[10px] text-text-muted font-body truncate">{dest.city.fullName}</p>}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    {/* Nights */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <button onClick={() => trip.updateNights(dest.id, dest.nights - 1)} aria-label="Decrease nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">-</button>
-                      <span className="font-mono text-sm font-bold text-text-primary w-4 text-center">{dest.nights}</span>
-                      <button onClick={() => trip.updateNights(dest.id, dest.nights + 1)} aria-label="Increase nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">+</button>
-                      <span className="text-text-muted text-[10px] font-body w-6">nights</span>
-                    </div>
-                    {/* Remove */}
-                    <button onClick={() => trip.removeDestination(dest.id)} aria-label="Remove destination" className="w-5 h-5 rounded-full bg-accent-cyan/15 text-accent-cyan text-xs flex items-center justify-center hover:bg-accent-cyan/30 transition-colors flex-shrink-0">&times;</button>
-                  </Reorder.Item>
-                ))}
-              </Reorder.Group>
+
+              {/* User Places list (places-first flow) */}
+              {trip.userPlaces.length > 0 && (
+                <Reorder.Group
+                  axis="y"
+                  values={trip.userPlaces}
+                  onReorder={trip.reorderPlaces}
+                  className="flex flex-col gap-2 mb-3"
+                  as="div"
+                >
+                  {trip.userPlaces.map((place, idx) => (
+                    <Reorder.Item
+                      key={place.id}
+                      value={place}
+                      className="bg-bg-card border border-accent-cyan/30 rounded-xl px-4 py-3 flex items-center gap-3 cursor-grab active:cursor-grabbing active:z-10 transition-shadow select-none"
+                      whileDrag={{ scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF' }}
+                      as="div"
+                    >
+                      {/* Drag handle */}
+                      <div className="flex flex-col gap-0.5 opacity-30 flex-shrink-0 mr-1" aria-label="Drag to reorder" role="img">
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                      </div>
+                      {/* Number */}
+                      <span className="w-6 h-6 rounded-full bg-accent-cyan text-white text-xs font-mono font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                      {/* Place name + city/country */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-display font-bold text-text-primary truncate">{place.name}</p>
+                        <p className="text-[10px] text-text-muted font-body truncate">{place.parentCity}, {place.country}</p>
+                      </div>
+                      {/* Nights */}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => trip.updatePlaceNights(place.id, place.nights - 1)} aria-label="Decrease nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">-</button>
+                        <span className="font-mono text-sm font-bold text-text-primary w-4 text-center">{place.nights}</span>
+                        <button onClick={() => trip.updatePlaceNights(place.id, place.nights + 1)} aria-label="Increase nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">+</button>
+                        <span className="text-text-muted text-[10px] font-body w-6">nights</span>
+                      </div>
+                      {/* Remove */}
+                      <button onClick={() => trip.removePlace(place.id)} aria-label="Remove place" className="w-5 h-5 rounded-full bg-accent-cyan/15 text-accent-cyan text-xs flex items-center justify-center hover:bg-accent-cyan/30 transition-colors flex-shrink-0">&times;</button>
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
+              )}
+
+              {/* Destinations list (backward compat: templates, AI, loaded trips without places) */}
+              {trip.userPlaces.length === 0 && trip.destinations.length > 0 && (
+                <Reorder.Group
+                  axis="y"
+                  values={trip.destinations}
+                  onReorder={trip.reorderDestinations}
+                  className="flex flex-col gap-2 mb-3"
+                  as="div"
+                >
+                  {trip.destinations.map((dest, idx) => (
+                    <Reorder.Item
+                      key={dest.id}
+                      value={dest}
+                      className="bg-bg-card border border-accent-cyan/30 rounded-xl px-4 py-3 flex items-center gap-3 cursor-grab active:cursor-grabbing active:z-10 transition-shadow select-none"
+                      whileDrag={{ scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF' }}
+                      as="div"
+                    >
+                      <div className="flex flex-col gap-0.5 opacity-30 flex-shrink-0 mr-1" aria-label="Drag to reorder" role="img">
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                        <div className="flex gap-0.5"><div className="w-1 h-1 rounded-full bg-text-muted"></div><div className="w-1 h-1 rounded-full bg-text-muted"></div></div>
+                      </div>
+                      <span className="w-6 h-6 rounded-full bg-accent-cyan text-white text-xs font-mono font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-display font-bold text-text-primary truncate">{dest.city.parentCity || dest.city.name}</p>
+                        {dest.city.fullName && <p className="text-[10px] text-text-muted font-body truncate">{dest.city.fullName}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button onClick={() => trip.updateNights(dest.id, dest.nights - 1)} aria-label="Decrease nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">-</button>
+                        <span className="font-mono text-sm font-bold text-text-primary w-4 text-center">{dest.nights}</span>
+                        <button onClick={() => trip.updateNights(dest.id, dest.nights + 1)} aria-label="Increase nights" className="w-6 h-6 rounded-md bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-xs flex items-center justify-center transition-colors">+</button>
+                        <span className="text-text-muted text-[10px] font-body w-6">nights</span>
+                      </div>
+                      <button onClick={() => trip.removeDestination(dest.id)} aria-label="Remove destination" className="w-5 h-5 rounded-full bg-accent-cyan/15 text-accent-cyan text-xs flex items-center justify-center hover:bg-accent-cyan/30 transition-colors flex-shrink-0">&times;</button>
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
+              )}
+
               <PlacesAutocomplete
-                placeholder="Add a destination city or place..."
+                placeholder="Add a place, attraction, or city..."
                 scope="all"
-                onSelect={city => trip.addDestination(city)}
+                onSelect={city => {
+                  // Build a Place from the resolved city data
+                  const place: Place = {
+                    id: `p${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                    name: city.name,
+                    fullName: city.fullName,
+                    parentCity: city.parentCity || city.name,
+                    country: city.country,
+                    nights: 2,
+                  };
+                  trip.addPlace(place);
+                }}
               />
             </div>
 
@@ -580,16 +676,25 @@ export default function PlanPage() {
 
             {/* CONTINUE */}
             <motion.button
-              whileHover={trip.destinations.length > 0 ? { scale: 1.02 } : {}}
-              whileTap={trip.destinations.length > 0 ? { scale: 0.98 } : {}}
-              onClick={() => { if (trip.destinations.length > 0) optimizeRoute(); }}
+              whileHover={(trip.userPlaces.length > 0 || trip.destinations.length > 0) ? { scale: 1.02 } : {}}
+              whileTap={(trip.userPlaces.length > 0 || trip.destinations.length > 0) ? { scale: 0.98 } : {}}
+              onClick={() => {
+                if (trip.userPlaces.length > 0) {
+                  // Places flow: group into cities first, then optimize
+                  trip.groupPlacesIntoCities();
+                  setPendingOptimize(true);
+                } else if (trip.destinations.length > 0) {
+                  // Backward compat: templates/AI/loaded trips already have destinations
+                  optimizeRoute();
+                }
+              }}
               className={`w-full font-display font-bold py-4 rounded-xl text-sm transition-all ${
-                trip.destinations.length > 0
+                (trip.userPlaces.length > 0 || trip.destinations.length > 0)
                   ? 'bg-accent-cyan text-white hover:shadow-[0_0_30px_rgba(232,101,74,0.3)] cursor-pointer'
                   : 'bg-bg-card text-text-muted cursor-not-allowed'
               }`}
             >
-              {trip.destinations.length > 0 ? 'Plan My Route' : 'Add a destination to continue'}
+              {(trip.userPlaces.length > 0 || trip.destinations.length > 0) ? 'Plan My Route' : 'Add a place to continue'}
             </motion.button>
           </div>
         </div>
@@ -673,5 +778,13 @@ export default function PlanPage() {
         onClose={() => setShowAISuggest(false)}
       />
     </div>
+  );
+}
+
+export default function PlanPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" /></div>}>
+      <PlanPageContent />
+    </Suspense>
   );
 }

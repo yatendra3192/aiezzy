@@ -5,18 +5,28 @@ import { CITY_ATTRACTIONS } from '@/data/cityAttractions';
 
 interface ActivitySuggestionsProps {
   cityName: string;
+  userPlaces?: string[];
 }
 
-export default function ActivitySuggestions({ cityName }: ActivitySuggestionsProps) {
+export default function ActivitySuggestions({ cityName, userPlaces }: ActivitySuggestionsProps) {
   const [expanded, setExpanded] = useState(false);
   const cacheRef = useRef<{ city: string; items: string[] } | null>(null);
 
   const getAttractions = (): string[] => {
     if (cacheRef.current?.city === cityName) return cacheRef.current.items;
     // Try exact match first, then case-insensitive partial match
-    const attractions = CITY_ATTRACTIONS[cityName]
+    const catalogAttractions = CITY_ATTRACTIONS[cityName]
       || Object.entries(CITY_ATTRACTIONS).find(([key]) => key.toLowerCase() === cityName.toLowerCase())?.[1]
       || [];
+    // If user has their own places, show those first then supplement with catalog
+    let attractions: string[];
+    if (userPlaces && userPlaces.length > 0) {
+      const userSet = new Set(userPlaces.map(p => p.toLowerCase()));
+      const supplemental = catalogAttractions.filter(a => !userSet.has(a.toLowerCase()));
+      attractions = [...userPlaces, ...supplemental];
+    } else {
+      attractions = catalogAttractions;
+    }
     cacheRef.current = { city: cityName, items: attractions };
     return attractions;
   };

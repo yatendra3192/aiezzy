@@ -20,6 +20,11 @@ export async function POST(req: NextRequest) {
     sql: `ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;`,
   }).maybeSingle();
 
+  // Add places column to trip_destinations
+  await supabase.rpc('exec_sql', {
+    sql: `ALTER TABLE public.trip_destinations ADD COLUMN IF NOT EXISTS places JSONB DEFAULT '[]'::jsonb;`,
+  }).maybeSingle();
+
   // If the exec_sql RPC doesn't exist, fall back to raw query via the REST endpoint
   if (colError) {
     // Try direct SQL via supabase-js (service role has full access)
@@ -57,6 +62,7 @@ export async function POST(req: NextRequest) {
     sql: [
       'ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;',
       'CREATE POLICY "Anyone can view shared trips" ON public.trips FOR SELECT USING (share_token IS NOT NULL);',
+      'ALTER TABLE public.trip_destinations ADD COLUMN IF NOT EXISTS places JSONB DEFAULT \'[]\'::jsonb;',
     ],
   });
 }

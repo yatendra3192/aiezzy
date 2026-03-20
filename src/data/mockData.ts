@@ -82,13 +82,31 @@ export interface TransitStep {
   duration: string;
 }
 
+// ─── Place (user-selected attraction/landmark) ──────────────────────────────
+export interface Place {
+  id: string;
+  name: string;        // "Louvre Museum"
+  fullName: string;    // "Louvre Museum, Paris, France"
+  placeId?: string;    // Google Places ID
+  parentCity: string;  // "Paris" — from Google locality
+  country: string;
+  nights: number;      // nights for this place
+}
+
 // ─── Trip data types ─────────────────────────────────────────────────────────
+export interface HotelStay {
+  hotel: Hotel;
+  nights: number;
+}
+
 export interface Destination {
   id: string;
   city: City;
   nights: number;
   selectedHotel: Hotel | null;
+  additionalHotels?: HotelStay[];
   notes?: string;
+  places: Place[];     // user's original places grouped here
 }
 
 export interface ResolvedAirports {

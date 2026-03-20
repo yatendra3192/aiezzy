@@ -29,12 +29,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   // Transform to TripState shape
   const destinations = (trip.trip_destinations || [])
     .sort((a: any, b: any) => a.position - b.position)
-    .map((d: any) => ({
-      id: d.id,
-      city: d.city,
-      nights: d.nights,
-      selectedHotel: d.selected_hotel,
-    }));
+    .map((d: any) => {
+      const { _places, ...cityData } = d.city || {};
+      const { _additionalHotels, ...hotelData } = d.selected_hotel || {};
+      return {
+        id: d.id,
+        city: cityData,
+        nights: d.nights,
+        selectedHotel: d.selected_hotel ? hotelData : null,
+        additionalHotels: _additionalHotels || [],
+        places: _places || [],
+      };
+    });
 
   const transportLegs = (trip.trip_transport_legs || [])
     .sort((a: any, b: any) => a.position - b.position)
@@ -123,9 +129,9 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     const destRows = body.destinations.map((d: any, i: number) => ({
       trip_id: params.id,
       position: i,
-      city: d.city || {},
+      city: { ...(d.city || {}), _places: d.places || [] },
       nights: d.nights ?? 2,
-      selected_hotel: d.selectedHotel || null,
+      selected_hotel: d.selectedHotel ? { ...d.selectedHotel, _additionalHotels: d.additionalHotels || [] } : null,
     }));
     await supabase.from('trip_destinations').insert(destRows);
   }

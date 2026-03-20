@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
     const closest = pool.slice(0, 2);
     const largeAfter = pool.slice(2).filter(a => a.type === 'large_airport');
     const seen = new Set(closest.map(a => a.iata_code));
-    const remaining = largeAfter.filter(a => !seen.has(a.iata_code)).slice(0, 10);
+    const remaining = largeAfter.filter(a => !seen.has(a.iata_code));
     const commercial = [...closest, ...remaining];
 
     // Cache the result

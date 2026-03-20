@@ -23,12 +23,18 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   // Transform to frontend shape (same as GET /api/trips/[id])
   const destinations = (trip.trip_destinations || [])
     .sort((a: any, b: any) => a.position - b.position)
-    .map((d: any) => ({
-      id: d.id,
-      city: d.city,
-      nights: d.nights,
-      selectedHotel: d.selected_hotel,
-    }));
+    .map((d: any) => {
+      const { _places, ...cityData } = d.city || {};
+      const { _additionalHotels, ...hotelData } = d.selected_hotel || {};
+      return {
+        id: d.id,
+        city: cityData,
+        nights: d.nights,
+        selectedHotel: d.selected_hotel ? hotelData : null,
+        additionalHotels: _additionalHotels || [],
+        places: _places || [],
+      };
+    });
 
   const transportLegs = (trip.trip_transport_legs || [])
     .sort((a: any, b: any) => a.position - b.position)

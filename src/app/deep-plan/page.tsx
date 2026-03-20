@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
@@ -44,17 +44,19 @@ const TRANSPORT_ICONS: Record<string, string> = {
   publicTransit: 'M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0h16M8 22h8',
 };
 
-export default function DeepPlanPage() {
+function DeepPlanPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTripId = searchParams.get('id');
   const trip = useTrip();
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // Restore trip from sessionStorage on page reload
+  // Restore trip from URL param, context, or sessionStorage on page reload
   useEffect(() => {
     if (trip.destinations.length > 0) return; // Already have destinations in context
 
-    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
       trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
@@ -235,7 +237,9 @@ export default function DeepPlanPage() {
 
       // ── EXPLORE DAYS at this destination ──
       const exploreDays = Math.max(0, dest.nights - 1);
-      const attractions = CITY_ATTRACTIONS[toCity.name] || [`${toCity.name} Center`, `${toCity.name} Park`];
+      const attractions = dest.places && dest.places.length > 0
+        ? dest.places.map(p => p.name)
+        : (CITY_ATTRACTIONS[toCity.name] || [`${toCity.name} Center`, `${toCity.name} Park`]);
 
       for (let n = 0; n < exploreDays; n++) {
         const expDay: DayPlan = { day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [] };
@@ -349,7 +353,7 @@ export default function DeepPlanPage() {
           <div className="flex items-center gap-3 mb-4">
             <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
             <span className="text-text-muted text-xs">/</span>
-            <button onClick={() => router.push('/route')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Route</button>
+            <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Route</button>
             <span className="text-text-muted text-xs">/</span>
             <span className="text-text-primary text-xs font-body font-semibold">Deep Plan</span>
           </div>
@@ -492,5 +496,13 @@ export default function DeepPlanPage() {
           }} />;
       })()}
     </div>
+  );
+}
+
+export default function DeepPlanPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" /></div>}>
+      <DeepPlanPageContent />
+    </Suspense>
   );
 }

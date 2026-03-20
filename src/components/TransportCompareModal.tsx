@@ -22,7 +22,7 @@ interface Props {
   currentType: string;
   selectedFlight: Flight | null;
   selectedTrain: TrainOption | null;
-  onSelectFlight: (flight: Flight) => void;
+  onSelectFlight: (flight: Flight, airportInfo?: { fromCode: string; fromCity: string; fromDistance: number }) => void;
   onSelectTrain: (train: TrainOption) => void;
   onSelectDrive: () => void;
   onSelectBus: () => void;
@@ -114,9 +114,11 @@ export default function TransportCompareModal({
   // Flight filters
   const [flightStopsFilter, setFlightStopsFilter] = useState<'all' | 'direct' | '1stop' | '2plus'>('all');
   const [flightPriceFilter, setFlightPriceFilter] = useState<'all' | '10k' | '20k' | '50k'>('all');
-  // Nearby airports dropdown
+  // Nearby airports dropdowns (departure + arrival)
   const [nearbyAirports, setNearbyAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
+  const [nearbyArrAirports, setNearbyArrAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
   const [selectedAirportFilter, setSelectedAirportFilter] = useState<string>('');
+  const [selectedArrAirportFilter, setSelectedArrAirportFilter] = useState<string>('');
   const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
   const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
 
@@ -127,7 +129,7 @@ export default function TransportCompareModal({
       setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
-      setFlightStopsFilter('all'); setFlightPriceFilter('all'); setSelectedAirportFilter(''); setNearbyAirports([]);
+      setFlightStopsFilter('all'); setFlightPriceFilter('all'); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
         setFlights(cachedFlights.map((f: any, i: number) => ({
@@ -212,35 +214,60 @@ export default function TransportCompareModal({
       }).catch(() => {});
   }, [isOpen, tab]);
 
-  // Fetch flights from a different departure airport
-  const fetchFromAirport = (airportCode: string) => {
-    setSelectedAirportFilter(airportCode);
-    if (!airportCode) { fetchFlights(); return; }
+  // Fetch nearby airports for arrival city
+  useEffect(() => {
+    if (!isOpen || tab !== 'flight' || nearbyArrAirports.length > 0) return;
+    const searchTo = toCity || toCode;
+    if (!searchTo) return;
+    // Reuse the same endpoint but swap from/to to get arrival-side airports
+    fetch(`/api/flights?from=${encodeURIComponent(searchTo)}&to=${encodeURIComponent(fromCode || fromCity)}&date=${date}&adults=${adults}&nearbyOnly=true`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.nearbyAirports?.length > 0) {
+          setNearbyArrAirports(data.nearbyAirports);
+        }
+      }).catch(() => {});
+  }, [isOpen, tab]);
+
+  // Fetch flights with specific departure and/or arrival airport
+  const fetchWithAirports = (depCode: string, arrCode: string) => {
+    const fromQ = depCode || fromCode || fromCity;
+    const toQ = arrCode || toCode || toCity;
+    if (!fromQ || !toQ) return;
     setLoadingFlights(true);
-    setFlights([]); // Clear old flights immediately
-    // Use the exact airport code — don't let the API fall back to other airports
-    fetch(`/api/flights?from=${encodeURIComponent(airportCode)}&to=${encodeURIComponent(toCode || toCity)}&date=${date}&adults=${adults}`)
+    setFlights([]);
+    const exactParam = (depCode || arrCode) ? '&exact=true' : '';
+    fetch(`/api/flights?from=${encodeURIComponent(fromQ)}&to=${encodeURIComponent(toQ)}&date=${date}&adults=${adults}${exactParam}`)
       .then(r => r.json())
       .then(data => {
         if (data.flights?.length > 0) {
-          const resolvedRoute = `${data.fromResolved || airportCode}-${data.toResolved || toCode}`;
-          const mapped = data.flights.map((f: any, i: number) => ({
-            id: `f-${i}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
+          const resolvedRoute = `${data.fromResolved || depCode || fromCode}-${data.toResolved || arrCode || toCode}`;
+          const mapped = data.flights.map((f: any, idx: number) => ({
+            id: `f-${idx}-${f.flightNumber}`, airline: f.airline, airlineCode: f.airlineCode, flightNumber: f.flightNumber,
             departure: f.departure, arrival: f.arrival, duration: f.duration, stops: f.stops,
             route: resolvedRoute, pricePerAdult: f.price, color: AIRLINE_COLORS[f.airlineCode] || '#6b7280',
             depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
             layovers: f.layovers, isNextDay: f.isNextDay,
             co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
           }));
-          if (selectedFlight && !mapped.some((f: any) => f.flightNumber === selectedFlight.flightNumber)) {
-            mapped.unshift({ ...selectedFlight, id: `selected-${selectedFlight.flightNumber}` });
-          }
           setFlights(mapped);
         } else {
-          setFlights(selectedFlight ? [{ ...selectedFlight, id: `selected-${selectedFlight.flightNumber}` }] : []);
+          setFlights([]);
         }
         setLoadingFlights(false);
       }).catch(() => setLoadingFlights(false));
+  };
+
+  const fetchFromAirport = (airportCode: string) => {
+    setSelectedAirportFilter(airportCode);
+    if (!airportCode && !selectedArrAirportFilter) { fetchFlights(); return; }
+    fetchWithAirports(airportCode, selectedArrAirportFilter);
+  };
+
+  const fetchToAirport = (airportCode: string) => {
+    setSelectedArrAirportFilter(airportCode);
+    if (!airportCode && !selectedAirportFilter) { fetchFlights(); return; }
+    fetchWithAirports(selectedAirportFilter, airportCode);
   };
 
   // Fetch trains
@@ -457,28 +484,42 @@ export default function TransportCompareModal({
                   )}
 
                   {/* Flight filters — compact dropdowns */}
-                  {flights.length >= 3 && (userAcceptedNearby || !nearbyAirportPrompt) && (
+                  {(flights.length >= 3 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
                     <div className="mb-3 flex gap-2 flex-wrap">
-                      <select value={flightStopsFilter} onChange={e => setFlightStopsFilter(e.target.value as any)}
-                        className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                        <option value="all">All Stops</option>
-                        <option value="direct">Direct</option>
-                        <option value="1stop">1 Stop</option>
-                        <option value="2plus">2+ Stops</option>
-                      </select>
-                      <select value={flightPriceFilter} onChange={e => setFlightPriceFilter(e.target.value as any)}
-                        className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                        <option value="all">Any Price</option>
-                        <option value="10k">Under ₹10K</option>
-                        <option value="20k">Under ₹20K</option>
-                        <option value="50k">Under ₹50K</option>
-                      </select>
+                      {flights.length >= 3 && (
+                        <>
+                          <select value={flightStopsFilter} onChange={e => setFlightStopsFilter(e.target.value as any)}
+                            className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                            <option value="all">All Stops</option>
+                            <option value="direct">Direct</option>
+                            <option value="1stop">1 Stop</option>
+                            <option value="2plus">2+ Stops</option>
+                          </select>
+                          <select value={flightPriceFilter} onChange={e => setFlightPriceFilter(e.target.value as any)}
+                            className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                            <option value="all">Any Price</option>
+                            <option value="10k">Under ₹10K</option>
+                            <option value="20k">Under ₹20K</option>
+                            <option value="50k">Under ₹50K</option>
+                          </select>
+                        </>
+                      )}
                       {nearbyAirports.length > 0 && (
                         <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
-                          aria-label="Nearby airports within 1000 km"
+                          aria-label="Departure airports"
                           className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                          <option value="">Nearby Airports (1000 km)</option>
-                          {nearbyAirports.map(ap => (
+                          <option value="">From: Nearby Airports</option>
+                          {nearbyAirports.filter(ap => ap.code.toUpperCase() !== (selectedArrAirportFilter || toCode || '').toUpperCase()).map(ap => (
+                            <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
+                          ))}
+                        </select>
+                      )}
+                      {nearbyArrAirports.length > 0 && (
+                        <select value={selectedArrAirportFilter} onChange={e => fetchToAirport(e.target.value)}
+                          aria-label="Arrival airports"
+                          className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                          <option value="">To: Nearby Airports</option>
+                          {nearbyArrAirports.filter(ap => ap.code.toUpperCase() !== (selectedAirportFilter || fromCode || '').toUpperCase()).map(ap => (
                             <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
                           ))}
                         </select>
@@ -487,10 +528,10 @@ export default function TransportCompareModal({
                   )}
 
                   {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
-                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights{selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}...</span></div>
+                    <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights{selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}{selectedArrAirportFilter ? ` to ${selectedArrAirportFilter}` : ''}...</span></div>
                   ) : flights.length === 0 ? (
                     <div className="text-center py-12">
-                      <p className="text-text-muted text-sm">{selectedAirportFilter ? `No flights found from ${selectedAirportFilter}` : 'No flights found for this route'}</p>
+                      <p className="text-text-muted text-sm">{(selectedAirportFilter || selectedArrAirportFilter) ? `No flights found${selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}${selectedArrAirportFilter ? ` to ${selectedArrAirportFilter}` : ''}` : 'No flights found for this route'}</p>
                       {selectedAirportFilter && <p className="text-text-muted text-[10px] mt-1">Try selecting a different airport above</p>}
                     </div>
                   ) : sortedFlights.length === 0 ? (
@@ -503,7 +544,13 @@ export default function TransportCompareModal({
                           const isBest = f.id === bestFlightId;
                           const isSelected = selectedFlight?.id === f.id;
                           return (
-                            <button key={f.id} onClick={() => onSelectFlight(f)}
+                            <button key={f.id} onClick={() => {
+                              // Pass airport info if user selected a different departure airport
+                              const airportInfo = selectedAirportFilter
+                                ? nearbyAirports.find(a => a.code === selectedAirportFilter)
+                                : undefined;
+                              onSelectFlight(f, airportInfo ? { fromCode: airportInfo.code, fromCity: airportInfo.city, fromDistance: airportInfo.distance } : undefined);
+                            }}
                               className={`w-full text-left p-4 rounded-xl border transition-all relative ${
                                 isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'
                               }`}>

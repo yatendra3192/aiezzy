@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession } from 'next-auth/react';
 import { useTrip } from '@/context/TripContext';
@@ -34,20 +34,22 @@ const AIRLINE_COLORS: Record<string, string> = {
   'U2': '#ff6600', 'EW': '#a5027d', 'EK': '#d71921', 'EY': '#b5985a', 'QR': '#5c0632', 'TK': '#e31e24',
 };
 
-export default function RoutePage() {
+function RoutePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTripId = searchParams.get('id');
   const { data: session } = useSession();
   const trip = useTrip();
   const { currency, setCurrency } = useCurrency();
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  // Restore trip from sessionStorage on page reload
+  // Restore trip from URL param, context, or sessionStorage on page reload
   const [isRestoring, setIsRestoring] = useState(false);
   useEffect(() => {
     if (trip.destinations.length > 0) return; // Already have destinations in context
 
-    // Try to reload from DB: use tripId from context, or from sessionStorage
-    const idToLoad = trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    // Try to reload from DB: prefer URL param, then context tripId, then sessionStorage
+    const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
       trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
@@ -81,6 +83,10 @@ export default function RoutePage() {
         const result = await trip.saveTrip();
         setAutoSaveStatus(result ? 'saved' : 'error');
         console.log('[auto-save]', result ? `saved trip ${result}` : 'save returned null');
+        // Update URL with trip ID so the link is shareable/bookmarkable
+        if (result) {
+          router.replace(`/route?id=${result}`, { scroll: false });
+        }
       } catch (e) {
         setAutoSaveStatus('error');
         console.error('[auto-save] failed:', e);
@@ -93,12 +99,90 @@ export default function RoutePage() {
 
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
-  const [hotelModal, setHotelModal] = useState<{ destIndex: number } | null>(null);
+  const [hotelModal, setHotelModal] = useState<{ destIndex: number; isAdditional?: boolean } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showPackingList, setShowPackingList] = useState(false);
 
-  // Notes expanded state
-  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+  // Real hub-to-hotel distances (fetched from Google Directions)
+  const hubToHotelRef = useRef<Record<string, { distance: string; duration: string }>>({});
+  const [hubToHotelDistances, setHubToHotelDistances] = useState<Record<string, { distance: string; duration: string }>>({});
+  const hubFetchedRef = useRef<Set<string>>(new Set());
+
+  // Fetch arrival airport → hotel AND hotel → departure airport distances
+  // Stored separately: "arr-{di}" for arrival, "dep-{di}" for departure
+  useEffect(() => {
+    trip.destinations.forEach((dest, di) => {
+      if (!dest.selectedHotel) return;
+      const hotelQuery = `${dest.selectedHotel.name}, ${dest.city.name}`;
+
+      // ARRIVAL: previous leg's landing airport/station → hotel
+      const arrLeg = trip.transportLegs[di];
+      if (arrLeg) {
+        const arrInfo = resolvedAirportsRef.current[di] || arrLeg.resolvedAirports;
+        let arrHub = '';
+        if (arrLeg.selectedFlight && arrInfo?.toCode) {
+          arrHub = `${arrInfo.toCity || arrInfo.toCode} Airport`;
+        } else if (arrLeg.selectedTrain) {
+          arrHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
+        }
+        if (arrHub) {
+          const key = `arr-${di}-${dest.selectedHotel.name}-${arrInfo?.toCode || ''}`;
+          if (!hubFetchedRef.current.has(key)) {
+            hubFetchedRef.current.add(key);
+            getDirections(`${arrHub}, ${dest.city.name}`, hotelQuery, 'driving').then(result => {
+              if (result) {
+                setHubToHotelDistances(prev => ({ ...prev, [`arr-${di}`]: { distance: result.distanceText, duration: result.durationText } }));
+              }
+            });
+          }
+        }
+      }
+
+      // DEPARTURE: hotel → next leg's departure airport/station
+      const depLeg = trip.transportLegs[di + 1] || (trip.tripType === 'roundTrip' && di === trip.destinations.length - 1 ? trip.transportLegs[trip.transportLegs.length - 1] : null);
+      if (depLeg) {
+        const depInfo = resolvedAirportsRef.current[di + 1] || depLeg.resolvedAirports;
+        let depHub = '';
+        if (depLeg.selectedFlight && depInfo?.fromCode) {
+          depHub = `${depInfo.fromCity || depInfo.fromCode} Airport`;
+        } else if (depLeg.selectedTrain) {
+          depHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
+        }
+        if (depHub) {
+          const key = `dep-${di}-${dest.selectedHotel.name}-${depInfo?.fromCode || ''}`;
+          if (!hubFetchedRef.current.has(key)) {
+            hubFetchedRef.current.add(key);
+            getDirections(hotelQuery, `${depHub}, ${dest.city.name}`, 'driving').then(result => {
+              if (result) {
+                setHubToHotelDistances(prev => ({ ...prev, [`dep-${di}`]: { distance: result.distanceText, duration: result.durationText } }));
+              }
+            });
+          }
+        }
+      }
+    });
+  }, [trip.destinations.map(d => `${d.id}-${d.selectedHotel?.name || ''}`).join(','), trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real road distance from home address to departure airport
+  const homeToAirportRef = useRef<{ distance: string; duration: string } | null>(null);
+  const [homeToAirportDist, setHomeToAirportDist] = useState<{ distance: string; duration: string } | null>(null);
+  const homeAirportFetchedRef = useRef('');
+  useEffect(() => {
+    const firstLeg = trip.transportLegs[0];
+    if (!firstLeg?.selectedFlight || !trip.fromAddress) return;
+    const info = resolvedAirportsRef.current[0] || firstLeg.resolvedAirports;
+    if (!info?.fromCode) return;
+    const airportName = info.fromCity ? `${info.fromCity} Airport` : `${info.fromCode} Airport`;
+    const key = `${trip.fromAddress}-${info.fromCode}`;
+    if (homeAirportFetchedRef.current === key) return;
+    homeAirportFetchedRef.current = key;
+    getDirections(trip.fromAddress, airportName, 'driving').then(result => {
+      if (result) {
+        homeToAirportRef.current = { distance: result.distanceText, duration: result.durationText };
+        setHomeToAirportDist({ distance: result.distanceText, duration: result.durationText });
+      }
+    });
+  }, [trip.fromAddress, trip.transportLegs[0]?.selectedFlight, trip.transportLegs[0]?.resolvedAirports]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch real driving directions for legs that don't have flight/train selected
   const fetchedRef = useRef<Set<string>>(new Set());
@@ -345,54 +429,70 @@ export default function RoutePage() {
   const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
 
   // Re-fetch flights when nights change (dates shift for subsequent legs)
+  // Debounced — waits 1.5s after last change before firing API calls
   const nightsKey = trip.destinations.map(d => d.nights).join(',');
   const prevNightsRef = useRef(nightsKey);
+  const nightsDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (prevNightsRef.current === nightsKey) return;
     prevNightsRef.current = nightsKey;
-    // Clear flight cache for affected legs (dates have shifted)
+
+    // Clear any pending debounce
+    if (nightsDebounceRef.current) clearTimeout(nightsDebounceRef.current);
+
+    // Clear flight cache immediately (stale dates)
     for (let li = 1; li < trip.transportLegs.length; li++) {
       delete flightCacheRef.current[li];
     }
 
-    // Show toast
-    const affectedLegs = trip.transportLegs.filter((l, i) => i > 0 && l.selectedFlight).length;
-    if (affectedLegs > 0) {
-      setFlightUpdateToast(`Updating ${affectedLegs} flight${affectedLegs > 1 ? 's' : ''} for new dates...`);
+    // Show immediate feedback that dates are shifting
+    const hasFlights = trip.transportLegs.some((l, i) => i > 0 && l.selectedFlight);
+    if (hasFlights) {
+      setFlightUpdateToast('Dates changed — will update transport options...');
     }
 
-    // Re-fetch flights for ALL legs after the first (their dates may have shifted)
-    trip.transportLegs.forEach((leg, i) => {
-      if (i === 0) return; // First leg date doesn't change with nights
-      if (!leg.selectedFlight) return; // No flight to update
-      if (leg.type !== 'flight' && leg.type !== 'drive') return;
+    // Debounce the actual API calls
+    nightsDebounceRef.current = setTimeout(() => {
+      const affectedLegs = trip.transportLegs.filter((l, i) => i > 0 && l.selectedFlight).length;
+      if (affectedLegs > 0) {
+        setFlightUpdateToast(`Recalculating ${affectedLegs} transport option${affectedLegs > 1 ? 's' : ''} for new dates...`);
+      }
 
-      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
-      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
-      if (!fromC || !toC) return;
-      const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
-      const tc = findAirportCode(toC) || toC.name || toC.fullName;
-      if (!fc || !tc || fc === tc) return;
+      // Re-fetch flights for ALL legs after the first (their dates may have shifted)
+      trip.transportLegs.forEach((leg, i) => {
+        if (i === 0) return;
+        if (!leg.selectedFlight) return;
+        if (leg.type !== 'flight' && leg.type !== 'drive') return;
 
-      const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
+        const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+        const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+        if (!fromC || !toC) return;
+        const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
+        const tc = findAirportCode(toC) || toC.name || toC.fullName;
+        if (!fc || !tc || fc === tc) return;
 
-      fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.flights?.length > 0) {
-            const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
-            const flight = {
-              id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
-              flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
-              duration: cheapest.duration, stops: cheapest.stops, route: `${fc}-${tc}`,
-              pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
-            };
-            trip.selectFlight(leg.id, flight);
-            flightCacheRef.current[i] = data.flights;
-          }
-          setFlightUpdateToast(null);
-        }).catch(() => { setFlightUpdateToast(null); });
-    });
+        const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
+
+        fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.flights?.length > 0) {
+              const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+              const flight = {
+                id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+                flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops, route: `${fc}-${tc}`,
+                pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+              };
+              trip.selectFlight(leg.id, flight);
+              flightCacheRef.current[i] = data.flights;
+            }
+            setFlightUpdateToast(null);
+          }).catch(() => { setFlightUpdateToast(null); });
+      });
+    }, 1500);
+
+    return () => { if (nightsDebounceRef.current) clearTimeout(nightsDebounceRef.current); };
   }, [nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build route stops
@@ -415,7 +515,14 @@ export default function RoutePage() {
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
   const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + (l.selectedFlight!.pricePerAdult), 0) * trip.adults;
   const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + (l.selectedTrain!.price), 0) * trip.adults;
-  const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights, 0);
+  const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
+    const extras = d.additionalHotels || [];
+    const extraNights = extras.reduce((es, h) => es + h.nights, 0);
+    const primaryNights = d.nights - extraNights;
+    const primaryCost = d.selectedHotel!.pricePerNight * Math.max(0, primaryNights);
+    const extraCost = extras.reduce((es, h) => es + h.hotel.pricePerNight * h.nights, 0);
+    return s + primaryCost + extraCost;
+  }, 0);
   const totalCost = flightCost + trainCost + hotelCost;
 
   /** When user picks a type from TransportModal, either open sub-modal or just set type */
@@ -497,7 +604,7 @@ export default function RoutePage() {
             <div className="flex items-center gap-3">
               <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
               <span className="text-text-muted text-xs">/</span>
-              <button onClick={() => router.push('/plan')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Edit Trip</button>
+              <button onClick={() => router.push(trip.tripId ? `/plan?id=${trip.tripId}` : '/plan')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Edit Trip</button>
               <span className="text-text-muted text-xs">/</span>
               <span className="text-text-primary text-xs font-body font-semibold">Route</span>
             </div>
@@ -506,7 +613,7 @@ export default function RoutePage() {
 
           {/* Title */}
           <div className="mb-6">
-            <h1 className="font-display text-lg font-bold text-text-primary">Trip Overview</h1>
+            <h1 className="font-display text-lg font-bold text-text-primary">Plan Transport & Stay by City</h1>
             <p className="text-text-muted text-xs font-mono mt-1">
               {trip.departureDate} &middot; {trip.adults} adult{trip.adults > 1 ? 's' : ''}
               {trip.children > 0 ? `, ${trip.children} children` : ''}
@@ -582,29 +689,21 @@ export default function RoutePage() {
                           <WeatherBadge city={stop.name} date={arrivalDate.toISOString().split('T')[0]} />
                         )}
                       </div>
-                      {/* Show airport info if different from stop location */}
+                      {/* Airport info — only for home stops (departure & return), not destinations */}
                       {(() => {
-                        // Current leg (departing from this stop) and previous leg (arriving at this stop)
                         const curLeg = trip.transportLegs[i];
                         const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
                         const info = resolvedAirportsRef.current[i] || curLeg?.resolvedAirports;
                         const prevInfo = i > 0 ? (resolvedAirportsRef.current[i - 1] || prevLeg?.resolvedAirports) : null;
                         const firstInfo = resolvedAirportsRef.current[0] || trip.transportLegs[0]?.resolvedAirports;
                         const isLastHome = stop.type === 'home' && i === stops.length - 1 && trip.tripType === 'roundTrip' && i > 0;
-                        const isDest = stop.type === 'destination';
-                        const nearest = i === 0 ? info : null;
 
-                        // Only show airport warning when the relevant leg is a flight
-                        const hasFlight = i === 0
-                          ? curLeg?.selectedFlight != null
-                          : isLastHome
-                            ? prevLeg?.selectedFlight != null
-                            : isDest
-                              ? (curLeg?.selectedFlight != null || prevLeg?.selectedFlight != null)
-                              : false;
-                        if (!hasFlight) return null;
+                        // Only show on home stops (first stop + return home)
+                        if (stop.type === 'destination') return null;
+                        if (i === 0 && !curLeg?.selectedFlight) return null;
+                        if (isLastHome && !prevLeg?.selectedFlight) return null;
+                        if (!i && !isLastHome) return null;
 
-                        // Determine airport code, city, and distance for this stop
                         let airportCode: string | undefined, airportCity: string | undefined, airportDist: number | undefined;
                         if (i === 0) {
                           airportCode = info?.fromCode;
@@ -613,22 +712,20 @@ export default function RoutePage() {
                         } else if (isLastHome) {
                           airportCode = prevInfo?.toCode;
                           airportCity = prevInfo?.toCity;
-                          airportDist = prevInfo?.toDistance || firstInfo?.fromDistance;
-                        } else if (isDest) {
-                          // Destination: use departure leg's fromDistance (more reliable than arrival leg's toDistance)
-                          airportCode = info?.fromCode || prevInfo?.toCode;
-                          airportCity = info?.fromCity || prevInfo?.toCity;
-                          airportDist = info?.fromDistance || prevInfo?.toDistance;
-                        } else {
-                          airportCode = prevInfo?.toCode;
-                          airportCity = prevInfo?.toCity;
-                          airportDist = prevInfo?.toDistance;
+                          if (prevInfo?.toCode && firstInfo?.nearestFromCode === prevInfo.toCode) {
+                            airportDist = firstInfo.nearestFromDist;
+                          } else if (prevInfo?.toCode && firstInfo?.fromCode === prevInfo.toCode) {
+                            airportDist = firstInfo.fromDistance;
+                          } else {
+                            airportDist = undefined;
+                          }
                         }
 
-                        if (!airportCode || !airportDist || airportDist < 30) return null;
+                        if (!airportCode) return null;
 
-                        // Show nearest airport if it's different from the flight airport
-                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== airportCode) {
+                        // Show nearest airport note for first stop
+                        const nearest = i === 0 ? info : null;
+                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== airportCode && airportDist && airportDist >= 30) {
                           return (
                             <div className="text-[10px] font-body mt-0.5 space-y-0.5">
                               <p className="text-amber-600">
@@ -641,22 +738,97 @@ export default function RoutePage() {
                           );
                         }
 
-                        let msg: string;
-                        if (i === 0) {
-                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
-                        } else if (isLastHome) {
-                          msg = `Flight will land in ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
-                        } else if (isDest) {
-                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
-                        } else {
-                          msg = `Flights from ${airportCity || airportCode} (${airportCode}), ${Math.round(airportDist)} km away`;
-                        }
+                        // Use real road distance for home stops when available
+                        const realHome = i === 0 ? homeToAirportDist : null;
+                        const distStr = realHome ? `${realHome.distance} (${realHome.duration})` : (airportDist && airportDist >= 30 ? `${Math.round(airportDist)} km` : '');
+                        const msg = i === 0
+                          ? `Flights from ${airportCity || airportCode} (${airportCode})${distStr ? `, ${distStr} away` : ''}`
+                          : `Flight will land in ${airportCity || airportCode} (${airportCode})${airportDist ? `, ${Math.round(airportDist)} km away` : ''}`;
 
                         return (
-                          <p className="text-[10px] text-amber-600 font-body mt-0.5">
-                            {msg}
-                          </p>
+                          <p className="text-[10px] text-amber-600 font-body mt-0.5">{msg}</p>
                         );
+                      })()}
+                      {/* Arrival hub → hotel distance (airport or station) */}
+                      {stop.type === 'destination' && (() => {
+                        const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        const destCity = dest?.city;
+                        const hotelName = dest?.selectedHotel?.name;
+                        const toLabel = hotelName || destCity?.parentCity || destCity?.name || '';
+                        const di = stop.destIndex ?? -1;
+                        // Real distance from Google Directions (hotel-specific)
+                        const realDist = di >= 0 ? hubToHotelDistances[`arr-${di}`] : null;
+
+                        // Flight arrival: use resolved airport info
+                        if (prevLeg?.selectedFlight && i > 0) {
+                          const prevInfo = resolvedAirportsRef.current[i - 1] || prevLeg?.resolvedAirports;
+                          if (prevInfo?.toCode) {
+                            const distLabel = realDist?.distance || (() => {
+                              const hub = destCity?.airport;
+                              return (hub && hub.code === prevInfo.toCode ? hub.transitToCenter.distance : null)
+                                || (prevInfo.toDistance ? `${Math.round(prevInfo.toDistance)} km` : null);
+                            })();
+                            const durLabel = realDist?.duration || (() => {
+                              const hub = destCity?.airport;
+                              return hub && hub.code === prevInfo.toCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                            })();
+                            return (
+                              <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                Arriving at {prevInfo.toCity || prevInfo.toCode} ({prevInfo.toCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} to {toLabel}
+                              </p>
+                            );
+                          }
+                        }
+
+                        // Train/bus arrival: use station info from city data
+                        if (prevLeg?.selectedTrain && i > 0) {
+                          const station = destCity?.trainStation;
+                          if (station) {
+                            const distLabel = realDist?.distance || station.transitToCenter.distance;
+                            const durLabel = realDist?.duration || `~${station.transitToCenter.durationMin} min`;
+                            return (
+                              <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                Arriving at {station.name}, {distLabel} ({durLabel}) to {toLabel}
+                              </p>
+                            );
+                          }
+                        }
+
+                        // First destination: show airport/station distance if flight/train was used to get here
+                        if (i === 0) {
+                          const firstLeg = trip.transportLegs[0];
+                          if (firstLeg?.selectedFlight) {
+                            const info = resolvedAirportsRef.current[0] || firstLeg?.resolvedAirports;
+                            if (info?.toCode) {
+                              const distLabel = realDist?.distance || (() => {
+                                const hub = destCity?.airport;
+                                return (hub && hub.code === info.toCode ? hub.transitToCenter.distance : null)
+                                  || (info.toDistance ? `${Math.round(info.toDistance)} km` : null);
+                              })();
+                              const durLabel = realDist?.duration || (() => {
+                                const hub = destCity?.airport;
+                                return hub && hub.code === info.toCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                              })();
+                              return (
+                                <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                  Arriving at {info.toCity || info.toCode} ({info.toCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} to {toLabel}
+                                </p>
+                              );
+                            }
+                          } else if (firstLeg?.selectedTrain) {
+                            const station = destCity?.trainStation;
+                            if (station) {
+                              return (
+                                <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                  Arriving at {station.name}, {station.transitToCenter.distance} (~{station.transitToCenter.durationMin} min) to {toLabel}
+                                </p>
+                              );
+                            }
+                          }
+                        }
+
+                        return null;
                       })()}
                       {/* Visa requirement badge */}
                       {stop.type === 'destination' && (() => {
@@ -671,6 +843,26 @@ export default function RoutePage() {
                             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: visa.color }} />
                             <span className="text-[10px] font-body" style={{ color: visa.color }}>{visa.label}{visa.duration ? ` (${visa.duration})` : ''}</span>
                             {visa.note && <span className="text-[10px] font-body text-text-muted">&middot; {visa.note}</span>}
+                          </div>
+                        );
+                      })()}
+                      {/* Places sub-list */}
+                      {stop.type === 'destination' && (() => {
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        if (!dest || !dest.places || dest.places.length === 0) return null;
+                        // Don't show if all place names match the city name
+                        const cityNameLower = dest.city.name.toLowerCase();
+                        const meaningfulPlaces = dest.places.filter(p => p.name.toLowerCase() !== cityNameLower);
+                        if (meaningfulPlaces.length === 0) return null;
+                        return (
+                          <div className="mt-1 space-y-0.5">
+                            {dest.places.map(p => (
+                              <div key={p.id} className="flex items-center gap-1.5 text-[10px] text-text-secondary font-body">
+                                <span className="w-1 h-1 rounded-full bg-accent-cyan/50 flex-shrink-0" />
+                                <span className="truncate">{p.name}</span>
+                                <span className="text-text-muted">({p.nights}N)</span>
+                              </div>
+                            ))}
                           </div>
                         );
                       })()}
@@ -690,11 +882,14 @@ export default function RoutePage() {
                         }
 
                         if (hotel) {
-                          const totalPrice = hotel.pricePerNight * nights;
-                          // Check-in = arrival date at this destination, Check-out = check-in + nights
+                          // Primary hotel nights = total nights minus additional hotel nights
+                          const extras = dest?.additionalHotels || [];
+                          const extraNights = extras.reduce((s, h) => s + h.nights, 0);
+                          const primaryNights = Math.max(1, nights - extraNights);
+                          const totalPrice = hotel.pricePerNight * primaryNights;
                           const checkIn = new Date(arrivalDate);
                           const checkOut = new Date(arrivalDate);
-                          checkOut.setDate(checkOut.getDate() + nights);
+                          checkOut.setDate(checkOut.getDate() + primaryNights);
                           const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                           return (
                             <div className="mt-1.5 bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
@@ -728,7 +923,7 @@ export default function RoutePage() {
                                   <button onClick={() => dest && trip.updateNights(dest.id, nights - 1)}
                                     aria-label="Decrease nights"
                                     className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">-</button>
-                                  <span className="text-text-primary font-mono font-bold">{nights}N</span>
+                                  <span className="text-text-primary font-mono font-bold">{primaryNights}N</span>
                                   <button onClick={() => dest && trip.updateNights(dest.id, nights + 1)}
                                     aria-label="Increase nights"
                                     className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
@@ -738,7 +933,7 @@ export default function RoutePage() {
                                 <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {nights}</span>
+                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {primaryNights}</span>
                                 <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
                               </div>
                             </div>
@@ -752,48 +947,66 @@ export default function RoutePage() {
                           </button>
                         );
                       })()}
-                      {/* Activity Suggestions */}
-                      {stop.type === 'destination' && (
-                        <ActivitySuggestions cityName={stop.explore || stop.name} />
-                      )}
-                      {/* Trip Notes */}
+                      {/* Additional Hotels */}
                       {stop.type === 'destination' && stop.destIndex !== undefined && (() => {
                         const dest = trip.destinations[stop.destIndex!];
-                        if (!dest) return null;
-                        const isExpanded = expandedNotes.has(dest.id);
-                        const hasNotes = !!dest.notes;
+                        if (!dest || !dest.selectedHotel || dest.nights <= 0) return null;
+                        const extras = dest.additionalHotels || [];
+                        const primaryNights = dest.selectedHotel
+                          ? dest.nights - extras.reduce((s, h) => s + h.nights, 0)
+                          : dest.nights;
+                        const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
                         return (
-                          <div className="mt-1.5">
-                            {!isExpanded ? (
-                              <button
-                                onClick={() => setExpandedNotes(prev => { const next = new Set(prev); next.add(dest.id); return next; })}
-                                className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1"
-                              >
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                                {hasNotes ? `Note: ${dest.notes!.slice(0, 40)}${dest.notes!.length > 40 ? '...' : ''}` : 'Add note'}
-                              </button>
-                            ) : (
-                              <div className="space-y-1">
-                                <textarea
-                                  key={dest.id + '-' + (dest.notes?.length || 0)}
-                                  defaultValue={dest.notes || ''}
-                                  rows={2}
-                                  placeholder={`Add notes for ${stop.explore || stop.name}...`}
-                                  onBlur={(e) => {
-                                    trip.updateDestinationNotes(dest.id, e.target.value);
-                                  }}
-                                  className="w-full text-[11px] font-body text-text-primary bg-bg-surface border border-border-subtle rounded-lg px-2 py-1.5 resize-none placeholder:text-text-muted/50 focus:outline-none focus:border-accent-cyan/40 transition-colors"
-                                />
-                                <button
-                                  onClick={() => setExpandedNotes(prev => { const next = new Set(prev); next.delete(dest.id); return next; })}
-                                  className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors"
-                                >
-                                  Collapse
-                                </button>
-                              </div>
-                            )}
+                          <div className="mt-1.5 space-y-1.5">
+                            {/* Additional hotel cards */}
+                            {extras.map((stay, idx) => {
+                              const checkIn = new Date(arrivalDate);
+                              checkIn.setDate(checkIn.getDate() + primaryNights + extras.slice(0, idx).reduce((s, h) => s + h.nights, 0));
+                              const checkOut = new Date(checkIn);
+                              checkOut.setDate(checkOut.getDate() + stay.nights);
+                              const totalPrice = stay.hotel.pricePerNight * stay.nights;
+                              return (
+                                <div key={idx} className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-display font-bold text-text-primary">{stay.hotel.name}</span>
+                                    <button onClick={() => trip.removeAdditionalHotel(dest.id, idx)}
+                                      className="text-text-muted text-[10px] font-body hover:text-accent-cyan transition-colors">Remove</button>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px]">
+                                    {stay.hotel.rating > 0 && (
+                                      <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: stay.hotel.ratingColor, fontSize: '9px' }}>{stay.hotel.rating}</span>
+                                    )}
+                                    <div className="flex items-center gap-1.5">
+                                      <button onClick={() => trip.updateAdditionalHotelNights(dest.id, idx, stay.nights - 1)}
+                                        aria-label="Decrease nights"
+                                        className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">-</button>
+                                      <span className="text-text-primary font-mono font-bold">{stay.nights}N</span>
+                                      <button onClick={() => trip.updateAdditionalHotelNights(dest.id, idx, stay.nights + 1)}
+                                        aria-label="Increase nights"
+                                        className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                    <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-text-secondary font-body">{formatPrice(stay.hotel.pricePerNight, currency)}/night &times; {stay.nights}</span>
+                                    <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Add another hotel button */}
+                            <button
+                              onClick={() => setHotelModal({ destIndex: stop.destIndex!, isAdditional: true })}
+                              className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                              </svg>
+                              Add another hotel
+                            </button>
                           </div>
                         );
                       })()}
@@ -850,6 +1063,33 @@ export default function RoutePage() {
                           })()}
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
                         </button>
+
+                        {/* Airport distance info in transport section */}
+                        {leg.selectedFlight && (() => {
+                          const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+                          if (!info?.fromCode) return null;
+                          const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                          const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
+                          const depCity = i === 0 ? trip.from : depDest?.city;
+                          const hotelName = depDest?.selectedHotel?.name;
+                          const fromLabel = hotelName || depCity?.parentCity || depCity?.name || '';
+                          // Use real Google Directions distance (hotel-specific or home-to-airport), fall back to static data
+                          const realDist = i === 0 ? homeToAirportDist : (depDestIdx >= 0 ? hubToHotelDistances[`dep-${depDestIdx}`] : null);
+                          const distLabel = realDist?.distance || (() => {
+                            const hub = depCity?.airport;
+                            return (hub && hub.code === info.fromCode ? hub.transitToCenter.distance : null)
+                              || (info.fromDistance ? `${Math.round(info.fromDistance)} km` : null);
+                          })();
+                          const durLabel = realDist?.duration || (() => {
+                            const hub = depCity?.airport;
+                            return hub && hub.code === info.fromCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                          })();
+                          return (
+                            <p className="text-[10px] text-amber-600 font-body mt-0.5">
+                              Departing from {info.fromCity || info.fromCode} ({info.fromCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} from {fromLabel}
+                            </p>
+                          );
+                        })()}
 
                         {/* Selected flight details card */}
                         {leg.selectedFlight && (
@@ -1115,7 +1355,7 @@ export default function RoutePage() {
                 Packing List
               </button>
             )}
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push('/deep-plan')}
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
             </motion.button>
@@ -1173,8 +1413,26 @@ export default function RoutePage() {
             selectedFlight={leg?.selectedFlight || null}
             selectedTrain={leg?.selectedTrain || null}
             cachedFlights={flightCacheRef.current[transportModal.legIndex] || null}
-            onSelectFlight={flight => {
-              if (leg) trip.selectFlight(leg.id, flight);
+            onSelectFlight={(flight, airportInfo) => {
+              if (leg) {
+                trip.selectFlight(leg.id, flight);
+                // Update resolved airports if user picked a different departure airport
+                if (airportInfo) {
+                  const existing = resolvedAirportsRef.current[transportModal.legIndex] || leg.resolvedAirports;
+                  const updated = {
+                    fromCode: airportInfo.fromCode,
+                    fromCity: airportInfo.fromCity,
+                    fromDistance: airportInfo.fromDistance,
+                    fromAirport: airportInfo.fromCity,
+                    toCode: existing?.toCode || '',
+                    toCity: existing?.toCity || '',
+                    toAirport: existing?.toAirport || '',
+                    toDistance: existing?.toDistance || 0,
+                  };
+                  resolvedAirportsRef.current[transportModal.legIndex] = updated;
+                  trip.updateTransportLeg(leg.id, { resolvedAirports: updated });
+                }
+              }
               setTransportModal(null);
             }}
             onSelectTrain={train => {
@@ -1206,8 +1464,19 @@ export default function RoutePage() {
             nights={dest.nights}
             checkInDate={trip.departureDate}
             checkOutDate={(() => { const d = new Date(trip.departureDate); d.setDate(d.getDate() + dest.nights); return d.toISOString().split('T')[0]; })()}
-            selectedHotel={dest.selectedHotel}
-            onSelectHotel={hotel => { trip.updateDestinationHotel(dest.id, hotel); setHotelModal(null); }}
+            selectedHotel={hotelModal.isAdditional ? null : dest.selectedHotel}
+            onSelectHotel={hotel => {
+              if (hotelModal.isAdditional) {
+                // Calculate remaining nights for additional hotel
+                const primaryNights = dest.selectedHotel ? Math.ceil(dest.nights / 2) : dest.nights;
+                const usedByAdditional = (dest.additionalHotels || []).reduce((s, h) => s + h.nights, 0);
+                const remaining = Math.max(1, dest.nights - primaryNights - usedByAdditional);
+                trip.addAdditionalHotel(dest.id, hotel, remaining);
+              } else {
+                trip.updateDestinationHotel(dest.id, hotel);
+              }
+              setHotelModal(null);
+            }}
           />
         );
       })()}
@@ -1230,5 +1499,13 @@ export default function RoutePage() {
         tripId={trip.tripId}
       />
     </div>
+  );
+}
+
+export default function RoutePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" /></div>}>
+      <RoutePageContent />
+    </Suspense>
   );
 }

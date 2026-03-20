@@ -63,7 +63,13 @@ export async function getPlaceDetails(placeId: string): Promise<PlaceDetails | n
     // New API format
     const components = data.addressComponents || [];
     const country = components.find((c: any) => c.types?.includes('country'))?.longText || '';
-    const city = components.find((c: any) => c.types?.includes('locality'))?.longText || '';
+    // For landmarks, Google may not return 'locality' — use fallbacks
+    const city = components.find((c: any) => c.types?.includes('locality'))?.longText
+      || components.find((c: any) => c.types?.includes('postal_town'))?.longText
+      || components.find((c: any) => c.types?.includes('administrative_area_level_2'))?.longText
+      || components.find((c: any) => c.types?.includes('sublocality_level_1'))?.longText
+      || components.find((c: any) => c.types?.includes('sublocality'))?.longText
+      || '';
     const state = components.find((c: any) => c.types?.includes('administrative_area_level_1'))?.longText || '';
 
     return {

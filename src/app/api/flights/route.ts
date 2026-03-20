@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   const returnDate = req.nextUrl.searchParams.get('returnDate') || '';
 
   const nearbyOnly = req.nextUrl.searchParams.get('nearbyOnly') === 'true';
+  const exactAirport = req.nextUrl.searchParams.get('exact') === 'true';
 
   if (!from || !to || !date) {
     return NextResponse.json({ error: 'Missing params: from, to, date required' }, { status: 400 });
@@ -59,12 +60,16 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 2: Try departure airports × first arrival airport in PARALLEL
-    // Pick closest 2 + every ~150km after that to spread coverage to major hubs
-    // All run simultaneously — parallel calls take the same time as 1 call (~5-15s)
     const toCode = toAirports[0].code;
-    // Try all nearby large airports in parallel (~5-10 airports)
-    // All execute simultaneously — takes same time as 1 call (~5-15s)
-    const fromCandidates = fromAirports;
+    // If exact=true, only search the specified airport code (user explicitly selected it)
+    let fromCandidates = exactAirport
+      ? fromAirports.filter(ap => ap.code.toUpperCase() === from.toUpperCase())
+      : fromAirports;
+
+    if (fromCandidates.length === 0 && exactAirport) {
+      // User selected a specific airport but it wasn't in the resolved list — try it directly
+      fromCandidates = [{ code: from.toUpperCase(), city: from, name: from, distance: 0 } as any];
+    }
 
     if (FLIGHTS_API_URL && FLIGHTS_API_KEY) {
       const results = await Promise.allSettled(
@@ -87,7 +92,9 @@ export async function GET(req: NextRequest) {
             fromAirport: ap.name,
             fromCity: ap.city,
             fromDistance: ap.distance,
-            toCity: toAirports[0]?.city || '',
+            toCity: toAirports[0]?.city || toAirports[0]?.name || '',
+            toDistance: toAirports[0]?.distance || 0,
+            toAirport: toAirports[0]?.name || '',
             // Include nearest airport if different from the one with flights
             nearestFrom: nearest.code !== ap.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
             fromIsNearby: ap.code !== resolveAirportCode(from),
@@ -146,7 +153,9 @@ export async function GET(req: NextRequest) {
               fromCity: fromAp.city,
               toCity: toAp.city,
               fromAirport: fromAp.name,
+              toAirport: toAp.name,
               fromDistance: fromAp.distance,
+              toDistance: toAp.distance,
               nearestFrom: fromAp.code !== fromAirports[0].code
                 ? { code: fromAirports[0].code, city: fromAirports[0].city, distance: fromAirports[0].distance }
                 : undefined,
@@ -181,8 +190,22 @@ interface AirportCandidate {
 }
 
 async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
-  // Fast path: already an IATA code — no alternatives needed
+  // Fast path: already an IATA code — look up name/city from catalog
   if (/^[A-Z]{3}$/.test(input)) {
+    try {
+      const catalogUrl = process.env.CATALOG_SUPABASE_URL;
+      const catalogKey = process.env.CATALOG_SUPABASE_ANON_KEY;
+      if (catalogUrl && catalogKey) {
+        const r = await fetch(
+          `${catalogUrl}/rest/v1/airports?iata_code=eq.${input}&select=iata_code,name,municipality,country_code&limit=1`,
+          { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } }
+        );
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0 }];
+        }
+      }
+    } catch {}
     return [{ code: input, name: '', city: '', distance: 0 }];
   }
 

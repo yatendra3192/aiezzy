@@ -133,9 +133,9 @@ export async function POST(req: NextRequest) {
     const destRows = body.destinations.map((d: any, i: number) => ({
       trip_id: trip.id,
       position: i,
-      city: d.city || {},
+      city: { ...(d.city || {}), _places: d.places || [] },
       nights: d.nights ?? 2,
-      selected_hotel: d.selectedHotel || null,
+      selected_hotel: d.selectedHotel ? { ...d.selectedHotel, _additionalHotels: d.additionalHotels || [] } : null,
     }));
 
     const { error: destError } = await supabase.from('trip_destinations').insert(destRows);
