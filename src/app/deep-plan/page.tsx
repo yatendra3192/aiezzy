@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
-import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, parseTime } from '@/lib/timeUtils';
+import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
 import { getDirections } from '@/lib/googleApi';
@@ -13,6 +13,7 @@ import FlightModal from '@/components/FlightModal';
 import HotelModal from '@/components/HotelModal';
 import TrainModal from '@/components/TrainModal';
 import TransportModal from '@/components/TransportModal';
+import WeatherBadge from '@/components/WeatherBadge';
 
 interface DeepStop {
   id: string;
@@ -22,17 +23,30 @@ interface DeepStop {
   transport: { icon: string; duration: string; distance: string } | null;
   destIndex?: number;
   legIndex?: number;
-  note?: string;             // e.g. "Check-in 2.5h before flight"
+  note?: string;
+  mealType?: 'breakfast' | 'lunch' | 'dinner';
 }
 
 interface DayPlan {
   day: number;
   date: string;
   stops: DeepStop[];
+  type: 'travel' | 'explore' | 'departure';
+  city: string;
+  /** Cost for this day in INR */
+  dayCost: number;
+  /** Cost label */
+  costLabel: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
   home: '#E8654A', airport: '#8b5cf6', station: '#f59e0b', hotel: '#ec4899', attraction: '#f59e0b', destination: '#E8654A',
+};
+
+const DAY_TYPE_STYLES: Record<DayPlan['type'], { bg: string; text: string; border: string; line: string; label: string }> = {
+  travel: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', line: 'border-blue-300', label: 'Travel Day' },
+  explore: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', line: 'border-emerald-400', label: 'Explore Day' },
+  departure: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', line: 'border-orange-300', label: 'Departure Day' },
 };
 
 const TRANSPORT_ICONS: Record<string, string> = {
@@ -44,6 +58,25 @@ const TRANSPORT_ICONS: Record<string, string> = {
   publicTransit: 'M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0h16M8 22h8',
 };
 
+/** Convert DD-MM-YYYY to YYYY-MM-DD for WeatherBadge */
+function toIsoDate(ddmmyyyy: string): string {
+  const parts = ddmmyyyy.split('-');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return ddmmyyyy;
+}
+
+/** Google Maps search URL */
+function mapsUrl(name: string, city: string): string {
+  return `https://www.google.com/maps/search/${encodeURIComponent(name + ' ' + city)}`;
+}
+
+/** Get ISO date from trip departure + day offset (for weather) */
+function getIsoDateFromOffset(departureDate: string, dayOffset: number): string {
+  const d = new Date(departureDate);
+  d.setDate(d.getDate() + dayOffset);
+  return d.toISOString().split('T')[0];
+}
+
 function DeepPlanPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,6 +84,19 @@ function DeepPlanPageContent() {
   const trip = useTrip();
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
+
+  // Per-day start times (keyed by day number)
+  const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
+  // Custom activities per day (keyed by day number)
+  const [customActivities, setCustomActivities] = useState<Record<number, string[]>>({});
+  // Activity input visibility per day
+  const [showActivityInput, setShowActivityInput] = useState<Record<number, boolean>>({});
+  // Activity input text per day
+  const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
+  // Day notes (keyed by day number)
+  const [dayNotes, setDayNotes] = useState<Record<number, string>>({});
+  // Day notes visibility
+  const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
 
   // Restore trip from URL param, context, or sessionStorage on page reload
   useEffect(() => {
@@ -128,8 +174,24 @@ function DeepPlanPageContent() {
       const fromCity = destIdx === 0 ? trip.from : prevDest!.city;
       const toCity = dest.city;
 
+      // Calculate travel day cost
+      let travelDayCost = 0;
+      let travelCostLabel = '';
+      if (leg) {
+        if (leg.selectedFlight) {
+          travelDayCost = leg.selectedFlight.pricePerAdult * trip.adults;
+          travelCostLabel = 'Flight';
+        } else if (leg.selectedTrain) {
+          travelDayCost = leg.selectedTrain.price * trip.adults;
+          travelCostLabel = 'Train';
+        }
+      }
+
       // ── TRAVEL DAY to this destination ──
-      const travelDay: DayPlan = { day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [] };
+      const travelDay: DayPlan = {
+        day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+        type: 'travel', city: toCity.name, dayCost: travelDayCost, costLabel: travelCostLabel,
+      };
 
       if (leg) {
         const depHub = getDepartureHub(fromCity, leg.type);
@@ -242,15 +304,34 @@ function DeepPlanPageContent() {
         : (CITY_ATTRACTIONS[toCity.name] || [`${toCity.name} Center`, `${toCity.name} Park`]);
 
       for (let n = 0; n < exploreDays; n++) {
-        const expDay: DayPlan = { day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [] };
+        const hotelCostForNight = dest.selectedHotel ? dest.selectedHotel.pricePerNight : 0;
+        const expDay: DayPlan = {
+          day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+          type: 'explore', city: toCity.name, dayCost: hotelCostForNight, costLabel: 'Hotel',
+        };
         const hotelName = dest.selectedHotel?.name || `Stay in ${toCity.name}`;
 
+        // Breakfast meal slot
+        expDay.stops.push({
+          id: `dp${sc++}`, name: 'Breakfast', type: 'hotel', time: '08:00',
+          transport: null, mealType: 'breakfast',
+        });
+
+        // Leave hotel
         expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '15 min', distance: '0.8 mi' } });
 
         const dayAttractions = attractions.slice((n * 2) % attractions.length, ((n * 2) % attractions.length) + 2);
         if (dayAttractions.length === 0) dayAttractions.push(attractions[0]);
 
         dayAttractions.forEach((attr, ai) => {
+          // Insert lunch between attractions (after first attraction)
+          if (ai === 1) {
+            expDay.stops.push({
+              id: `dp${sc++}`, name: 'Lunch', type: 'attraction', time: '12:30',
+              transport: null, mealType: 'lunch',
+            });
+          }
+
           expDay.stops.push({
             id: `dp${sc++}`, name: attr, type: 'attraction', time: `${10 + ai * 2}:00`,
             transport: ai < dayAttractions.length - 1
@@ -259,7 +340,13 @@ function DeepPlanPageContent() {
           });
         });
 
-        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '17:00', transport: null, destIndex: destIdx });
+        // Dinner meal slot
+        expDay.stops.push({
+          id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '19:00',
+          transport: null, mealType: 'dinner',
+        });
+
+        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '20:00', transport: null, destIndex: destIdx });
         result.push(expDay);
         dayNum++;
       }
@@ -274,7 +361,23 @@ function DeepPlanPageContent() {
     if (trip.tripType === 'roundTrip' && trip.destinations.length > 0) {
       const lastDest = trip.destinations[trip.destinations.length - 1];
       const returnLeg = trip.transportLegs[trip.transportLegs.length - 1];
-      const returnDay: DayPlan = { day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [] };
+
+      let returnDayCost = 0;
+      let returnCostLabel = '';
+      if (returnLeg) {
+        if (returnLeg.selectedFlight) {
+          returnDayCost = returnLeg.selectedFlight.pricePerAdult * trip.adults;
+          returnCostLabel = 'Flight';
+        } else if (returnLeg.selectedTrain) {
+          returnDayCost = returnLeg.selectedTrain.price * trip.adults;
+          returnCostLabel = 'Train';
+        }
+      }
+
+      const returnDay: DayPlan = {
+        day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+        type: 'departure', city: trip.from.name, dayCost: returnDayCost, costLabel: returnCostLabel,
+      };
 
       if (returnLeg) {
         const fromCity = lastDest.city;
@@ -324,6 +427,51 @@ function DeepPlanPageContent() {
     return result;
   }, [trip, realTimes]);
 
+  // Recalculate explore day times based on start time overrides
+  const adjustedDays: DayPlan[] = useMemo(() => {
+    return days.map(day => {
+      if (day.type !== 'explore') return day;
+      const startTime = dayStartTimes[day.day] || '09:00';
+      const startMin = parseTime(startTime);
+      // Default base is 09:00 = 540 min
+      const baseStart = 540;
+      const offset = startMin - baseStart;
+
+      // Adjust times for explore day stops
+      const adjustedStops = day.stops.map(stop => {
+        if (!stop.time) return stop;
+        const originalMin = parseTime(stop.time);
+        // Meals adjust relative to activities
+        const adjusted = originalMin + offset;
+        return { ...stop, time: formatTime24(adjusted) };
+      });
+
+      // Inject custom activities at the end (before dinner and return-to-hotel)
+      const customs = customActivities[day.day] || [];
+      if (customs.length > 0) {
+        // Find dinner index
+        const dinnerIdx = adjustedStops.findIndex(s => s.mealType === 'dinner');
+        const insertIdx = dinnerIdx >= 0 ? dinnerIdx : adjustedStops.length - 1;
+        const lastAttractionStop = adjustedStops.slice(0, insertIdx).reverse().find(s => s.type === 'attraction' && !s.mealType);
+        const baseTimeMin = lastAttractionStop && lastAttractionStop.time ? parseTime(lastAttractionStop.time) + 90 : parseTime(startTime) + 300;
+
+        const customStops: DeepStop[] = customs.map((name, ci) => ({
+          id: `custom-${day.day}-${ci}`,
+          name,
+          type: 'attraction' as const,
+          time: formatTime24(baseTimeMin + ci * 90),
+          transport: { icon: 'walk', duration: '10 min', distance: '0.5 mi' },
+        }));
+
+        const newStops = [...adjustedStops];
+        newStops.splice(insertIdx, 0, ...customStops);
+        return { ...day, stops: newStops };
+      }
+
+      return { ...day, stops: adjustedStops };
+    });
+  }, [days, dayStartTimes, customActivities]);
+
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
   const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * trip.adults;
   const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * trip.adults;
@@ -333,6 +481,33 @@ function DeepPlanPageContent() {
     const fromCity = legIdx === 0 ? trip.from : trip.destinations[Math.min(legIdx - 1, trip.destinations.length - 1)]?.city;
     const toCity = legIdx < trip.destinations.length ? trip.destinations[legIdx]?.city : trip.from;
     return { fromCity, toCity };
+  };
+
+  const handleAddActivity = (dayNumber: number) => {
+    const text = activityInputText[dayNumber]?.trim();
+    if (!text) return;
+    setCustomActivities(prev => ({
+      ...prev,
+      [dayNumber]: [...(prev[dayNumber] || []), text],
+    }));
+    setActivityInputText(prev => ({ ...prev, [dayNumber]: '' }));
+    setShowActivityInput(prev => ({ ...prev, [dayNumber]: false }));
+  };
+
+  const handleDeleteActivity = (dayNumber: number, activityIndex: number) => {
+    setCustomActivities(prev => ({
+      ...prev,
+      [dayNumber]: (prev[dayNumber] || []).filter((_, i) => i !== activityIndex),
+    }));
+  };
+
+  const handleDeleteStop = (dayNumber: number, stopName: string) => {
+    // For built-in attractions, we don't modify the memo. Only custom activities can be deleted.
+    const customs = customActivities[dayNumber] || [];
+    const idx = customs.indexOf(stopName);
+    if (idx >= 0) {
+      handleDeleteActivity(dayNumber, idx);
+    }
   };
 
   if (isRestoring) {
@@ -347,94 +522,274 @@ function DeepPlanPageContent() {
   }
 
   return (
-    <div className="min-h-screen flex justify-center p-4 py-8">
+    <div className="min-h-screen flex justify-center p-4 py-8 deep-plan-page">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[900px]">
         <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
-            <span className="text-text-muted text-xs">/</span>
-            <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Route</button>
-            <span className="text-text-muted text-xs">/</span>
-            <span className="text-text-primary text-xs font-body font-semibold">Deep Plan</span>
+          {/* Header with breadcrumb and print button */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
+              <span className="text-text-muted text-xs">/</span>
+              <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Route</button>
+              <span className="text-text-muted text-xs">/</span>
+              <span className="text-text-primary text-xs font-body font-semibold">Deep Plan</span>
+            </div>
+            <button
+              onClick={() => window.print()}
+              className="print-hide flex items-center gap-1.5 px-3 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-xs font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan transition-colors"
+              aria-label="Print itinerary"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+              Print Itinerary
+            </button>
           </div>
           <h1 className="font-display text-lg font-bold text-text-primary mb-6">Deep Plan</h1>
 
-          {days.map(day => (
-            <div key={day.day} className="mb-8 last:mb-0">
-              <div className="bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-5">
-                <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {day.date}</h2>
-              </div>
+          {adjustedDays.map((day, dayIdx) => {
+            const dayStyle = DAY_TYPE_STYLES[day.type];
+            const isoDate = toIsoDate(day.date);
+            const isCustomDeletable = (stopName: string) => (customActivities[day.day] || []).includes(stopName);
 
-              <div className="stagger-children">
-                {day.stops.map((stop, si) => {
-                  const hasTransport = stop.transport !== null;
-                  return (
-                    <div key={stop.id}>
-                      <div className="flex items-start gap-4">
-                        <div className="flex flex-col items-center">
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-mono font-bold relative z-10"
-                            style={{ backgroundColor: TYPE_COLORS[stop.type] || '#E8654A', color: '#FFFFFF' }}>
-                            {si + 1}
-                          </div>
-                        </div>
-                        <div className="flex-1 pb-1">
-                          <div className="flex items-center gap-2">
-                            {stop.time && (
-                              <span className="text-accent-cyan text-[11px] font-mono font-bold">{formatTime12(parseTime(stop.time))}</span>
-                            )}
-                            <h3 className="font-display font-bold text-sm text-text-primary leading-tight">{stop.name}</h3>
-                          </div>
-                          {stop.note && <p className="text-[10px] text-text-muted font-body mt-0.5 italic">{stop.note}</p>}
-                          {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (
-                            <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="text-accent-cyan text-xs font-body mt-0.5 hover:underline">
-                              Change stay
-                            </button>
-                          )}
-                          {stop.type === 'attraction' && <span className="text-xs text-text-muted font-body">Sightseeing</span>}
-                        </div>
-                      </div>
-
-                      {hasTransport && stop.transport && (
-                        <div className="flex items-start gap-4 ml-0">
-                          <div className="flex flex-col items-center w-8">
-                            <div className="w-px flex-1 border-l-2 border-dashed border-border-subtle min-h-[40px]" />
-                          </div>
-                          <div className="flex-1 py-2">
-                            <button
-                              onClick={() => {
-                                if (stop.legIndex !== undefined) {
-                                  if (stop.transport?.icon === 'flight') setFlightModal({ legIndex: stop.legIndex });
-                                  else if (stop.transport?.icon === 'train') setTrainModal({ legIndex: stop.legIndex });
-                                  else setTransportModal({ legIndex: stop.legIndex });
-                                }
-                              }}
-                              className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
-                              </svg>
-                              <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
-                              {stop.legIndex !== undefined && (
-                                <>
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
-                                  <span className="text-[10px] text-text-muted font-body">Change</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      )}
+            return (
+              <div key={day.day} className="mb-10 last:mb-0">
+                {/* Day header */}
+                <div className={`bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-1`}>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {day.date}</h2>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-body ${dayStyle.bg} ${dayStyle.text} ${dayStyle.border} border`}>
+                        {dayStyle.label}
+                      </span>
                     </div>
-                  );
-                })}
+                    <div className="flex items-center gap-2">
+                      <WeatherBadge city={day.city} date={isoDate} />
+                    </div>
+                  </div>
+
+                  {/* Daily budget */}
+                  {day.dayCost > 0 && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-[10px] text-text-muted font-body">{day.costLabel}:</span>
+                      <span className="text-xs font-mono font-bold text-accent-cyan">{formatPrice(day.dayCost, currency)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Start time selector for explore days */}
+                {day.type === 'explore' && (
+                  <div className="print-hide flex items-center gap-2 px-4 py-2 mb-1">
+                    <label className="text-[10px] text-text-muted font-body">Start time:</label>
+                    <input
+                      type="time"
+                      value={dayStartTimes[day.day] || '09:00'}
+                      onChange={e => setDayStartTimes(prev => ({ ...prev, [day.day]: e.target.value }))}
+                      className="text-xs font-mono bg-bg-card border border-border-subtle rounded px-2 py-1 text-text-primary focus:outline-none focus:border-accent-cyan"
+                    />
+                  </div>
+                )}
+
+                {/* Timeline */}
+                <div className={`ml-4 border-l-2 ${dayStyle.line} pl-0`}>
+                  {day.stops.map((stop, si) => {
+                    const hasTransport = stop.transport !== null;
+                    const isMeal = !!stop.mealType;
+                    const isCustom = isCustomDeletable(stop.name);
+                    const stopColor = TYPE_COLORS[stop.type] || '#E8654A';
+
+                    // Meal slot rendering
+                    if (isMeal) {
+                      return (
+                        <div key={stop.id} className="relative">
+                          <div className="flex items-center gap-3 py-1.5 pl-4">
+                            {/* Timeline dot for meals */}
+                            <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-border-subtle" />
+                            <div className="flex items-center gap-2 flex-1">
+                              {stop.time && (
+                                <span className="text-text-muted text-[10px] font-mono">{formatTime12(parseTime(stop.time))}</span>
+                              )}
+                              <span className="text-text-muted text-xs font-body italic flex items-center gap-1">
+                                <span className="text-sm">&#127869;</span> {stop.name}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={stop.id} className="relative">
+                        {/* Stop */}
+                        <div className="flex items-start gap-3 pl-4 py-2">
+                          {/* Timeline circle */}
+                          <div className="absolute -left-[7px] mt-1">
+                            <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-mono font-bold relative z-10 border-2 border-white"
+                              style={{ backgroundColor: stopColor }}>
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {stop.time && (
+                                <span className="text-accent-cyan text-[11px] font-mono font-bold">{formatTime12(parseTime(stop.time))}</span>
+                              )}
+                              <h3 className="font-display font-bold text-sm text-text-primary leading-tight">{stop.name}</h3>
+                              {/* Google Maps link for attractions and hotels */}
+                              {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
+                                <a
+                                  href={mapsUrl(stop.name, day.city)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="print-hide text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0"
+                                  aria-label={`View ${stop.name} on Google Maps`}
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                    <circle cx="12" cy="10" r="3" />
+                                  </svg>
+                                </a>
+                              )}
+                              {/* Delete button for custom activities */}
+                              {isCustom && (
+                                <button
+                                  onClick={() => handleDeleteStop(day.day, stop.name)}
+                                  className="print-hide text-text-muted hover:text-red-500 transition-colors text-xs ml-1"
+                                  aria-label={`Remove ${stop.name}`}
+                                >
+                                  &times;
+                                </button>
+                              )}
+                            </div>
+                            {stop.note && <p className="text-[10px] text-text-muted font-body mt-0.5 italic">{stop.note}</p>}
+                            {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (
+                              <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-xs font-body mt-0.5 hover:underline">
+                                Change stay
+                              </button>
+                            )}
+                            {stop.type === 'attraction' && !isMeal && !isCustom && <span className="text-xs text-text-muted font-body">Sightseeing</span>}
+                          </div>
+                        </div>
+
+                        {/* Transport segment */}
+                        {hasTransport && stop.transport && (
+                          <div className="pl-4 py-1">
+                            <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                              <button
+                                onClick={() => {
+                                  if (stop.legIndex !== undefined) {
+                                    if (stop.transport?.icon === 'flight') setFlightModal({ legIndex: stop.legIndex });
+                                    else if (stop.transport?.icon === 'train') setTrainModal({ legIndex: stop.legIndex });
+                                    else setTransportModal({ legIndex: stop.legIndex });
+                                  }
+                                }}
+                                className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                  <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
+                                </svg>
+                                <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                {stop.legIndex !== undefined && (
+                                  <>
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted print-hide"><path d="M6 9l6 6 6-6"/></svg>
+                                    <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add Activity button (explore days only) */}
+                {day.type === 'explore' && (
+                  <div className="print-hide ml-4 pl-4 mt-2">
+                    {!showActivityInput[day.day] ? (
+                      <button
+                        onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: true }))}
+                        className="flex items-center gap-1.5 text-xs font-body text-text-muted hover:text-accent-cyan transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Add Activity
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Activity name..."
+                          value={activityInputText[day.day] || ''}
+                          onChange={e => setActivityInputText(prev => ({ ...prev, [day.day]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === 'Enter') handleAddActivity(day.day); if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
+                          className="flex-1 text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleAddActivity(day.day)}
+                          className="px-2.5 py-1.5 bg-accent-cyan text-white text-xs font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                        >
+                          Add
+                        </button>
+                        <button
+                          onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: false }))}
+                          className="text-text-muted hover:text-text-primary text-xs"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Day Notes */}
+                <div className="print-hide ml-4 pl-4 mt-2">
+                  {!showDayNotes[day.day] ? (
+                    <button
+                      onClick={() => setShowDayNotes(prev => ({ ...prev, [day.day]: true }))}
+                      className="flex items-center gap-1.5 text-xs font-body text-text-muted hover:text-accent-cyan transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      {dayNotes[day.day] ? 'Edit note' : 'Add note'}
+                    </button>
+                  ) : (
+                    <div className="mt-1">
+                      <textarea
+                        value={dayNotes[day.day] || ''}
+                        onChange={e => setDayNotes(prev => ({ ...prev, [day.day]: e.target.value }))}
+                        placeholder="Add notes for this day..."
+                        rows={3}
+                        className="w-full text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-2 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan resize-none"
+                      />
+                      <button
+                        onClick={() => setShowDayNotes(prev => ({ ...prev, [day.day]: false }))}
+                        className="text-[10px] text-text-muted font-body hover:text-accent-cyan mt-1"
+                      >
+                        Collapse
+                      </button>
+                    </div>
+                  )}
+                  {/* Show note preview when collapsed */}
+                  {!showDayNotes[day.day] && dayNotes[day.day] && (
+                    <p className="text-[10px] text-text-muted font-body italic mt-0.5 truncate max-w-[300px]">{dayNotes[day.day]}</p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Summary */}
           <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
             <div className="grid grid-cols-3 gap-4 text-center mb-3">
-              <div><p className="text-accent-cyan font-mono font-bold text-lg">{days.length}</p><p className="text-text-muted text-[10px] font-body">Days</p></div>
+              <div><p className="text-accent-cyan font-mono font-bold text-lg">{adjustedDays.length}</p><p className="text-text-muted text-[10px] font-body">Days</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{trip.destinations.length}</p><p className="text-text-muted text-[10px] font-body">Cities</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{totalNights}</p><p className="text-text-muted text-[10px] font-body">Nights</p></div>
             </div>
@@ -495,6 +850,37 @@ function DeepPlanPageContent() {
             }
           }} />;
       })()}
+
+      {/* Print styles */}
+      <style jsx global>{`
+        @media print {
+          body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .deep-plan-page {
+            padding: 0 !important;
+          }
+          .deep-plan-page .card-warm-lg {
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            padding: 16px !important;
+          }
+          .print-hide {
+            display: none !important;
+          }
+          /* Avoid page breaks inside days */
+          .mb-10 {
+            page-break-inside: avoid;
+          }
+          /* Force background colors in print */
+          .bg-blue-50, .bg-emerald-50, .bg-orange-50 {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
