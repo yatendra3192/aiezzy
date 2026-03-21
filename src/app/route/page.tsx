@@ -281,8 +281,10 @@ function RoutePageContent() {
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
       const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
       if (!fromC || !toC) return;
-      let fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
-      let tc = findAirportCode(toC) || toC.name || toC.fullName;
+      // Use city names (not airport codes) so the API can do parallel nearby-airport search
+      // This finds flights even when the city's own airport has no direct routes
+      let fc = fromC.name || fromC.fullName || findAirportCode(fromC);
+      let tc = toC.name || toC.fullName || findAirportCode(toC);
 
       // For return leg (last leg in round trip going back to origin),
       // reuse the resolved airport from leg 0 so we get the same airport
@@ -466,7 +468,14 @@ function RoutePageContent() {
       // Clear stale caches
       for (let li = 0; li < trip.transportLegs.length; li++) delete flightCacheRef.current[li];
     }
-  }, [trip.departureDate, nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Detect switch to round trip with empty return leg
+    if (trip.tripType === 'roundTrip' && trip.transportLegs.length > 0) {
+      const returnLeg = trip.transportLegs[trip.transportLegs.length - 1];
+      if (returnLeg && !returnLeg.selectedFlight && !returnLeg.selectedTrain && returnLeg.duration === '~') {
+        setNeedsRefresh(true);
+      }
+    }
+  }, [trip.departureDate, nightsKey, trip.tripType, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Manual refresh function — called by the "Update" button
   const refreshTransport = () => {
@@ -475,14 +484,15 @@ function RoutePageContent() {
     savedDateRef.current = trip.departureDate;
     savedNightsRef.current = nightsKey;
 
-    const affected = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
-    if (affected > 0) setFlightUpdateToast(`Updating ${affected} transport option${affected > 1 ? 's' : ''} for new dates...`);
+    const hasSelections = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
+    const emptyLegs = trip.transportLegs.filter(l => !l.selectedFlight && !l.selectedTrain).length;
+    const total = hasSelections + emptyLegs;
+    if (total > 0) setFlightUpdateToast(`${hasSelections > 0 ? 'Updating' : 'Searching'} ${total} transport option${total > 1 ? 's' : ''}...`);
 
     let pending = 0;
     const onDone = () => { pending--; if (pending <= 0) { setFlightUpdateToast(null); setIsRefreshing(false); } };
 
     trip.transportLegs.forEach((leg, i) => {
-      if (!leg.selectedFlight && !leg.selectedTrain) return;
 
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
       const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
@@ -528,6 +538,27 @@ function RoutePageContent() {
                 fromStation: cheapest.fromStation || fromName, toStation: cheapest.toStation || toName,
                 price: cheapest.price, color: '#f59e0b',
               });
+            }
+            onDone();
+          }).catch(() => onDone());
+      } else {
+        // Empty leg (no selection yet) — search for cheapest flight using city names for better nearby airport coverage
+        const fc = fromC.name || fromC.fullName || findAirportCode(fromC);
+        const tc = toC.name || toC.fullName || findAirportCode(toC);
+        if (!fc || !tc || fc === tc) return;
+        pending++;
+        fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.flights?.length > 0) {
+              const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+              trip.selectFlight(leg.id, {
+                id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+                flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
+                pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+              });
+              flightCacheRef.current[i] = data.flights;
             }
             onDone();
           }).catch(() => onDone());

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { City, Destination, TransportLeg, Hotel, HotelStay, Flight, TrainOption, Place, CITIES, DEFAULT_TRANSPORT_LEGS } from '@/data/mockData';
 
 interface TripState {
@@ -253,16 +253,24 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const setAdults = useCallback((n: number) => setState(s => dirty({ ...s, adults: Math.max(1, n) })), []);
   const setChildren = useCallback((n: number) => setState(s => dirty({ ...s, children: Math.max(0, n) })), []);
   const setInfants = useCallback((n: number) => setState(s => dirty({ ...s, infants: Math.max(0, n) })), []);
+  // Store removed return leg so it can be restored when switching back to round trip
+  const removedReturnLegRef = useRef<TransportLeg | null>(null);
+
   const setTripType = useCallback((type: 'roundTrip' | 'oneWay') => setState(s => {
     const newLegs = [...s.transportLegs];
     const expectedLegs = type === 'roundTrip' ? s.destinations.length + 1 : s.destinations.length;
-    // Add return leg if switching to round trip
+    // Add return leg if switching to round trip — restore saved leg if available
     while (newLegs.length < expectedLegs) {
-      newLegs.push({ id: `tl-ret-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
+      if (removedReturnLegRef.current) {
+        newLegs.push(removedReturnLegRef.current);
+        removedReturnLegRef.current = null;
+      } else {
+        newLegs.push({ id: `tl-ret-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'flight' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null });
+      }
     }
-    // Remove extra leg if switching to one way
+    // Remove extra leg if switching to one way — save it for restoration
     while (newLegs.length > expectedLegs && newLegs.length > 0) {
-      newLegs.pop();
+      removedReturnLegRef.current = newLegs.pop()!;
     }
     return dirty({ ...s, tripType: type, transportLegs: newLegs });
   }), []);

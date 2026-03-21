@@ -60,27 +60,37 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 2: Try departure airports × first arrival airport in PARALLEL
-    const toCode = toAirports[0].code;
     // If exact=true, only search the specified airport code (user explicitly selected it)
     let fromCandidates = exactAirport
       ? fromAirports.filter(ap => ap.code.toUpperCase() === from.toUpperCase())
       : fromAirports;
 
     if (fromCandidates.length === 0 && exactAirport) {
-      // User selected a specific airport but it wasn't in the resolved list — try it directly
       fromCandidates = [{ code: from.toUpperCase(), city: from, name: from, distance: 0 } as any];
     }
+
+    // Try multiple arrival airports (closest 3) in case the nearest has no flights (e.g., PNY for Pondicherry)
+    const toCandidates = exactAirport
+      ? [toAirports.find(ap => ap.code.toUpperCase() === to.toUpperCase()) || toAirports[0]]
+      : toAirports.slice(0, 3);
+    const toCode = toCandidates[0].code;
 
     // Run Amadeus + Google scraper in PARALLEL, merge results for best coverage
     const fromAp = fromCandidates[0];
     const nearest = fromAirports[0];
 
-    // Amadeus: try closest departure → closest arrival
+    // Amadeus: try closest departure × multiple arrival airports
     const amadeusP = (AMADEUS_API_KEY && AMADEUS_API_SECRET)
-      ? fetchAmadeusFlights(fromAp.code, toCode, date, parseInt(adults)).catch(() => null)
+      ? (async () => {
+          for (const toAp of toCandidates) {
+            const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
+            if (result && result.length > 0) return result;
+          }
+          return null;
+        })()
       : Promise.resolve(null);
 
-    // Google scraper: try all departure airports in parallel
+    // Google scraper: try all departure airports × first arrival airport in parallel
     const scraperP = (FLIGHTS_API_URL && FLIGHTS_API_KEY)
       ? Promise.allSettled(
           fromCandidates.map(ap =>
