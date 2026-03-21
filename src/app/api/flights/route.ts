@@ -579,7 +579,7 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
       }
 
       const grandTotal = parseFloat(offer.price?.grandTotal || '0');
-      const numAdults = parseInt(adults) || 1;
+      const numAdults = typeof adults === 'string' ? parseInt(adults) || 1 : (adults || 1);
       const perPerson = Math.round(grandTotal / numAdults);
 
       return {

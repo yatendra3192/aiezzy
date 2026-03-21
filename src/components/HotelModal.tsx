@@ -78,7 +78,7 @@ export default function HotelModal({
       if (amenityFilters.size > 0) {
         const gd = googleHotels.find(g => `google-${g.id}` === h.id);
         const hotelAmenities = (gd?.amenities || []).map(a => a.toLowerCase());
-        for (const af of amenityFilters) {
+        for (let afi = 0; afi < Array.from(amenityFilters).length; afi++) { const af = Array.from(amenityFilters)[afi];
           if (!hotelAmenities.some(ha => ha.includes(af.toLowerCase()))) return false;
         }
       }
