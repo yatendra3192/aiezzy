@@ -10,7 +10,7 @@ import { CITIES, City } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
 import { getDirections } from '@/lib/googleApi';
 import { generateICS, downloadICS } from '@/lib/calendarExport';
-import { exportTripPDF } from '@/lib/pdfExport';
+import { exportTripPDFFromData } from '@/lib/pdfExport';
 import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
 import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
 import HotelModal from '@/components/HotelModal';
@@ -149,7 +149,7 @@ function RoutePageContent() {
           depHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
         }
         if (depHub) {
-          const key = `dep-${di}-${dest.selectedHotel.name}-${depInfo?.fromCode || ''}`;
+          const key = `dep-${di}-${dest.selectedHotel.name}-${depInfo?.fromCode || depHub}`;
           if (!hubFetchedRef.current.has(key)) {
             hubFetchedRef.current.add(key);
             getDirections(hotelQuery, `${depHub}, ${dest.city.name}`, 'driving').then(result => {
@@ -428,13 +428,103 @@ function RoutePageContent() {
   // Toast notification for flight updates
   const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
 
+  // Re-fetch ALL flights/trains when departure date changes
+  // Debounced 1.5s, skips initial load
+  const prevDateRef = useRef('');
+  const dateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    if (!trip.departureDate) return;
+    if (prevDateRef.current === '') { prevDateRef.current = trip.departureDate; return; } // Skip initial load
+    if (prevDateRef.current === trip.departureDate) return;
+    prevDateRef.current = trip.departureDate;
+
+    if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+
+    const hasSelections = trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain);
+    if (hasSelections) {
+      setFlightUpdateToast('Date changed — will update transport options...');
+    }
+
+    // Clear all flight caches (dates are now different)
+    for (let li = 0; li < trip.transportLegs.length; li++) {
+      delete flightCacheRef.current[li];
+    }
+
+    dateDebounceRef.current = setTimeout(() => {
+      const affected = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
+      if (affected > 0) setFlightUpdateToast(`Recalculating ${affected} transport option${affected > 1 ? 's' : ''} for new date...`);
+
+      trip.transportLegs.forEach((leg, i) => {
+        if (!leg.selectedFlight && !leg.selectedTrain) return;
+
+        const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+        const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+        if (!fromC || !toC) return;
+
+        const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
+
+        if (leg.selectedFlight) {
+          const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+          const fc = info?.fromCode || findAirportCode(fromC) || fromC.name;
+          const tc = info?.toCode || findAirportCode(toC) || toC.name;
+          if (!fc || !tc || fc === tc) return;
+
+          fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.flights?.length > 0) {
+                const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+                const flight = {
+                  id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+                  flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+                  duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
+                  pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+                };
+                trip.selectFlight(leg.id, flight);
+                flightCacheRef.current[i] = data.flights;
+              }
+              setFlightUpdateToast(null);
+            }).catch(() => setFlightUpdateToast(null));
+        } else if (leg.selectedTrain) {
+          const fromName = fromC.name || fromC.fullName;
+          const toName = toC.name || toC.fullName;
+          fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
+            .then(r => r.json())
+            .then(data => {
+              if (data.trains?.length > 0) {
+                const cheapest = data.trains.sort((a: any, b: any) => a.price - b.price)[0];
+                trip.selectTrain(leg.id, {
+                  id: `auto-${cheapest.name}`, operator: cheapest.operator || '', trainName: cheapest.name || '',
+                  trainNumber: cheapest.trainNumber || '', departure: cheapest.departure, arrival: cheapest.arrival,
+                  duration: cheapest.duration, stops: cheapest.stops || 'Direct',
+                  fromStation: cheapest.fromStation || fromName, toStation: cheapest.toStation || toName,
+                  price: cheapest.price, color: '#f59e0b',
+                });
+              }
+              setFlightUpdateToast(null);
+            }).catch(() => setFlightUpdateToast(null));
+        }
+      });
+    }, 1500);
+
+    return () => { if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current); };
+  }, [trip.departureDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Re-fetch flights when nights change (dates shift for subsequent legs)
   // Debounced — waits 1.5s after last change before firing API calls
+  // Skip on initial trip load (nightsKey goes from '' to actual values — not a user change)
   const nightsKey = trip.destinations.map(d => d.nights).join(',');
-  const prevNightsRef = useRef(nightsKey);
+  const prevNightsRef = useRef('');
+  const nightsUserChangedRef = useRef(false);
   const nightsDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (prevNightsRef.current === nightsKey) return;
+    if (prevNightsRef.current === '' && nightsKey) {
+      // First population (trip just loaded from DB) — don't re-fetch, just sync the ref
+      prevNightsRef.current = nightsKey;
+      nightsUserChangedRef.current = true; // Next change will be a real user change
+      return;
+    }
     prevNightsRef.current = nightsKey;
 
     // Clear any pending debounce
@@ -614,11 +704,30 @@ function RoutePageContent() {
           {/* Title */}
           <div className="mb-6">
             <h1 className="font-display text-lg font-bold text-text-primary">Plan Transport & Stay by City</h1>
-            <p className="text-text-muted text-xs font-mono mt-1">
-              {trip.departureDate} &middot; {trip.adults} adult{trip.adults > 1 ? 's' : ''}
-              {trip.children > 0 ? `, ${trip.children} children` : ''}
-              &middot; {trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}
-            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <input
+                type="date"
+                value={trip.departureDate}
+                onChange={e => trip.setDepartureDate(e.target.value)}
+                className="bg-transparent border border-border-subtle rounded-md px-1.5 py-0.5 text-text-muted text-xs font-mono outline-none focus:border-accent-cyan transition-colors [color-scheme:light] cursor-pointer"
+              />
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setAdults(Math.max(1, trip.adults - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.adults} adult{trip.adults > 1 ? 's' : ''}</span>
+                <button onClick={() => trip.setAdults(trip.adults + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
+              {trip.children > 0 && <span className="text-text-muted text-xs font-mono">, {trip.children} children</span>}
+              <span className="text-text-muted text-xs">&middot;</span>
+              <button
+                onClick={() => trip.setTripType(trip.tripType === 'roundTrip' ? 'oneWay' : 'roundTrip')}
+                className="text-xs font-mono text-text-muted hover:text-accent-cyan transition-colors border border-border-subtle rounded-md px-1.5 py-0.5 cursor-pointer"
+              >
+                {trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}
+              </button>
+            </div>
           </div>
 
           {/* Main content: timeline + sidebar on desktop */}
@@ -739,11 +848,11 @@ function RoutePageContent() {
                         }
 
                         // Use real road distance for home stops when available
-                        const realHome = i === 0 ? homeToAirportDist : null;
+                        const realHome = homeToAirportDist;
                         const distStr = realHome ? `${realHome.distance} (${realHome.duration})` : (airportDist && airportDist >= 30 ? `${Math.round(airportDist)} km` : '');
                         const msg = i === 0
                           ? `Flights from ${airportCity || airportCode} (${airportCode})${distStr ? `, ${distStr} away` : ''}`
-                          : `Flight will land in ${airportCity || airportCode} (${airportCode})${airportDist ? `, ${Math.round(airportDist)} km away` : ''}`;
+                          : `Flight will land in ${airportCity || airportCode} (${airportCode})${distStr ? `, ${distStr} away` : ''}`;
 
                         return (
                           <p className="text-[10px] text-amber-600 font-body mt-0.5">{msg}</p>
@@ -1141,6 +1250,24 @@ function RoutePageContent() {
                             </div>
                           </div>
                         )}
+                        {/* Station distance info in transport section */}
+                        {leg.selectedTrain && (() => {
+                          const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                          const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
+                          const depCity = i === 0 ? trip.from : depDest?.city;
+                          const hotelName = depDest?.selectedHotel?.name;
+                          const fromLabel = hotelName || depCity?.parentCity || depCity?.name || '';
+                          const station = depCity?.trainStation;
+                          if (!station) return null;
+                          const realDist = depDestIdx >= 0 ? hubToHotelDistances[`dep-${depDestIdx}`] : null;
+                          const distLabel = realDist?.distance || station.transitToCenter.distance;
+                          const durLabel = realDist?.duration || `~${station.transitToCenter.durationMin} min`;
+                          return (
+                            <p className="text-[10px] text-amber-600 font-body mt-0.5">
+                              Departing from {station.name}{distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} from {fromLabel}
+                            </p>
+                          );
+                        })()}
                         {/* Selected train details card */}
                         {leg.selectedTrain && (
                           <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1 mt-1">
@@ -1313,11 +1440,23 @@ function RoutePageContent() {
               </button>
             )}
             <button
-              onClick={async () => {
+              onClick={() => {
                 setPdfLoading(true);
                 try {
                   const cityNames = trip.destinations.map(d => d.city.name).join('-');
-                  await exportTripPDF('trip-content', `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
+                  exportTripPDFFromData({
+                    from: trip.from,
+                    fromAddress: trip.fromAddress,
+                    destinations: trip.destinations,
+                    transportLegs: trip.transportLegs,
+                    departureDate: trip.departureDate,
+                    adults: trip.adults,
+                    children: trip.children,
+                    infants: trip.infants,
+                    tripType: trip.tripType,
+                    currency,
+                    formatPrice: (amount: number) => formatPrice(amount, currency),
+                  }, `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
                 } catch (e) {
                   console.error('PDF export failed:', e);
                 } finally {
@@ -1504,7 +1643,14 @@ function RoutePageContent() {
 
 export default function RoutePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" /></div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center p-4" suppressHydrationWarning>
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    }>
       <RoutePageContent />
     </Suspense>
   );
