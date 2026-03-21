@@ -45,6 +45,9 @@ function RoutePageContent() {
 
   // Restore trip from URL param, context, or sessionStorage on page reload
   const [isRestoring, setIsRestoring] = useState(false);
+  // Tracks when the trip has fully loaded + settled — prevents date/nights effects from re-fetching
+  const tripStableRef = useRef(false);
+
   useEffect(() => {
     if (trip.destinations.length > 0) return; // Already have destinations in context
 
@@ -52,7 +55,14 @@ function RoutePageContent() {
     const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
-      trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
+      trip.loadTrip(idToLoad).catch(() => {}).finally(() => {
+        setIsRestoring(false);
+        // Mark trip as stable after a short delay so date/nights effects don't fire on load
+        setTimeout(() => { tripStableRef.current = true; }, 500);
+      });
+    } else {
+      // No trip to load (new trip) — immediately stable
+      tripStableRef.current = true;
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -429,14 +439,17 @@ function RoutePageContent() {
   const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
 
   // Re-fetch ALL flights/trains when departure date changes
-  // Debounced 1.5s, skips initial load
+  // Debounced 1.5s, skips until trip is stable (loaded from DB + settled)
   const prevDateRef = useRef('');
   const dateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (!trip.departureDate) return;
-    if (prevDateRef.current === '') { prevDateRef.current = trip.departureDate; return; } // Skip initial load
+    // Always sync the ref to the current value
     if (prevDateRef.current === trip.departureDate) return;
+    const isFirst = prevDateRef.current === '';
     prevDateRef.current = trip.departureDate;
+    // Skip re-fetch until trip is stable (loaded + settled)
+    if (!tripStableRef.current || isFirst) return;
 
     if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
 
@@ -519,13 +532,10 @@ function RoutePageContent() {
   const nightsDebounceRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
     if (prevNightsRef.current === nightsKey) return;
-    if (prevNightsRef.current === '' && nightsKey) {
-      // First population (trip just loaded from DB) — don't re-fetch, just sync the ref
-      prevNightsRef.current = nightsKey;
-      nightsUserChangedRef.current = true; // Next change will be a real user change
-      return;
-    }
+    const isFirst = prevNightsRef.current === '';
     prevNightsRef.current = nightsKey;
+    // Skip re-fetch until trip is stable (loaded + settled)
+    if (!tripStableRef.current || isFirst) return;
 
     // Clear any pending debounce
     if (nightsDebounceRef.current) clearTimeout(nightsDebounceRef.current);
