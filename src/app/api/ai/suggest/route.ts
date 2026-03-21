@@ -10,56 +10,95 @@ export async function POST(req: NextRequest) {
   }
   if (!prompt) return NextResponse.json({ error: 'Prompt required' }, { status: 400 });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    // Fallback: return template-based suggestions when no API key
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!openaiKey && !anthropicKey) {
     return NextResponse.json(getFallbackSuggestion(prompt));
   }
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: `You are a travel planner. Based on this request, suggest a trip plan as JSON.
+  const systemPrompt = `You are an expert travel planner. Create personalized trip itineraries based on user requests. Consider budget, interests, travel style, and practical logistics. Always suggest realistic durations and provide actionable tips.`;
+
+  const userPrompt = `Based on this travel request, suggest a detailed trip plan as JSON.
 
 Request: "${prompt}"
 
 Return ONLY valid JSON in this format (no other text):
 {
-  "title": "Trip title",
+  "title": "Creative trip title",
   "destinations": [
-    { "city": "City Name", "country": "Country", "nights": 2, "reason": "Why visit" }
+    { "city": "City Name", "country": "Country", "nights": 2, "reason": "Why visit this place — what makes it special" }
   ],
-  "estimatedBudget": "₹X,XX,XXX",
+  "estimatedBudget": "₹X,XX,XXX per person",
   "bestTimeToVisit": "Month - Month",
-  "tips": ["tip1", "tip2"]
+  "tips": ["Practical tip 1", "Practical tip 2", "Money-saving tip"],
+  "travelStyle": "Backpacker / Mid-range / Luxury"
 }
 
-Include 2-5 destinations. Keep nights realistic (1-4 per city). Match the budget if specified.`
-        }],
-      }),
-    });
+Rules:
+- Include 2-6 destinations based on trip duration
+- Keep nights realistic (1-4 per city)
+- Match the budget and travel style if specified
+- Include a mix of popular and offbeat destinations when possible
+- Tips should be specific and actionable, not generic`;
 
-    if (!response.ok) {
-      console.error('Anthropic API error:', response.status);
-      return NextResponse.json(getFallbackSuggestion(prompt));
+  // Try OpenAI first, then Anthropic
+  try {
+    let text = '';
+
+    if (openaiKey) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1-mini',
+          max_tokens: 1024,
+          temperature: 0.8,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        text = data.choices?.[0]?.message?.content || '';
+      } else {
+        console.error('OpenAI API error:', response.status);
+      }
     }
 
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '';
+    // Fallback to Anthropic if OpenAI failed
+    if (!text && anthropicKey) {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        text = data.content?.[0]?.text || '';
+      }
+    }
+
+    if (!text) return NextResponse.json(getFallbackSuggestion(prompt));
 
     // Extract JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 });
+    if (!jsonMatch) return NextResponse.json(getFallbackSuggestion(prompt));
 
     const suggestion = JSON.parse(jsonMatch[0]);
     return NextResponse.json({ suggestion, source: 'ai' });
