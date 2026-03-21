@@ -240,7 +240,7 @@ export default function MyTripsPage() {
                       }`}>
                         {t.status.toUpperCase()}
                       </span>
-                      <button onClick={async () => { await trip.loadTrip(t.id); router.push('/plan'); }}
+                      <button onClick={async () => { await trip.loadTrip(t.id); router.push(`/route?id=${t.id}`); }}
                         className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors">Edit</button>
                       <button onClick={() => setSharingTripId(t.id)}
                         className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1">

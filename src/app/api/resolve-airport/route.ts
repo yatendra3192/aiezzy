@@ -42,20 +42,45 @@ export async function GET(req: NextRequest) {
 
   try {
     // Step 1: Geocode city to lat/lng
-    const geocodeRes = await fetch(
-      'https://places.googleapis.com/v1/places:searchText',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': GOOGLE_API_KEY,
-          'X-Goog-FieldMask': 'places.location,places.displayName',
-        },
-        body: JSON.stringify({ textQuery: city, maxResultCount: 1, languageCode: 'en' }),
+    // Try multiple search strategies to find the actual city (not businesses/buildings)
+    // "Barcelona" alone returns "North Barcelona apartments, Mumbai" due to India location bias
+    // Adding "city" or "country" to the query fixes this
+    let place: any = null;
+
+    const searchQueries = [
+      `${city} city`,    // "Barcelona city" → Barcelona, Spain (avoids local businesses)
+      city,              // Fallback: raw name (works for most cities)
+    ];
+
+    for (const query of searchQueries) {
+      const geocodeRes = await fetch(
+        'https://places.googleapis.com/v1/places:searchText',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_API_KEY,
+            'X-Goog-FieldMask': 'places.location,places.displayName,places.formattedAddress',
+          },
+          body: JSON.stringify({ textQuery: query, maxResultCount: 1, languageCode: 'en' }),
+        }
+      );
+      const geocodeData = await geocodeRes.json();
+      const candidate = geocodeData.places?.[0];
+      if (candidate?.location) {
+        // Verify the result name actually matches our search (not a business with the city name in it)
+        const name = (candidate.displayName?.text || '').toLowerCase();
+        const addr = (candidate.formattedAddress || '').toLowerCase();
+        const cityLower = city.toLowerCase();
+        // Accept if the display name starts with the city name, or the address contains it prominently
+        if (name.startsWith(cityLower) || name === cityLower || addr.startsWith(cityLower)) {
+          place = candidate;
+          break;
+        }
+        // If no better match found yet, keep as fallback
+        if (!place) place = candidate;
       }
-    );
-    const geocodeData = await geocodeRes.json();
-    const place = geocodeData.places?.[0];
+    }
 
     if (!place?.location) {
       return NextResponse.json({ airports: [], error: 'Could not geocode city' });

@@ -81,7 +81,8 @@ async function fetchLiveHotels(location: string, checkIn: string, checkOut: stri
     return {
     id: h.property_token || h.name?.replace(/\s+/g, '-').toLowerCase() || '',
     displayName: { text: h.name || '' },
-    formattedAddress: h.description || '',
+    // Clean description: remove price text ($12 nightly), deal text (GREAT DEAL), etc.
+    formattedAddress: (h.description || '').replace(/\$\d+.*$/i, '').replace(/DEAL|GREAT DEAL/gi, '').replace(/nightly/gi, '').trim() || '',
     rating: h.overall_rating || 0,
     priceLevel: '',
     ratePerNight: inrRate ? `\u20b9${inrRate.toLocaleString()}` : null,
@@ -89,11 +90,17 @@ async function fetchLiveHotels(location: string, checkIn: string, checkOut: stri
     totalRate: inrTotal ? `\u20b9${inrTotal.toLocaleString()}` : null,
     totalExtracted: inrTotal,
     hotelClass: h.hotel_class || '',
+    deal: h.deal || (h.deal_description ? h.deal_description : null),
     checkInTime: h.check_in_time || '',
     checkOutTime: h.check_out_time || '',
     amenities: h.amenities || [],
-    images: h.images?.map((img: any) => img.thumbnail || img.original_image) || [],
+    images: (h.images || []).filter(Boolean).map((img: any) => ({
+      thumbnail: typeof img === 'string' ? img : (img.thumbnail || ''),
+      original: typeof img === 'string' ? img : (img.original_image || img.thumbnail || ''),
+    })).filter((img: any) => img.thumbnail && !img.thumbnail.includes('default-user') && img.thumbnail.length > 50),
     link: h.link || '',
+    mapsLink: `https://www.google.com/maps/search/${encodeURIComponent(h.name + ' ' + location)}`,
+    bookingLink: `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name + ', ' + location)}`,
     source: 'live',
   };
   });

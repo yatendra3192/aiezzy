@@ -187,9 +187,12 @@ export default function TransportCompareModal({
             });
           }
           setFlights(mapped);
+        } else {
+          // No flights found — clear any seeded flight
+          setFlights([]);
         }
         setLoadingFlights(false);
-      }).catch(() => setLoadingFlights(false));
+      }).catch(() => { setFlights([]); setLoadingFlights(false); });
   };
 
   useEffect(() => {
@@ -403,20 +406,23 @@ export default function TransportCompareModal({
     <AnimatePresence>
       {isOpen && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 modal-backdrop flex items-end sm:items-center justify-center p-0 sm:p-4"
-          onClick={onClose}>
+          className="fixed inset-0 z-50 bg-bg-surface/95 backdrop-blur-sm flex flex-col">
           <motion.div
-            initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}
             onClick={e => e.stopPropagation()}
             role="dialog" aria-modal="true" aria-label="Compare transport options"
-            className="w-full max-w-[430px] md:max-w-[750px] max-h-[92vh] bg-bg-surface border border-border-subtle rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col">
+            className="flex-1 flex flex-col overflow-hidden">
 
             {/* Header */}
-            <div className="px-5 pt-5 pb-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-display font-bold text-lg text-text-primary">{fromCity} &rarr; {toCity}</h2>
-                <button onClick={onClose} className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary hover:border-accent-cyan transition-all text-sm">&times;</button>
+            <div className="px-4 md:px-8 pt-4 pb-3 border-b border-border-subtle flex-shrink-0">
+              <div className="flex items-center gap-4 mb-3">
+                <button onClick={onClose} className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                </button>
+                <div className="flex-1">
+                  <h2 className="font-display font-bold text-base text-text-primary">{fromCity} &rarr; {toCity}</h2>
+                  <p className="text-[10px] text-text-muted font-body">{new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} &middot; {adults} pax</p>
+                </div>
               </div>
 
               {/* Transport tabs — single scrollable row */}
@@ -446,11 +452,11 @@ export default function TransportCompareModal({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto border-t border-border-subtle">
+            <div className="flex-1 overflow-y-auto">
 
               {/* ── FLIGHTS ── */}
               {tab === 'flight' && (
-                <div className="p-4">
+                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full">
                   {/* Nearby airport prompt - skip if user already has a flight selected */}
                   {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
@@ -475,17 +481,14 @@ export default function TransportCompareModal({
                     </div>
                   )}
 
-                  {/* Sort toggle */}
-                  {(flights.length > 0 && (userAcceptedNearby || !nearbyAirportPrompt)) && (
-                  <div className="flex rounded-xl overflow-hidden border border-border-subtle mb-3">
-                    <button onClick={() => setFlightSort('price')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${flightSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
-                    <button onClick={() => setFlightSort('shortest')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${flightSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
-                  </div>
-                  )}
-
-                  {/* Flight filters — compact dropdowns */}
-                  {(flights.length >= 3 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
-                    <div className="mb-3 flex gap-2 flex-wrap">
+                  {/* Sort + filters row */}
+                  {(flights.length > 0 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
+                    <div className="mb-4 flex items-center gap-2 flex-wrap">
+                      {/* Sort toggle */}
+                      <div className="flex rounded-lg overflow-hidden border border-border-subtle flex-shrink-0">
+                        <button onClick={() => setFlightSort('price')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
+                        <button onClick={() => setFlightSort('shortest')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
+                      </div>
                       {flights.length >= 3 && (
                         <>
                           <select value={flightStopsFilter} onChange={e => setFlightStopsFilter(e.target.value as any)}
@@ -532,7 +535,18 @@ export default function TransportCompareModal({
                   ) : flights.length === 0 ? (
                     <div className="text-center py-12">
                       <p className="text-text-muted text-sm">{(selectedAirportFilter || selectedArrAirportFilter) ? `No flights found${selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}${selectedArrAirportFilter ? ` to ${selectedArrAirportFilter}` : ''}` : 'No flights found for this route'}</p>
-                      {selectedAirportFilter && <p className="text-text-muted text-[10px] mt-1">Try selecting a different airport above</p>}
+                      {(() => {
+                        const tripDate = new Date(date);
+                        const now = new Date();
+                        const monthsAhead = (tripDate.getFullYear() - now.getFullYear()) * 12 + (tripDate.getMonth() - now.getMonth());
+                        if (monthsAhead > 10) {
+                          return <p className="text-text-muted text-[10px] mt-2 max-w-xs mx-auto">Airlines typically publish schedules only 10-11 months in advance. Your travel date is {monthsAhead} months away — try a closer date to see available flights.</p>;
+                        }
+                        if (selectedAirportFilter || selectedArrAirportFilter) {
+                          return <p className="text-text-muted text-[10px] mt-1">Try selecting a different airport above</p>;
+                        }
+                        return <p className="text-text-muted text-[10px] mt-1">Try a different date or check nearby airports</p>;
+                      })()}
                     </div>
                   ) : sortedFlights.length === 0 ? (
                     <p className="text-text-muted text-sm text-center py-8">No flights match your filters. Try adjusting the filters above.</p>
@@ -567,7 +581,10 @@ export default function TransportCompareModal({
                                     <p className="text-[10px] text-text-muted">{f.travelClass || 'Economy'}</p>
                                   </div>
                                 </div>
-                                <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(f.pricePerAdult, currency)}</span>
+                                <div className="text-right">
+                                  <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(f.pricePerAdult, currency)}</span>
+                                  <p className="text-[9px] text-text-muted font-mono">/person</p>
+                                </div>
                               </div>
                               {/* Row 2: Time + timezone, timeline, arrival */}
                               {(() => {
@@ -609,7 +626,7 @@ export default function TransportCompareModal({
                               </div>
                                 );
                               })()}
-                              {/* Row 3: Duration + stops */}
+                              {/* Row 3: Duration + stops + layover details */}
                               <p className="text-xs text-text-primary font-body text-center">
                                 {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
                               </p>
@@ -635,7 +652,7 @@ export default function TransportCompareModal({
 
               {/* ── TRAINS ── */}
               {tab === 'train' && (
-                <div className="p-4">
+                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full">
                   {(trains.length > 0) && (
                   <div className="flex rounded-xl overflow-hidden border border-border-subtle mb-3">
                     <button onClick={() => setTrainSort('shortest')} className={`flex-1 py-2 text-xs font-display font-bold transition-all ${trainSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
@@ -710,7 +727,7 @@ export default function TransportCompareModal({
 
               {/* ── SIMPLE TRANSPORT TABS (bus, drive, walk, cycle, boat, tram) ── */}
               {['bus', 'drive', 'walk', 'cycle', 'boat', 'tram'].includes(tab) && (
-                <div className="p-4">
+                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full">
                   {(() => {
                     const dist = driveDistKm;
                     // Bus tab with multiple routes

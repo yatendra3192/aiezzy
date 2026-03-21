@@ -49,7 +49,11 @@ function RoutePageContent() {
   const tripStableRef = useRef(false);
 
   useEffect(() => {
-    if (trip.destinations.length > 0) return; // Already have destinations in context
+    if (trip.destinations.length > 0) {
+      // Already have destinations in context (came from plan page) — mark stable
+      if (!tripStableRef.current) setTimeout(() => { tripStableRef.current = true; }, 500);
+      return;
+    }
 
     // Try to reload from DB: prefer URL param, then context tripId, then sessionStorage
     const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
@@ -78,15 +82,14 @@ function RoutePageContent() {
     trip.destinations.filter(d => d.selectedHotel).length;
 
   useEffect(() => {
-    // Skip first render
+    // Skip first render and while trip is loading/settling
     if (!mountedRef.current) { mountedRef.current = true; return; }
+    if (!tripStableRef.current) return;
     // Only save when there's at least one selection
     if (selectedCount === 0) return;
     setAutoSaveStatus('pending');
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
-      // Don't auto-save while auto-selecting
-      if (autoSelectLoadingRef.current) return;
       if (isSavingRef.current) return;
       isSavingRef.current = true;
       try {
@@ -105,7 +108,7 @@ function RoutePageContent() {
       setTimeout(() => setAutoSaveStatus('idle'), 3000);
     }, 5000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedCount, trip.destinations.map(d => d.nights).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCount, trip.destinations.map(d => d.nights).join(','), trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
@@ -438,162 +441,100 @@ function RoutePageContent() {
   // Toast notification for flight updates
   const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
 
-  // Re-fetch ALL flights/trains when departure date changes
-  // Debounced 1.5s, skips until trip is stable (loaded from DB + settled)
-  const prevDateRef = useRef('');
-  const dateDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => {
-    if (!trip.departureDate) return;
-    // Always sync the ref to the current value
-    if (prevDateRef.current === trip.departureDate) return;
-    const isFirst = prevDateRef.current === '';
-    prevDateRef.current = trip.departureDate;
-    // Skip re-fetch until trip is stable (loaded + settled)
-    if (!tripStableRef.current || isFirst) return;
-
-    if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
-
-    const hasSelections = trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain);
-    if (hasSelections) {
-      setFlightUpdateToast('Date changed — will update transport options...');
-    }
-
-    // Clear all flight caches (dates are now different)
-    for (let li = 0; li < trip.transportLegs.length; li++) {
-      delete flightCacheRef.current[li];
-    }
-
-    dateDebounceRef.current = setTimeout(() => {
-      const affected = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
-      if (affected > 0) setFlightUpdateToast(`Recalculating ${affected} transport option${affected > 1 ? 's' : ''} for new date...`);
-
-      trip.transportLegs.forEach((leg, i) => {
-        if (!leg.selectedFlight && !leg.selectedTrain) return;
-
-        const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
-        const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
-        if (!fromC || !toC) return;
-
-        const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
-
-        if (leg.selectedFlight) {
-          const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
-          const fc = info?.fromCode || findAirportCode(fromC) || fromC.name;
-          const tc = info?.toCode || findAirportCode(toC) || toC.name;
-          if (!fc || !tc || fc === tc) return;
-
-          fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
-            .then(r => r.json())
-            .then(data => {
-              if (data.flights?.length > 0) {
-                const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
-                const flight = {
-                  id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
-                  flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
-                  duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
-                  pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
-                };
-                trip.selectFlight(leg.id, flight);
-                flightCacheRef.current[i] = data.flights;
-              }
-              setFlightUpdateToast(null);
-            }).catch(() => setFlightUpdateToast(null));
-        } else if (leg.selectedTrain) {
-          const fromName = fromC.name || fromC.fullName;
-          const toName = toC.name || toC.fullName;
-          fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
-            .then(r => r.json())
-            .then(data => {
-              if (data.trains?.length > 0) {
-                const cheapest = data.trains.sort((a: any, b: any) => a.price - b.price)[0];
-                trip.selectTrain(leg.id, {
-                  id: `auto-${cheapest.name}`, operator: cheapest.operator || '', trainName: cheapest.name || '',
-                  trainNumber: cheapest.trainNumber || '', departure: cheapest.departure, arrival: cheapest.arrival,
-                  duration: cheapest.duration, stops: cheapest.stops || 'Direct',
-                  fromStation: cheapest.fromStation || fromName, toStation: cheapest.toStation || toName,
-                  price: cheapest.price, color: '#f59e0b',
-                });
-              }
-              setFlightUpdateToast(null);
-            }).catch(() => setFlightUpdateToast(null));
-        }
-      });
-    }, 1500);
-
-    return () => { if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current); };
-  }, [trip.departureDate]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fetch flights when nights change (dates shift for subsequent legs)
-  // Debounced — waits 1.5s after last change before firing API calls
-  // Skip on initial trip load (nightsKey goes from '' to actual values — not a user change)
+  // Track if date/nights changed since last fetch — show "Update" button instead of auto-refetching
+  const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const savedDateRef = useRef('');
+  const savedNightsRef = useRef('');
   const nightsKey = trip.destinations.map(d => d.nights).join(',');
-  const prevNightsRef = useRef('');
-  const nightsUserChangedRef = useRef(false);
-  const nightsDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+
   useEffect(() => {
-    if (prevNightsRef.current === nightsKey) return;
-    const isFirst = prevNightsRef.current === '';
-    prevNightsRef.current = nightsKey;
-    // Skip re-fetch until trip is stable (loaded + settled)
-    if (!tripStableRef.current || isFirst) return;
-
-    // Clear any pending debounce
-    if (nightsDebounceRef.current) clearTimeout(nightsDebounceRef.current);
-
-    // Clear flight cache immediately (stale dates)
-    for (let li = 1; li < trip.transportLegs.length; li++) {
-      delete flightCacheRef.current[li];
+    if (!tripStableRef.current) {
+      savedDateRef.current = trip.departureDate;
+      savedNightsRef.current = nightsKey;
+      return;
     }
-
-    // Show immediate feedback that dates are shifting
-    const hasFlights = trip.transportLegs.some((l, i) => i > 0 && l.selectedFlight);
-    if (hasFlights) {
-      setFlightUpdateToast('Dates changed — will update transport options...');
+    if (savedDateRef.current === '' || savedNightsRef.current === '') {
+      savedDateRef.current = trip.departureDate;
+      savedNightsRef.current = nightsKey;
+      return;
     }
+    const dateChanged = savedDateRef.current !== trip.departureDate;
+    const nightsChanged = savedNightsRef.current !== nightsKey;
+    if (dateChanged || nightsChanged) {
+      setNeedsRefresh(true);
+      // Clear stale caches
+      for (let li = 0; li < trip.transportLegs.length; li++) delete flightCacheRef.current[li];
+    }
+  }, [trip.departureDate, nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Debounce the actual API calls
-    nightsDebounceRef.current = setTimeout(() => {
-      const affectedLegs = trip.transportLegs.filter((l, i) => i > 0 && l.selectedFlight).length;
-      if (affectedLegs > 0) {
-        setFlightUpdateToast(`Recalculating ${affectedLegs} transport option${affectedLegs > 1 ? 's' : ''} for new dates...`);
-      }
+  // Manual refresh function — called by the "Update" button
+  const refreshTransport = () => {
+    setIsRefreshing(true);
+    setNeedsRefresh(false);
+    savedDateRef.current = trip.departureDate;
+    savedNightsRef.current = nightsKey;
 
-      // Re-fetch flights for ALL legs after the first (their dates may have shifted)
-      trip.transportLegs.forEach((leg, i) => {
-        if (i === 0) return;
-        if (!leg.selectedFlight) return;
-        if (leg.type !== 'flight' && leg.type !== 'drive') return;
+    const affected = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
+    if (affected > 0) setFlightUpdateToast(`Updating ${affected} transport option${affected > 1 ? 's' : ''} for new dates...`);
 
-        const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
-        const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
-        if (!fromC || !toC) return;
-        const fc = findAirportCode(fromC) || fromC.name || fromC.fullName;
-        const tc = findAirportCode(toC) || toC.name || toC.fullName;
+    let pending = 0;
+    const onDone = () => { pending--; if (pending <= 0) { setFlightUpdateToast(null); setIsRefreshing(false); } };
+
+    trip.transportLegs.forEach((leg, i) => {
+      if (!leg.selectedFlight && !leg.selectedTrain) return;
+
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+
+      const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
+
+      if (leg.selectedFlight) {
+        const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+        const fc = info?.fromCode || findAirportCode(fromC) || fromC.name;
+        const tc = info?.toCode || findAirportCode(toC) || toC.name;
         if (!fc || !tc || fc === tc) return;
 
-        const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
-
+        pending++;
         fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
           .then(r => r.json())
           .then(data => {
             if (data.flights?.length > 0) {
               const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
-              const flight = {
+              trip.selectFlight(leg.id, {
                 id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
                 flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
-                duration: cheapest.duration, stops: cheapest.stops, route: `${fc}-${tc}`,
+                duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
                 pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
-              };
-              trip.selectFlight(leg.id, flight);
+              });
               flightCacheRef.current[i] = data.flights;
             }
-            setFlightUpdateToast(null);
-          }).catch(() => { setFlightUpdateToast(null); });
-      });
-    }, 1500);
-
-    return () => { if (nightsDebounceRef.current) clearTimeout(nightsDebounceRef.current); };
-  }, [nightsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+            onDone();
+          }).catch(() => onDone());
+      } else if (leg.selectedTrain) {
+        const fromName = fromC.name || fromC.fullName;
+        const toName = toC.name || toC.fullName;
+        pending++;
+        fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.trains?.length > 0) {
+              const cheapest = data.trains.sort((a: any, b: any) => a.price - b.price)[0];
+              trip.selectTrain(leg.id, {
+                id: `auto-${cheapest.name}`, operator: cheapest.operator || '', trainName: cheapest.name || '',
+                trainNumber: cheapest.trainNumber || '', departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops || 'Direct',
+                fromStation: cheapest.fromStation || fromName, toStation: cheapest.toStation || toName,
+                price: cheapest.price, color: '#f59e0b',
+              });
+            }
+            onDone();
+          }).catch(() => onDone());
+      }
+    });
+    if (pending === 0) { setFlightUpdateToast(null); setIsRefreshing(false); }
+  };
 
   // Build route stops
   const stops = useMemo(() => {
@@ -613,15 +554,19 @@ function RoutePageContent() {
 
   // Cost calc
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
-  const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + (l.selectedFlight!.pricePerAdult), 0) * trip.adults;
-  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + (l.selectedTrain!.price), 0) * trip.adults;
+  const rooms = Math.ceil((trip.adults + trip.children) / 2); // ~2 persons per room (infants share with adults)
+  // Transport cost: adults + children (full fare) + infants (15% of adult fare)
+  const transportPax = trip.adults + trip.children; // children pay full fare
+  const infantMultiplier = trip.infants * 0.15; // infants pay 15% of adult fare
+  const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult * (transportPax + infantMultiplier), 0);
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * (transportPax + infantMultiplier), 0);
   const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
     const extras = d.additionalHotels || [];
     const extraNights = extras.reduce((es, h) => es + h.nights, 0);
     const primaryNights = d.nights - extraNights;
     const primaryCost = d.selectedHotel!.pricePerNight * Math.max(0, primaryNights);
     const extraCost = extras.reduce((es, h) => es + h.hotel.pricePerNight * h.nights, 0);
-    return s + primaryCost + extraCost;
+    return s + (primaryCost + extraCost) * rooms;
   }, 0);
   const totalCost = flightCost + trainCost + hotelCost;
 
@@ -729,7 +674,22 @@ function RoutePageContent() {
                 <button onClick={() => trip.setAdults(trip.adults + 1)}
                   className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
               </div>
-              {trip.children > 0 && <span className="text-text-muted text-xs font-mono">, {trip.children} children</span>}
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setChildren(Math.max(0, trip.children - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.children} child</span>
+                <button onClick={() => trip.setChildren(trip.children + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setInfants(Math.max(0, trip.infants - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.infants} infant</span>
+                <button onClick={() => trip.setInfants(trip.infants + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
               <span className="text-text-muted text-xs">&middot;</span>
               <button
                 onClick={() => trip.setTripType(trip.tripType === 'roundTrip' ? 'oneWay' : 'roundTrip')}
@@ -737,6 +697,19 @@ function RoutePageContent() {
               >
                 {trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}
               </button>
+              {/* Update button — appears when date/nights changed */}
+              {needsRefresh && (
+                <button
+                  onClick={refreshTransport}
+                  disabled={isRefreshing}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-lg bg-accent-cyan text-white text-[10px] font-display font-bold hover:bg-accent-cyan/90 transition-all disabled:opacity-50 flex-shrink-0 animate-pulse"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  {isRefreshing ? 'Updating...' : 'Update Flights & Trains'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1005,7 +978,7 @@ function RoutePageContent() {
                           const extras = dest?.additionalHotels || [];
                           const extraNights = extras.reduce((s, h) => s + h.nights, 0);
                           const primaryNights = Math.max(1, nights - extraNights);
-                          const totalPrice = hotel.pricePerNight * primaryNights;
+                          const totalPrice = hotel.pricePerNight * primaryNights * rooms;
                           const checkIn = new Date(arrivalDate);
                           const checkOut = new Date(arrivalDate);
                           checkOut.setDate(checkOut.getDate() + primaryNights);
@@ -1052,7 +1025,7 @@ function RoutePageContent() {
                                 <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {primaryNights}</span>
+                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {primaryNights}{rooms > 1 && <> &times; {rooms} rooms</>}</span>
                                 <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
                               </div>
                             </div>
@@ -1084,7 +1057,7 @@ function RoutePageContent() {
                               checkIn.setDate(checkIn.getDate() + primaryNights + extras.slice(0, idx).reduce((s, h) => s + h.nights, 0));
                               const checkOut = new Date(checkIn);
                               checkOut.setDate(checkOut.getDate() + stay.nights);
-                              const totalPrice = stay.hotel.pricePerNight * stay.nights;
+                              const totalPrice = stay.hotel.pricePerNight * stay.nights * rooms;
                               return (
                                 <div key={idx} className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
                                   <div className="flex items-center justify-between">
@@ -1110,7 +1083,7 @@ function RoutePageContent() {
                                     <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
                                   </div>
                                   <div className="flex items-center justify-between text-[11px]">
-                                    <span className="text-text-secondary font-body">{formatPrice(stay.hotel.pricePerNight, currency)}/night &times; {stay.nights}</span>
+                                    <span className="text-text-secondary font-body">{formatPrice(stay.hotel.pricePerNight, currency)}/night &times; {stay.nights}{rooms > 1 && <> &times; {rooms} rooms</>}</span>
                                     <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
                                   </div>
                                 </div>
@@ -1255,8 +1228,8 @@ function RoutePageContent() {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedFlight.pricePerAdult, currency)}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedFlight.pricePerAdult * trip.adults, currency)}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedFlight.pricePerAdult, currency)}/pax &times; {transportPax}{trip.infants > 0 ? ` + ${trip.infants} infant` : ''}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(Math.round(leg.selectedFlight.pricePerAdult * (transportPax + infantMultiplier)), currency)}</span>
                             </div>
                           </div>
                         )}

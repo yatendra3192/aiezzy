@@ -109,9 +109,15 @@ export interface NearbyHotel {
   /** Live price per night (from scraper), null if not available */
   livePrice: number | null;
   liveCurrency: string | null;
+  totalPrice: number | null;
   source: 'live' | 'google_places';
-  images: string[];
+  images: Array<{ thumbnail: string; original: string }>;
   link: string;
+  amenities: string[];
+  hotelClass: string;
+  deal: string | null;
+  mapsLink: string;
+  bookingLink: string;
 }
 
 export async function searchNearbyHotels(
@@ -143,9 +149,15 @@ export async function searchNearbyHotels(
       priceLevel: p.priceLevel || '',
       livePrice: p.rateExtracted || null,
       liveCurrency: p.rateExtracted ? 'INR' : null,
+      totalPrice: p.totalExtracted || null,
       source: p.source || 'google_places',
-      images: p.images || [],
+      images: (p.images || []).map((img: any) => typeof img === 'string' ? { thumbnail: img, original: img } : { thumbnail: img.thumbnail || '', original: img.original || img.thumbnail || '' }),
       link: p.link || '',
+      amenities: p.amenities || [],
+      hotelClass: p.hotelClass || '',
+      deal: p.deal || null,
+      mapsLink: p.mapsLink || `https://www.google.com/maps/search/${encodeURIComponent(p.displayName?.text || p.name || '')}`,
+      bookingLink: p.bookingLink || `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(p.displayName?.text || p.name || '')}`,
     }));
   } catch {
     return [];

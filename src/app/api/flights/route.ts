@@ -71,100 +71,73 @@ export async function GET(req: NextRequest) {
       fromCandidates = [{ code: from.toUpperCase(), city: from, name: from, distance: 0 } as any];
     }
 
-    if (FLIGHTS_API_URL && FLIGHTS_API_KEY) {
-      const results = await Promise.allSettled(
-        fromCandidates.map(ap =>
-          fetchLiveFlights(ap.code, toCode, date, adults, type, returnDate)
-            .then(flights => ({ flights, airport: ap }))
-        )
-      );
+    // Run Amadeus + Google scraper in PARALLEL, merge results for best coverage
+    const fromAp = fromCandidates[0];
+    const nearest = fromAirports[0];
 
-      // Return the first successful result (closest airport that has flights)
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value.flights && r.value.flights.length > 0) {
-          const ap = r.value.airport;
-          const nearest = fromAirports[0]; // Closest airport (may differ from the one with flights)
-          return NextResponse.json({
-            status: 'OK',
-            from, to, date, adults: parseInt(adults),
-            fromResolved: ap.code,
-            toResolved: toCode,
-            fromAirport: ap.name,
-            fromCity: ap.city,
-            fromDistance: ap.distance,
-            toCity: toAirports[0]?.city || toAirports[0]?.name || '',
-            toDistance: toAirports[0]?.distance || 0,
-            toAirport: toAirports[0]?.name || '',
-            // Include nearest airport if different from the one with flights
-            nearestFrom: nearest.code !== ap.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
-            fromIsNearby: ap.code !== resolveAirportCode(from),
-            toIsNearby: toCode !== resolveAirportCode(to),
-            flights: r.value.flights,
-            source: 'live',
-          });
-        }
-      }
+    // Amadeus: try closest departure → closest arrival
+    const amadeusP = (AMADEUS_API_KEY && AMADEUS_API_SECRET)
+      ? fetchAmadeusFlights(fromAp.code, toCode, date, parseInt(adults)).catch(() => null)
+      : Promise.resolve(null);
 
-      // If departure side all failed, try parallelizing the arrival side too
-      if (toAirports.length > 1) {
-        const toCandidates = toAirports; // Try all airports in parallel
-        const fromCode = fromAirports[0].code;
-        const toResults = await Promise.allSettled(
-          toCandidates.map(ap =>
-            fetchLiveFlights(fromCode, ap.code, date, adults, type, returnDate)
+    // Google scraper: try all departure airports in parallel
+    const scraperP = (FLIGHTS_API_URL && FLIGHTS_API_KEY)
+      ? Promise.allSettled(
+          fromCandidates.map(ap =>
+            fetchLiveFlights(ap.code, toCode, date, adults, type, returnDate)
               .then(flights => ({ flights, airport: ap }))
           )
-        );
+        ).catch(() => [])
+      : Promise.resolve([]);
 
-        for (const r of toResults) {
-          if (r.status === 'fulfilled' && r.value.flights && r.value.flights.length > 0) {
-            const ap = r.value.airport;
-            return NextResponse.json({
-              status: 'OK',
-              from, to, date, adults: parseInt(adults),
-              fromResolved: fromCode,
-              toResolved: ap.code,
-              fromCity: fromAirports[0]?.city || '',
-              toAirport: ap.name,
-              toCity: ap.city,
-              toDistance: ap.distance,
-              fromIsNearby: fromCode !== resolveAirportCode(from),
-              toIsNearby: true,
-              flights: r.value.flights,
-              source: 'live',
-            });
-          }
-        }
+    const [amadeusFlights, scraperResults] = await Promise.all([amadeusP, scraperP]);
+
+    // Collect scraper flights (first airport with results)
+    let scraperFlights: any[] = [];
+    let scraperAirport = fromAp;
+    for (const r of (scraperResults as PromiseSettledResult<any>[])) {
+      if (r.status === 'fulfilled' && r.value?.flights?.length > 0) {
+        scraperFlights = r.value.flights;
+        scraperAirport = r.value.airport;
+        break;
       }
     }
 
-    // Fallback: Try Amadeus API when Google scraper fails
-    // Try multiple airport combinations (closest airports may not have commercial flights)
-    if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
-      for (const fromAp of fromAirports.slice(0, 3)) {
-        for (const toAp of toAirports.slice(0, 3)) {
-          const amadeusFlights = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults));
-          if (amadeusFlights && amadeusFlights.length > 0) {
-            return NextResponse.json({
-              status: 'OK',
-              from, to, date, adults: parseInt(adults),
-              fromResolved: fromAp.code,
-              toResolved: toAp.code,
-              fromCity: fromAp.city,
-              toCity: toAp.city,
-              fromAirport: fromAp.name,
-              toAirport: toAp.name,
-              fromDistance: fromAp.distance,
-              toDistance: toAp.distance,
-              nearestFrom: fromAp.code !== fromAirports[0].code
-                ? { code: fromAirports[0].code, city: fromAirports[0].city, distance: fromAirports[0].distance }
-                : undefined,
-              flights: amadeusFlights,
-              source: 'amadeus',
-            });
-          }
-        }
+    // Merge: Amadeus flights + scraper flights, deduplicate by flight number
+    const allFlights: any[] = [];
+    const seen = new Set<string>();
+
+    // Add Amadeus flights first (more reliable pricing)
+    if (amadeusFlights && amadeusFlights.length > 0) {
+      for (const f of amadeusFlights) {
+        const key = `${f.flightNumber}-${f.departure}`;
+        if (!seen.has(key)) { seen.add(key); allFlights.push(f); }
       }
+    }
+
+    // Add scraper flights (may have different routes/options)
+    for (const f of scraperFlights) {
+      const key = `${f.flightNumber}-${f.departure}`;
+      if (!seen.has(key)) { seen.add(key); allFlights.push(f); }
+    }
+
+    if (allFlights.length > 0) {
+      const resolvedAp = amadeusFlights?.length ? fromAp : scraperAirport;
+      return NextResponse.json({
+        status: 'OK',
+        from, to, date, adults: parseInt(adults),
+        fromResolved: resolvedAp.code,
+        toResolved: toCode,
+        fromAirport: resolvedAp.name,
+        fromCity: resolvedAp.city,
+        fromDistance: resolvedAp.distance,
+        toCity: toAirports[0]?.city || toAirports[0]?.name || '',
+        toDistance: toAirports[0]?.distance || 0,
+        toAirport: toAirports[0]?.name || '',
+        nearestFrom: nearest.code !== resolvedAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
+        flights: allFlights,
+        source: amadeusFlights?.length ? (scraperFlights.length ? 'amadeus+live' : 'amadeus') : 'live',
+      });
     }
 
     // No flights found from any source
@@ -577,9 +550,37 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
       const durationMin = parseInt(durHrs) * 60 + parseInt(durMins);
 
       const stops = segments.length - 1;
-      const stopsText = stops === 0 ? 'Nonstop' : `${stops} stop${stops > 1 ? 's' : ''}`;
 
-      const price = parseFloat(offer.price?.grandTotal || '0');
+      // Build layover details from segment connections
+      const layovers: Array<{ airport: string; airportCode: string; duration: number; overnight: boolean }> = [];
+      for (let si = 0; si < segments.length - 1; si++) {
+        const arrSeg = segments[si];
+        const depSeg = segments[si + 1];
+        const arrAt = new Date(arrSeg.arrival?.at || '');
+        const depAt = new Date(depSeg.departure?.at || '');
+        const layoverMin = Math.round((depAt.getTime() - arrAt.getTime()) / 60000);
+        const arrCode = arrSeg.arrival?.iataCode || '';
+        layovers.push({
+          airport: arrCode, // Amadeus only gives IATA code, not full name
+          airportCode: arrCode,
+          duration: layoverMin,
+          overnight: layoverMin > 480, // >8 hours
+        });
+      }
+
+      let stopsText = 'Nonstop';
+      if (layovers.length > 0) {
+        const layoverInfo = layovers.map(l => {
+          const hrs = Math.floor(l.duration / 60);
+          const mins = l.duration % 60;
+          return `${hrs}h ${mins}m in ${l.airportCode}`;
+        }).join(', ');
+        stopsText = `${stops} stop${stops > 1 ? 's' : ''} \u00b7 ${layoverInfo}`;
+      }
+
+      const grandTotal = parseFloat(offer.price?.grandTotal || '0');
+      const numAdults = parseInt(adults) || 1;
+      const perPerson = Math.round(grandTotal / numAdults);
 
       return {
         airline,
@@ -592,8 +593,9 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
         duration,
         durationMin,
         stops: stopsText,
+        layovers,
         isNextDay,
-        price,
+        price: perPerson,
         currency: 'INR',
         source: 'amadeus' as const,
       };
