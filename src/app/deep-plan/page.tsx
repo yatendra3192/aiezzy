@@ -66,6 +66,18 @@ function toIsoDate(ddmmyyyy: string): string {
   return ddmmyyyy;
 }
 
+/** Format DD-MM-YYYY to "Sat, 17 Oct 2026" */
+function formatDateNice(ddmmyyyy: string): string {
+  const parts = ddmmyyyy.split('-');
+  if (parts.length !== 3) return ddmmyyyy;
+  const [dd, mm, yyyy] = parts;
+  const d = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+  if (isNaN(d.getTime())) return ddmmyyyy;
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${dayNames[d.getDay()]}, ${parseInt(dd)} ${monthNames[d.getMonth()]} ${yyyy}`;
+}
+
 /** Google Maps search URL */
 function mapsUrl(name: string, city: string): string {
   return `https://www.google.com/maps/search/${encodeURIComponent(name + ' ' + city)}`;
@@ -109,6 +121,36 @@ function DeepPlanPageContent() {
       trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore custom activities and day notes from sessionStorage on mount
+  useEffect(() => {
+    const tripKey = trip.tripId || urlTripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    if (!tripKey) return;
+    try {
+      const savedActivities = sessionStorage.getItem(`deepPlan_activities_${tripKey}`);
+      if (savedActivities) setCustomActivities(JSON.parse(savedActivities));
+      const savedNotes = sessionStorage.getItem(`deepPlan_notes_${tripKey}`);
+      if (savedNotes) setDayNotes(JSON.parse(savedNotes));
+    } catch { /* ignore parse errors */ }
+  }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist custom activities to sessionStorage when they change
+  useEffect(() => {
+    const tripKey = trip.tripId || urlTripId;
+    if (!tripKey) return;
+    try {
+      sessionStorage.setItem(`deepPlan_activities_${tripKey}`, JSON.stringify(customActivities));
+    } catch { /* ignore quota errors */ }
+  }, [customActivities, trip.tripId, urlTripId]);
+
+  // Persist day notes to sessionStorage when they change
+  useEffect(() => {
+    const tripKey = trip.tripId || urlTripId;
+    if (!tripKey) return;
+    try {
+      sessionStorage.setItem(`deepPlan_notes_${tripKey}`, JSON.stringify(dayNotes));
+    } catch { /* ignore quota errors */ }
+  }, [dayNotes, trip.tripId, urlTripId]);
 
   const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);
   const [trainModal, setTrainModal] = useState<{ legIndex: number } | null>(null);
@@ -175,15 +217,16 @@ function DeepPlanPageContent() {
       const fromCity = destIdx === 0 ? trip.from : prevDest!.city;
       const toCity = dest.city;
 
-      // Calculate travel day cost
+      // Calculate travel day cost (include children + infants at 15%)
+      const transportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
       let travelDayCost = 0;
       let travelCostLabel = '';
       if (leg) {
         if (leg.selectedFlight) {
-          travelDayCost = leg.selectedFlight.pricePerAdult * trip.adults;
+          travelDayCost = leg.selectedFlight.pricePerAdult * transportPax;
           travelCostLabel = 'Flight';
         } else if (leg.selectedTrain) {
-          travelDayCost = leg.selectedTrain.price * trip.adults;
+          travelDayCost = leg.selectedTrain.price * transportPax;
           travelCostLabel = 'Train';
         }
       }
@@ -385,7 +428,8 @@ function DeepPlanPageContent() {
         : (CITY_ATTRACTIONS[toCity.name] || [`${toCity.name} Center`, `${toCity.name} Park`]);
 
       for (let n = 0; n < exploreDays; n++) {
-        const hotelCostForNight = dest.selectedHotel ? dest.selectedHotel.pricePerNight : 0;
+        const roomsNeeded = Math.ceil(((trip.adults || 1) + (trip.children || 0)) / 2);
+        const hotelCostForNight = dest.selectedHotel ? dest.selectedHotel.pricePerNight * roomsNeeded : 0;
         const expDay: DayPlan = {
           day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
           type: 'explore', city: toCity.name, dayCost: hotelCostForNight, costLabel: 'Hotel',
@@ -401,7 +445,10 @@ function DeepPlanPageContent() {
         // Leave hotel
         expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '15 min', distance: '0.8 mi' } });
 
-        const dayAttractions = attractions.slice((n * 2) % attractions.length, ((n * 2) % attractions.length) + 2);
+        // Distribute ALL attractions evenly across explore days
+        const perDay = Math.ceil(attractions.length / exploreDays);
+        const startIdx = n * perDay;
+        const dayAttractions = attractions.slice(startIdx, startIdx + perDay);
         if (dayAttractions.length === 0) dayAttractions.push(attractions[0]);
 
         dayAttractions.forEach((attr, ai) => {
@@ -443,14 +490,15 @@ function DeepPlanPageContent() {
       const lastDest = trip.destinations[trip.destinations.length - 1];
       const returnLeg = trip.transportLegs[trip.transportLegs.length - 1];
 
+      const returnTransportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
       let returnDayCost = 0;
       let returnCostLabel = '';
       if (returnLeg) {
         if (returnLeg.selectedFlight) {
-          returnDayCost = returnLeg.selectedFlight.pricePerAdult * trip.adults;
+          returnDayCost = returnLeg.selectedFlight.pricePerAdult * returnTransportPax;
           returnCostLabel = 'Flight';
         } else if (returnLeg.selectedTrain) {
-          returnDayCost = returnLeg.selectedTrain.price * trip.adults;
+          returnDayCost = returnLeg.selectedTrain.price * returnTransportPax;
           returnCostLabel = 'Train';
         }
       }
@@ -491,28 +539,81 @@ function DeepPlanPageContent() {
             || (returnResolved?.toCity ? `${returnResolved.toCity} Airport` : null)
             || `${trip.from.parentCity || trip.from.name} ${returnLeg.type === 'flight' ? 'Airport' : 'Station'}`;
 
+          // Detect overnight return flight/train (same logic as outbound)
+          const retSel = returnLeg.selectedFlight || returnLeg.selectedTrain;
+          let returnTransitDays = 0;
+          if (retSel && depTime && arrTime) {
+            const retDepH = parseInt(depTime.split(':')[0] || '0');
+            const retArrH = parseInt(arrTime.split(':')[0] || '0');
+            const retDurMatch = (retSel as any).duration?.match(/(\d+)h/);
+            const retDurHrs = retDurMatch ? parseInt(retDurMatch[1]) : 0;
+            const retArrivesNextDay = (retSel as any).isNextDay || (retArrH < retDepH && retDurHrs > 2) || retDurHrs >= 20;
+            if (retArrivesNextDay) {
+              returnTransitDays = retDurHrs >= 36 ? Math.ceil(retDurHrs / 24) : 1;
+            }
+          }
+
           returnDay.stops.push({
             id: `dp${sc++}`, name: depTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
             time: depTime ? subtractMinutes(depTime, bufferMin) : null,
             transport: { icon: returnLeg.type, duration: returnLeg.duration, distance: returnLeg.distance },
             legIndex: trip.transportLegs.length - 1,
           });
-          returnDay.stops.push({
-            id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
-            time: arrTime,
-            transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
-          });
+
+          if (returnTransitDays > 0) {
+            // Overnight return: push departure day first
+            result.push(returnDay);
+            dayNum++;
+
+            // Add transit days for very long flights
+            for (let td = 1; td < returnTransitDays; td++) {
+              const transitDay: DayPlan = {
+                day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+                type: 'departure', city: '', dayCost: 0, costLabel: 'In Transit',
+              };
+              transitDay.stops.push({
+                id: `dp${sc++}`, name: `In transit — ${returnLeg.type === 'flight' ? 'flight' : 'train'} ${returnLeg.duration || ''}`,
+                type: 'airport', time: null, transport: null,
+                note: `${fromCity.parentCity || fromCity.name} > ${trip.from.parentCity || trip.from.name}`,
+              });
+              result.push(transitDay);
+              dayNum++;
+            }
+
+            // Arrival day
+            const returnArrivalDay: DayPlan = {
+              day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+              type: 'departure', city: trip.from.name, dayCost: 0, costLabel: 'Arrival',
+            };
+            returnArrivalDay.stops.push({
+              id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
+              time: arrTime,
+              transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
+            });
+            returnArrivalDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
+            result.push(returnArrivalDay);
+          } else {
+            // Same-day return
+            returnDay.stops.push({
+              id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
+              time: arrTime,
+              transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
+            });
+            returnDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
+            result.push(returnDay);
+          }
         } else {
           returnDay.stops.push({
             id: `dp${sc++}`, name: startName, type: 'hotel', time: null,
             transport: { icon: 'drive', duration: returnLeg.duration, distance: returnLeg.distance },
           });
+          // Bug fix #3: Show city name, not full address
+          returnDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
+          result.push(returnDay);
         }
-
-        // Bug fix #3: Show city name, not full address
-        returnDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
+      } else {
+        result.push(returnDay);
       }
-      result.push(returnDay);
     }
 
     return result;
@@ -531,8 +632,18 @@ function DeepPlanPageContent() {
       // Adjust times for explore day stops
       const adjustedStops = day.stops.map(stop => {
         if (!stop.time) return stop;
+        // Meal times are fixed: breakfast = startTime - 60min, lunch = 12:30, dinner = 19:00
+        if (stop.mealType === 'breakfast') {
+          return { ...stop, time: formatTime24(startMin - 60) };
+        }
+        if (stop.mealType === 'lunch') {
+          return { ...stop, time: '12:30' };
+        }
+        if (stop.mealType === 'dinner') {
+          return { ...stop, time: '19:00' };
+        }
+        // Non-meal stops shift with the offset
         const originalMin = parseTime(stop.time);
-        // Meals adjust relative to activities
         const adjusted = originalMin + offset;
         return { ...stop, time: formatTime24(adjusted) };
       });
@@ -564,9 +675,11 @@ function DeepPlanPageContent() {
   }, [days, dayStartTimes, customActivities]);
 
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
-  const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * trip.adults;
-  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * trip.adults;
-  const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights, 0);
+  const summaryTransportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
+  const summaryRooms = Math.ceil(((trip.adults || 1) + (trip.children || 0)) / 2);
+  const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * summaryTransportPax;
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * summaryTransportPax;
+  const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights * summaryRooms, 0);
 
   const getLegCities = (legIdx: number) => {
     const fromCity = legIdx === 0 ? trip.from : trip.destinations[Math.min(legIdx - 1, trip.destinations.length - 1)]?.city;
@@ -645,13 +758,34 @@ function DeepPlanPageContent() {
             const isoDate = toIsoDate(day.date);
             const isCustomDeletable = (stopName: string) => (customActivities[day.day] || []).includes(stopName);
 
+            // Detect overnight bridge: previous day ends at a hotel and current day starts at the same place
+            const prevDay = dayIdx > 0 ? adjustedDays[dayIdx - 1] : null;
+            const prevLastHotelStop = prevDay?.stops.filter(s => s.type === 'hotel' && !s.mealType).slice(-1)[0];
+            const currFirstHotelStop = day.stops.find(s => s.type === 'hotel' && !s.mealType);
+            const overnightHotelName = prevLastHotelStop && currFirstHotelStop &&
+              prevLastHotelStop.name === currFirstHotelStop.name ? prevLastHotelStop.name : null;
+
             return (
               <div key={day.day} className="mb-10 last:mb-0">
+                {/* Overnight connector between days */}
+                {overnightHotelName && (
+                  <div className="flex items-center gap-2 py-2 px-4 -mt-8 mb-2">
+                    <div className="flex-1 border-t border-dashed border-border-subtle" />
+                    <span className="text-[10px] text-text-muted font-body italic flex items-center gap-1">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
+                        <path d="M3 12h1m8-9v1m8 8h1M5.6 5.6l.7.7m12.1-.7-.7.7M9 16a5 5 0 1 1 6 0" />
+                        <path d="M12 16v2m-3 0h6" />
+                      </svg>
+                      Overnight at {overnightHotelName}
+                    </span>
+                    <div className="flex-1 border-t border-dashed border-border-subtle" />
+                  </div>
+                )}
                 {/* Day header */}
                 <div className={`bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-1`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
-                      <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {day.date}</h2>
+                      <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {formatDateNice(day.date)}</h2>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-body ${dayStyle.bg} ${dayStyle.text} ${dayStyle.border} border`}>
                         {dayStyle.label}
                       </span>
@@ -947,17 +1081,38 @@ function DeepPlanPageContent() {
             );
           })}
 
-          {/* Summary */}
+          {/* Trip Summary */}
           <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
+            <h3 className="font-display font-bold text-sm text-text-primary mb-3">Trip Summary</h3>
             <div className="grid grid-cols-3 gap-4 text-center mb-3">
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{adjustedDays.length}</p><p className="text-text-muted text-[10px] font-body">Days</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{trip.destinations.length}</p><p className="text-text-muted text-[10px] font-body">Cities</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{totalNights}</p><p className="text-text-muted text-[10px] font-body">Nights</p></div>
             </div>
             {(flightCost + trainCost + hotelCost) > 0 && (
-              <div className="pt-3 border-t border-border-subtle flex justify-between items-center">
-                <span className="text-xs text-text-secondary font-body">Estimated Total</span>
-                <span className="text-accent-cyan font-mono font-bold">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+              <div className="pt-3 border-t border-border-subtle space-y-2">
+                {flightCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-text-muted font-body">Flights</span>
+                    <span className="text-xs font-mono text-text-secondary">{formatPrice(flightCost, currency)}</span>
+                  </div>
+                )}
+                {trainCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-text-muted font-body">Trains</span>
+                    <span className="text-xs font-mono text-text-secondary">{formatPrice(trainCost, currency)}</span>
+                  </div>
+                )}
+                {hotelCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-text-muted font-body">Hotels ({totalNights}N)</span>
+                    <span className="text-xs font-mono text-text-secondary">{formatPrice(hotelCost, currency)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
+                  <span className="text-xs text-text-secondary font-body font-semibold">Estimated Total</span>
+                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+                </div>
               </div>
             )}
           </div>
