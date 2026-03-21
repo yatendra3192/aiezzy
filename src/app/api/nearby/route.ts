@@ -32,6 +32,35 @@ export async function GET(req: NextRequest) {
     if (FLIGHTS_API_URL && FLIGHTS_API_KEY && checkIn && checkOut) {
       const liveResult = await fetchLiveHotels(location, checkIn, checkOut, currency);
       if (liveResult && liveResult.length > 0) {
+        // Enrich hotels without images using Google Places photos
+        if (API_KEY) {
+          const needsImages = liveResult.filter((h: any) => !h.images || h.images.length === 0);
+          if (needsImages.length > 0) {
+            await Promise.allSettled(
+              needsImages.slice(0, 10).map(async (h: any) => {
+                try {
+                  const searchRes = await fetch('https://places.googleapis.com/v1/places:searchText', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Goog-Api-Key': API_KEY,
+                      'X-Goog-FieldMask': 'places.photos',
+                    },
+                    body: JSON.stringify({ textQuery: `${h.displayName?.text || ''} hotel ${location}`, maxResultCount: 1 }),
+                  });
+                  const searchData = await searchRes.json();
+                  const photos = searchData.places?.[0]?.photos;
+                  if (photos?.length > 0) {
+                    h.images = photos.slice(0, 3).map((p: any) => ({
+                      thumbnail: `https://places.googleapis.com/v1/${p.name}/media?maxHeightPx=200&maxWidthPx=300&key=${API_KEY}`,
+                      original: `https://places.googleapis.com/v1/${p.name}/media?maxHeightPx=600&maxWidthPx=800&key=${API_KEY}`,
+                    }));
+                  }
+                } catch {}
+              })
+            );
+          }
+        }
         return NextResponse.json({ places: liveResult, source: 'live' });
       }
     }
