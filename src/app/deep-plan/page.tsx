@@ -25,6 +25,7 @@ interface DeepStop {
   legIndex?: number;
   note?: string;
   mealType?: 'breakfast' | 'lunch' | 'dinner';
+  isNextDay?: boolean;       // arrival is on the next day (overnight flight/train)
 }
 
 interface DayPlan {
@@ -201,7 +202,9 @@ function DeepPlanPageContent() {
 
         // How long to get from starting point to departure hub
         const isFirstLeg = destIdx === 0;
-        const startName = isFirstLeg ? trip.fromAddress : (prevDest?.selectedHotel?.name || `Stay in ${fromCity.name}`);
+        // Bug fix #3: Use short city name for home, not full address
+        const fromCityName = fromCity.parentCity || fromCity.name;
+        const startName = isFirstLeg ? (fromCityName || trip.fromAddress) : (prevDest?.selectedHotel?.name || `Stay in ${fromCityName}`);
         const startType = isFirstLeg ? 'home' as const : 'hotel' as const;
 
         // Travel to terminal: use real Google Directions data if available
@@ -237,9 +240,12 @@ function DeepPlanPageContent() {
             note: leaveTime && depTime ? `Leave by ${formatTime12(parseTime(leaveTime))} to reach on time` : undefined,
           });
 
-          // Step 2: Departure terminal
+          // Step 2: Departure terminal — use resolvedAirports data when available (bug fix #1)
           const terminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
-          const terminalName = depHub?.name || `${fromCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+          const resolvedInfo = leg.resolvedAirports;
+          const terminalName = depHub?.name
+            || (resolvedInfo?.fromCity ? `${resolvedInfo.fromCity} Airport` : null)
+            || `${fromCityName} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
           travelDay.stops.push({
             id: `dp${sc++}`, name: terminalName, type: terminalType, time: arriveAtTerminalTime,
             transport: { icon: leg.type, duration: leg.duration, distance: leg.distance },
@@ -249,30 +255,102 @@ function DeepPlanPageContent() {
               : `Board ${bufferMin}min before departure at ${depTime ? formatTime12(parseTime(depTime)) : '~'}`,
           });
 
-          // Step 3: Arrival terminal - use real directions if available
-          const arrTerminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
-          const arrTerminalName = arrHub?.name || `${toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
-          const hubToHotelKey = `hub-to-hotel-${destIdx}`;
-          const realHubToHotel = realTimes[hubToHotelKey];
-          const fromArrTerminalMin = realHubToHotel ? parseDurationMinutes(realHubToHotel.duration) : (arrHub?.transitToCenter.durationMin || 15);
-          const fromArrTerminalDist = realHubToHotel?.distance || arrHub?.transitToCenter.distance || '~';
-          travelDay.stops.push({
-            id: `dp${sc++}`, name: arrTerminalName, type: arrTerminalType, time: arrTime,
-            transport: { icon: arrHub?.transitToCenter.type || 'drive', duration: realHubToHotel?.duration || `${fromArrTerminalMin} min`, distance: fromArrTerminalDist },
-          });
+          // Detect overnight/multi-day arrival (bug fix #4)
+          // Only split into separate days if flight ACTUALLY arrives next day, not just based on duration
+          const sel = leg.selectedFlight || leg.selectedTrain;
+          let transitDays = 0;
+          if (sel && depTime && arrTime) {
+            const depH = parseInt(depTime.split(':')[0] || '0');
+            const arrH = parseInt(arrTime.split(':')[0] || '0');
+            const durMatch = (sel as any).duration?.match(/(\d+)h/);
+            const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+            // Check if explicitly marked as next-day, OR duration clearly crosses midnight
+            const arrivesNextDay = (sel as any).isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 20;
+            if (arrivesNextDay) {
+              // 1 transit day for overnight, +1 for each additional 24h
+              transitDays = durHrs >= 36 ? Math.ceil(durHrs / 24) : 1;
+            }
+          }
 
-          // Step 4: Arrive at hotel/destination
-          const hotelArriveTime = arrTime ? addMinutes(arrTime, fromArrTerminalMin) : null;
-          if (dest.nights > 0) {
-            travelDay.stops.push({
-              id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
-              time: hotelArriveTime, transport: null, destIndex: destIdx,
+          // If overnight: push departure day, add transit days, create arrival day
+          if (transitDays > 0) {
+            // Push departure day (stops so far: home + airport + flight departs)
+            result.push(travelDay);
+            dayNum++;
+
+            // Add "In Transit" days for flights > 24h
+            for (let td = 1; td < transitDays; td++) {
+              const transitDay: DayPlan = {
+                day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+                type: 'travel', city: '', dayCost: 0, costLabel: 'In Transit',
+              };
+              transitDay.stops.push({
+                id: `dp${sc++}`, name: `In transit — ${leg.type === 'flight' ? 'flight' : 'train'} ${leg.duration || ''}`,
+                type: 'airport', time: null, transport: null,
+                note: `${fromCityName} > ${toCity.name}`,
+              });
+              result.push(transitDay);
+              dayNum++;
+            }
+
+            // Create arrival day
+            const arrivalDay: DayPlan = {
+              day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
+              type: 'travel', city: toCity.name, dayCost: 0, costLabel: 'Arrival',
+            };
+
+            // Arrival terminal
+            const arrTerminalType2 = leg.type === 'flight' ? 'airport' as const : 'station' as const;
+            const arrTerminalName2 = arrHub?.name || `${toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+            const hubToHotelKey2 = `hub-to-hotel-${destIdx}`;
+            const realHubToHotel2 = realTimes[hubToHotelKey2];
+            const fromArrTerminalMin2 = realHubToHotel2 ? parseDurationMinutes(realHubToHotel2.duration) : (arrHub?.transitToCenter.durationMin || 15);
+            const fromArrTerminalDist2 = realHubToHotel2?.distance || arrHub?.transitToCenter.distance || '~';
+
+            arrivalDay.stops.push({
+              id: `dp${sc++}`, name: arrTerminalName2, type: arrTerminalType2, time: arrTime,
+              transport: { icon: arrHub?.transitToCenter.type || 'drive', duration: realHubToHotel2?.duration || `${fromArrTerminalMin2} min`, distance: fromArrTerminalDist2 },
             });
+
+            const hotelArriveTime2 = arrTime ? addMinutes(arrTime, fromArrTerminalMin2) : null;
+            if (dest.nights > 0) {
+              arrivalDay.stops.push({
+                id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
+                time: hotelArriveTime2, transport: null, destIndex: destIdx,
+              });
+            } else {
+              arrivalDay.stops.push({
+                id: `dp${sc++}`, name: `${toCity.name} Center`, type: 'destination',
+                time: hotelArriveTime2, transport: null,
+              });
+            }
+            result.push(arrivalDay);
+            // Don't increment dayNum here — it's done below after explore days
           } else {
+            // Same-day arrival — keep everything on the travel day
+            const arrTerminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
+            const arrTerminalName = arrHub?.name || `${toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+            const hubToHotelKey = `hub-to-hotel-${destIdx}`;
+            const realHubToHotel = realTimes[hubToHotelKey];
+            const fromArrTerminalMin = realHubToHotel ? parseDurationMinutes(realHubToHotel.duration) : (arrHub?.transitToCenter.durationMin || 15);
+            const fromArrTerminalDist = realHubToHotel?.distance || arrHub?.transitToCenter.distance || '~';
             travelDay.stops.push({
-              id: `dp${sc++}`, name: `${toCity.name} Center`, type: 'destination',
-              time: hotelArriveTime, transport: null,
+              id: `dp${sc++}`, name: arrTerminalName, type: arrTerminalType, time: arrTime,
+              transport: { icon: arrHub?.transitToCenter.type || 'drive', duration: realHubToHotel?.duration || `${fromArrTerminalMin} min`, distance: fromArrTerminalDist },
             });
+
+            const hotelArriveTime = arrTime ? addMinutes(arrTime, fromArrTerminalMin) : null;
+            if (dest.nights > 0) {
+              travelDay.stops.push({
+                id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
+                time: hotelArriveTime, transport: null, destIndex: destIdx,
+              });
+            } else {
+              travelDay.stops.push({
+                id: `dp${sc++}`, name: `${toCity.name} Center`, type: 'destination',
+                time: hotelArriveTime, transport: null,
+              });
+            }
           }
         } else {
           // DRIVE: direct from start to destination
@@ -294,8 +372,11 @@ function DeepPlanPageContent() {
           }
         }
       }
-      result.push(travelDay);
-      dayNum++;
+      // Only push travelDay if it wasn't already pushed (overnight flights push it early)
+      if (!result.includes(travelDay)) {
+        result.push(travelDay);
+        dayNum++;
+      }
 
       // ── EXPLORE DAYS at this destination ──
       const exploreDays = Math.max(0, dest.nights - 1);
@@ -401,14 +482,23 @@ function DeepPlanPageContent() {
             id: `dp${sc++}`, name: startName, type: 'hotel', time: leaveTime,
             transport: { icon: 'drive', duration: `${toTerminalMin} min`, distance: depHub?.transitToCenter.distance || '~' },
           });
+          // Bug fix #2: Use resolvedAirports for return leg terminal names
+          const returnResolved = returnLeg.resolvedAirports;
+          const depTerminalName = depHub?.name
+            || (returnResolved?.fromCity ? `${returnResolved.fromCity} Airport` : null)
+            || `${fromCity.parentCity || fromCity.name} ${returnLeg.type === 'flight' ? 'Airport' : 'Station'}`;
+          const arrTerminalName = arrHub?.name
+            || (returnResolved?.toCity ? `${returnResolved.toCity} Airport` : null)
+            || `${trip.from.parentCity || trip.from.name} ${returnLeg.type === 'flight' ? 'Airport' : 'Station'}`;
+
           returnDay.stops.push({
-            id: `dp${sc++}`, name: depHub?.name || `${fromCity.name} Terminal`, type: returnLeg.type === 'flight' ? 'airport' : 'station',
+            id: `dp${sc++}`, name: depTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
             time: depTime ? subtractMinutes(depTime, bufferMin) : null,
             transport: { icon: returnLeg.type, duration: returnLeg.duration, distance: returnLeg.distance },
             legIndex: trip.transportLegs.length - 1,
           });
           returnDay.stops.push({
-            id: `dp${sc++}`, name: arrHub?.name || `${trip.from.name} Terminal`, type: returnLeg.type === 'flight' ? 'airport' : 'station',
+            id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
             time: arrTime,
             transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
           });
@@ -419,7 +509,8 @@ function DeepPlanPageContent() {
           });
         }
 
-        returnDay.stops.push({ id: `dp${sc++}`, name: trip.fromAddress, type: 'home', time: null, transport: null });
+        // Bug fix #3: Show city name, not full address
+        returnDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
       }
       result.push(returnDay);
     }
@@ -633,7 +724,10 @@ function DeepPlanPageContent() {
                           <div className="flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               {stop.time && (
-                                <span className="text-accent-cyan text-[11px] font-mono font-bold">{formatTime12(parseTime(stop.time))}</span>
+                                <span className="text-accent-cyan text-[11px] font-mono font-bold">
+                                  {formatTime12(parseTime(stop.time))}
+                                  {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
+                                </span>
                               )}
                               <h3 className="font-display font-bold text-sm text-text-primary leading-tight">{stop.name}</h3>
                               {/* Google Maps link for attractions and hotels */}
@@ -663,43 +757,110 @@ function DeepPlanPageContent() {
                               )}
                             </div>
                             {stop.note && <p className="text-[10px] text-text-muted font-body mt-0.5 italic">{stop.note}</p>}
-                            {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (
-                              <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-xs font-body mt-0.5 hover:underline">
-                                Change stay
-                              </button>
-                            )}
+
+                            {/* Bug fix #6: Hotel card with rating, price, dates */}
+                            {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (() => {
+                              const dest = trip.destinations[stop.destIndex!];
+                              const hotel = dest?.selectedHotel;
+                              if (!hotel) return (
+                                <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-xs font-body mt-0.5 hover:underline">
+                                  Select hotel
+                                </button>
+                              );
+                              return (
+                                <div className="mt-1.5 bg-bg-card border border-border-subtle rounded-lg p-2 space-y-0.5">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      {hotel.rating > 0 && <span className="px-1 py-0.5 rounded text-white font-mono font-bold text-[8px]" style={{ backgroundColor: hotel.ratingColor }}>{hotel.rating}</span>}
+                                      <span className="text-[10px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}N</span>
+                                    </div>
+                                    <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {stop.type === 'attraction' && !isMeal && !isCustom && <span className="text-xs text-text-muted font-body">Sightseeing</span>}
                           </div>
                         </div>
 
-                        {/* Transport segment */}
-                        {hasTransport && stop.transport && (
-                          <div className="pl-4 py-1">
-                            <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
-                              <button
-                                onClick={() => {
-                                  if (stop.legIndex !== undefined) {
-                                    if (stop.transport?.icon === 'flight') setFlightModal({ legIndex: stop.legIndex });
-                                    else if (stop.transport?.icon === 'train') setTrainModal({ legIndex: stop.legIndex });
-                                    else setTransportModal({ legIndex: stop.legIndex });
-                                  }
-                                }}
-                                className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                  <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
-                                </svg>
-                                <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
-                                {stop.legIndex !== undefined && (
-                                  <>
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted print-hide"><path d="M6 9l6 6 6-6"/></svg>
-                                    <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
-                                  </>
-                                )}
-                              </button>
+                        {/* Bug fix #5: Rich transport card (flight/train details) */}
+                        {hasTransport && stop.transport && (() => {
+                          const legIdx = stop.legIndex;
+                          const leg = legIdx !== undefined ? trip.transportLegs[legIdx] : null;
+                          const flight = leg?.selectedFlight;
+                          const train = leg?.selectedTrain;
+
+                          // Rich flight card
+                          if (flight && legIdx !== undefined) {
+                            return (
+                              <div className="pl-4 py-1">
+                                <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                                  <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-display font-bold text-text-primary">{flight.airline} {flight.flightNumber}</span>
+                                      <div className="flex items-center gap-2 print-hide">
+                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                      <span>{flight.departure} &rarr; {flight.arrival}</span>
+                                      <span>{flight.duration} &middot; {flight.stops}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px]">
+                                      <span className="text-text-secondary font-body">{formatPrice(flight.pricePerAdult, currency)}/pax &times; {trip.adults}</span>
+                                      <span className="text-accent-cyan font-mono font-bold">{formatPrice(flight.pricePerAdult * trip.adults, currency)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // Rich train card
+                          if (train && legIdx !== undefined) {
+                            return (
+                              <div className="pl-4 py-1">
+                                <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                                  <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-display font-bold text-text-primary">{train.operator || train.trainName} {train.trainNumber}</span>
+                                      <button onClick={() => setTransportModal({ legIndex: legIdx })} className="print-hide text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                      <span>{train.departure} &rarr; {train.arrival}</span>
+                                      <span>{train.duration}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px]">
+                                      <span className="text-text-secondary font-body">{formatPrice(train.price, currency)}/pax &times; {trip.adults}</span>
+                                      <span className="text-accent-cyan font-mono font-bold">{formatPrice(train.price * trip.adults, currency)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          // Default: simple transport line (drive, walk, etc.)
+                          return (
+                            <div className="pl-4 py-1">
+                              <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                                <button
+                                  onClick={() => {
+                                    if (legIdx !== undefined) setTransportModal({ legIndex: legIdx });
+                                  }}
+                                  className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                    <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
+                                  </svg>
+                                  <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                  {legIdx !== undefined && <span className="text-[10px] text-text-muted font-body print-hide">Change</span>}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })}

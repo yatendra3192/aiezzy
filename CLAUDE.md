@@ -13,7 +13,9 @@ npm run restart    # Kill port 3000 and restart dev server (safe for Claude Code
 
 **Important:** Never use `taskkill //F //IM node.exe` — it kills Claude Code. Use `npx kill-port 3000` instead.
 
-**Dev server cache corruption:** Next.js 14.2.35 frequently corrupts its `.next` webpack cache when files change, causing "Cannot find module" errors and blank pages. After every code change, always do: `npx kill-port 3000; rm -rf .next; npm run dev` then verify pages return 200 with curl before telling the user a fix is done.
+**Dev server cache corruption:** Next.js 14.2.35 frequently corrupts its `.next` webpack cache when files change, causing "Cannot find module" errors and blank pages. After every code change, always do: `npx kill-port 3000; rm -rf .next; npm run dev` then verify pages return 200 with curl before telling the user a fix is done. This is non-negotiable.
+
+**Production build check:** Always run `npx next build` before pushing to git. Railway deploys fail silently on TypeScript errors (e.g., `Set` iteration without `downlevelIteration`, `parseInt` on number types).
 
 No test runner or linter configured.
 
@@ -21,149 +23,103 @@ No test runner or linter configured.
 
 **Next.js 14 App Router** — all pages `"use client"`. Responsive: mobile (430px) → desktop (680-900px via `md:`).
 
-**Flow:** `/` (sign-in) → `/signup` → `/my-trips` (dashboard) → `/plan` (trip builder) → `/route` (transport/hotel selection) → `/deep-plan` (day-by-day itinerary). Additional pages: `/settings` (profile/security), `/admin`, `/shared/[token]` (public trip view), `/auth/forgot-password`, `/auth/reset-callback`, `/auth/verify-email`, `/auth/verify-callback`.
+**Flow:** `/` (sign-in) → `/signup` → `/my-trips` (dashboard) → `/plan` (trip builder) → `/route` (transport/hotel selection) → `/deep-plan` (day-by-day itinerary). Additional pages: `/settings`, `/admin`, `/shared/[token]`, `/auth/*`.
 
-**Trip IDs in URLs:** All trip pages use `?id=xxx` query params for bookmarkable URLs. Pages use `useSearchParams()` wrapped in `<Suspense>` boundaries. Priority: URL param > context tripId > sessionStorage.
+**Trip IDs in URLs:** All trip pages use `?id=xxx` query params. Pages use `useSearchParams()` wrapped in `<Suspense>` boundaries. Priority: URL param > context tripId > sessionStorage.
 
 ### Auth
 
-NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + GoogleProvider. Signup via `POST /api/auth/signup` (uses `admin.createUser` with `email_confirm: true`). Profile auto-created by DB trigger. Password reset via Supabase `resetPasswordForEmail()`. Auth API routes: `/api/auth/signup`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/change-password`, `/api/auth/delete-account`, `/api/auth/resend-verification`.
+NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + GoogleProvider. Signup via `POST /api/auth/signup`.
 
 ### Database
 
-**App Supabase** (`NEXT_PUBLIC_SUPABASE_URL`): `profiles`, `trips`, `trip_destinations`, `trip_transport_legs`. JSONB for City/Flight/Train/Hotel. RLS on all. `trips.share_token` (TEXT UNIQUE) enables public sharing. Schema: `supabase/schema.sql`.
+**App Supabase** (`NEXT_PUBLIC_SUPABASE_URL`): `profiles`, `trips`, `trip_destinations`, `trip_transport_legs`. JSONB for City/Flight/Train/Hotel. RLS on all.
 
-**Catalog Supabase** (`CATALOG_SUPABASE_URL`): 47,830 airports with PostGIS coordinates, cities, countries. Used for airport resolution via `nearby_airports(lat, lng, radius_km)` RPC function.
+**Catalog Supabase** (`CATALOG_SUPABASE_URL`): 47,830 airports with PostGIS. Used via `nearby_airports(lat, lng, radius_km)` RPC.
 
-**JSONB embedding pattern (no-migration):** Extra data is stored inside existing JSONB columns to avoid DB migrations:
-- `places` → stored as `_places` inside `trip_destinations.city` JSONB
-- `additionalHotels` → stored as `_additionalHotels` inside `trip_destinations.selected_hotel` JSONB
-- `resolvedAirports` → stored as `_resolvedAirports` inside `trip_transport_legs.selected_flight` JSONB
-On save, the API embeds the data; on load, it extracts and returns separately.
+**JSONB embedding pattern (no-migration):** Extra data stored inside existing JSONB columns:
+- `places` → `_places` inside `trip_destinations.city` JSONB
+- `additionalHotels` → `_additionalHotels` inside `trip_destinations.selected_hotel` JSONB
+- `resolvedAirports` → `_resolvedAirports` inside `trip_transport_legs.selected_flight` JSONB
+On save, API embeds; on load, extracts and returns separately.
 
 ### State Management
 
-**TripContext** (`src/context/TripContext.tsx`): Core trip state with two parallel data flows:
-- **Places flow** (new): `userPlaces` → `addPlace`/`removePlace`/`reorderPlaces`/`updatePlaceNights` → `groupPlacesIntoCities()` auto-groups by `parentCity` into destinations
-- **Destinations flow** (legacy/templates/AI): `addDestination` directly adds cities with `places: []`
-- Key methods: `selectFlight`/`selectTrain`, `changeTransportType`, `saveTrip`, `loadTrip`/`resetTrip`/`clearTripId`, `reorderDestinations`, `updateNights`, `addAdditionalHotel`/`removeAdditionalHotel`/`updateAdditionalHotelNights`
-- `isDirty` tracks unsaved changes. Transport legs = destinations + 1 for round trips. IDs use `Date.now()-randomSuffix`.
-- `groupPlacesIntoCities()` has two-pass normalization: first normalizes parentCity from fullName when API fails, then cross-references against known city groups.
+**TripContext** (`src/context/TripContext.tsx`): Core trip state with two data flows:
+- **Places flow**: `userPlaces` → `addPlace`/`removePlace`/`reorderPlaces`/`updatePlaceNights` → `groupPlacesIntoCities()` auto-groups by `parentCity`
+- **Destinations flow** (templates/AI): `addDestination` directly adds cities with `places: []`
+- `groupPlacesIntoCities()` has two-pass normalization: normalizes parentCity from fullName when API fails, then cross-references against known city groups
+- `setTripType` preserves removed return leg in `removedReturnLegRef` for restoration when toggling back to round trip
+- Transport pricing: adults + children pay full fare, infants pay 15% on flights/trains
+- Hotel rooms: `Math.ceil((adults + children) / 2)` rooms per hotel
 
-**CurrencyContext** (`src/context/CurrencyContext.tsx`): Selected currency persisted in localStorage. 10 currencies (INR, USD, EUR, GBP, JPY, AUD, CAD, SGD, AED, THB). All prices stored in INR, converted on display via `formatPrice()` from `src/lib/currency.ts`.
-
-**LocaleContext** (`src/context/LocaleContext.tsx`): English/Hindi i18n. ~70 translation keys. `useLocale()` provides `t()` function. Infrastructure ready for incremental adoption — most UI still uses hardcoded English.
+**CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`.
 
 ### API Routes
 
-- `/api/flights` — Parallel Supabase airport search + Google Flights scraper + Amadeus fallback. Returns resolved airport codes + city names. Supports `exact=true` to search only the specified airport code (no fallback to nearby). IATA codes are looked up in catalog DB for name/city.
-- `/api/trains` — Google Directions transit mode. Filters to routes where ALL segments are rail types. Mixed bus+metro routes excluded.
-- `/api/nearby` — Live Google Hotels scraper (USD→INR ×85), falls back to Google Places Nearby.
-- `/api/directions` — Google Directions (driving/transit/walking/bicycling) with `alternatives=true`.
+- `/api/flights` — **Amadeus (primary) + Google scraper (parallel)**. Both run simultaneously, results merged and deduplicated. Tries top 3 arrival airports when nearest has no flights (e.g., PNY→MAA for Pondicherry). `exact=true` for specific airport. Amadeus returns per-person price (divides `grandTotal` by adults). IATA codes looked up in catalog DB.
+- `/api/trains` — Google Directions transit mode. Filters to rail-only segments.
+- `/api/nearby` — Google Hotels scraper + Google Places Photos enrichment. Hotels without scraper images get photos from Places API (up to 10 hotels, 3 photos each). Cleans description field (removes USD prices, deal text). Returns deal badges, amenities, hotel class.
 - `/api/places` — Google Places Autocomplete (New v1) + Details; `scope=cities|all`.
-- `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. 24h in-memory cache. Returns all large airports within 1000km (no cap).
-- `/api/trips` — CRUD. Auto-generates titles. Trip numbering per user. Embeds `_places` in city JSONB and `_additionalHotels` in selected_hotel JSONB.
-- `/api/trips/[id]/share` — POST generates share_token, DELETE removes it.
-- `/api/shared/[token]` — Public trip fetch by share_token (no auth, uses service role).
-- `/api/profile` — GET/PUT user profile (display_name).
-- `/api/weather` — Open-Meteo API (free, no key). 1-hour server cache. Only works for dates within ~16 days.
-- `/api/ai/suggest` — Claude API trip suggestions (claude-haiku-4-5) with template fallback when `ANTHROPIC_API_KEY` not set.
-- `/api/admin` — Admin stats. Auth via NEXTAUTH_SECRET as key.
-- `/api/admin/migrate` — Runs DB migrations (add share_token column, places column).
+- `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. Searches "city" appended first to avoid location-biased results (e.g., "Barcelona city" → Spain, not "North Barcelona" apartment in Mumbai). Returns all large airports within 1000km (no cap).
+- `/api/trips` — CRUD with JSONB embedding for places/additionalHotels.
+- `/api/weather` — Open-Meteo API (free). 1-hour cache. Only works ≤16 days out.
+- `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). System prompt for travel expertise.
+- `/api/admin/migrate` — DB migrations.
 
 ### External Scraper API
 
-Self-hosted Google Flights/Hotels scraper at `FLIGHTS_API_URL` (Railway). Code in separate `api4Aiezzy2` repo. **Limitation:** Google server-renders flights only for popular routes; the parallel airport approach handles this by trying multiple airports.
+Self-hosted at `FLIGHTS_API_URL` (Railway). Repo: `api4Aiezzy2`. Hotel parser extracts images, links, descriptions, amenities from Google Hotels HTML via cheerio.
 
 ### Plan Page (`/plan`) — Places-First Flow
 
-Users add **places/attractions** (e.g., "Louvre Museum", "Anne Frank House") instead of cities. The `PlacesAutocomplete` component resolves `parentCity` from Google Place Details API with multi-level fallbacks: Google locality → known CITIES match → secondaryText parsing → formattedAddress parsing → place name.
-
-On "Plan My Route", `groupPlacesIntoCities()` groups places by `parentCity` (case-insensitive), creates Destination entries with summed nights, then `optimizeRoute()` finds shortest path. Templates/AI use `addDestination()` which bypasses the places flow.
-
-The Plan page shows `userPlaces` when present, falls back to showing `destinations` for backward compatibility (templates, AI, loaded old trips).
+Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with multi-level fallbacks: Google locality → known CITIES → secondaryText parsing → formattedAddress parsing. On "Plan My Route", groups places by city, then `optimizeRoute()` finds shortest path. Templates/AI use `addDestination()` bypassing places flow. Plan page shows `userPlaces` when present, falls back to `destinations`.
 
 ### Route Page (`/route`) — Key Behaviors
 
-- **Smart auto-select:** Fetches flights AND trains in parallel. Picks train if cheaper OR within 30% price and faster. Caches results in `flightCacheRef`.
-- **Auto-save:** 5s debounced save after selection changes. No manual save button.
-- **Reload stability:** `tripStableRef` prevents date/nights change effects from re-fetching flights on initial trip load from DB. Trip must be loaded + 500ms settled before user changes trigger re-fetches.
-- **Debounced re-fetch:** Nights and date changes are debounced 1.5s — rapid clicking doesn't spam API calls. Toast shows "Dates changed — will update transport options...".
-- **Editable trip info:** Departure date (date picker), adults (+/- buttons), trip type (toggle) are editable inline on the route page.
-- **Resolved airports persistence:** `ResolvedAirports` data stored as `_resolvedAirports` inside `selected_flight` JSONB column (no DB migration needed). Extracted on load to `leg.resolvedAirports`.
-- **Airport/station distance info:** Teal "Arriving at..." badge above each hotel shows airport→hotel distance. Orange "Departing from..." above each flight/train shows hotel→airport distance. Uses Google Directions API for real road distances (cached per hotel). Home-to-airport also uses real road distance.
-- **Multi-hotel per city:** Each destination can have multiple hotels via `additionalHotels`. Primary hotel nights = total - additional hotel nights. "+ Add another hotel" replaces the old "Add note" feature.
-- **Dual airport dropdowns:** Transport modal has both departure AND arrival airport selectors with nearby airports. Filters out same-airport (no BOM→BOM). `exact=true` prevents API fallback when user picks specific airport.
-- **Places sub-list:** Destinations show bullet list of user's places with nights (hidden when place name = city name).
-- **Weather badges:** `WeatherBadge` component shows forecast inline next to destination names (Open-Meteo, skips dates >15 days out).
-- **Visa badges:** Color-coded visa requirements from Indian passport perspective (34+ countries in `src/data/visaRequirements.ts`).
-- **Budget visualization:** Stacked bar chart in Trip Estimate sidebar with percentage breakdown.
-- **Multi-currency:** Currency selector in sidebar, all prices use `formatPrice()`.
-- **Action buttons:** Download PDF (structured jsPDF), Add to Calendar (.ics), Packing List, Share Trip, Deep Plan.
-- **Affiliate links:** "Book" links on flights (Skyscanner), hotels (Booking.com), trains (IRCTC/Trainline).
-- **Flight/hotel filters:** Stops + max price filters for flights (3+ results). Rating + price filters for hotels.
+- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster.
+- **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). No `autoSelectLoadingRef` guard (was causing infinite "Saving in a moment..." bug).
+- **Reload stability:** `tripStableRef` prevents date/nights effects from re-fetching on initial load. Set after 500ms for ALL arrival paths (plan page, reload, new trip).
+- **Manual refresh:** "Update Flights & Trains" button appears when date/nights change. No auto-refetch — user clicks when ready. Also fetches for empty legs (new return leg after one-way→round-trip toggle).
+- **Editable trip info:** Date picker, adults/children/infants +/- buttons, trip type toggle inline on route page.
+- **Full-screen modals:** Both transport and hotel modals are full-screen overlays with back arrow navigation.
+- **Hotel modal:** Left sidebar with rating/price/amenity filters, list/grid toggle, Google Places photos, deal badges, Maps + Booking.com links with dates.
+- **Transport modal:** Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display.
+- **Hub-to-hotel distances:** Separate `arr-{di}` (arrival) and `dep-{di}` (departure) distances because airports can differ.
+- **Hotel room calc:** `Math.ceil((adults + children) / 2)` rooms, displayed as "₹X/night × N × R rooms".
 
-### Transport Compare Modal
+### Deep Plan Page (`/deep-plan`) — Day-by-Day Itinerary
 
-`TransportCompareModal` — 8 transport types. Flight/train sorting with filters. Dual airport dropdowns (departure + arrival nearby airports within 1000km). `exact=true` API param for specific airport search. Affiliate booking links per result. Passes `airportInfo` back to route page when user selects from different airport.
+10 features: Day type badges (Travel/Explore/Departure), daily budget, weather per day, editable activities (add/remove), meal slots (breakfast/lunch/dinner), adjustable start time, Google Maps links, day notes, color-coded timeline, print button.
 
-### Key Components
-
-- **ShareTripModal** — Generates share link, copy button, unshare option. Resets state across trips.
-- **AISuggestModal** — Natural language trip planner. Claude API or template fallback. Example prompt chips. Uses `addDestination()` (bypasses places flow).
-- **TripTemplatesSection** — 8 curated templates (Goa, Rajasthan, Europe, Bali, Japan, Kerala, Dubai, Himachal). Uses `addDestination()`.
-- **PackingListModal** — Smart packing list by destinations/duration/climate. Persistent checkboxes in localStorage.
-- **WeatherBadge** — Compact inline weather for destinations.
-- **ActivitySuggestions** — Expandable city attractions with Google Maps links. Accepts `userPlaces` prop to show user's places first, supplemented by catalog attractions.
+**Overnight flight handling:** Detects flights >12h or next-day arrivals. Splits into departure day + optional "In Transit" days + arrival day. Each calendar date gets its own day card. No cramming overnight arrivals into departure day.
 
 ### Key Patterns
 
-- **City data from Google:** `parentCity` on City from Place Details `locality` component. Fallback chain in `getPlaceDetails`: locality → postal_town → administrative_area_level_2 → sublocality_level_1 → sublocality.
-- **Airport resolution chain:** `findAirportCode()` → flights API geocodes + Supabase parallel search → resolved codes + city names. When input is IATA code, looks up name/city from catalog DB.
-- **Affiliate links:** `src/lib/affiliateLinks.ts` — Skyscanner, Booking.com, IRCTC/Trainline URL generators. Indian route detection via city name + airport code matching.
-- **Price display:** All prices stored in INR. Display via `formatPrice(amountINR, currency)` from `src/lib/currency.ts`. Hardcoded `₹` symbols should be replaced with `formatPrice()` when encountered.
-- **Error handling:** `src/app/error.tsx` (route-level) + `src/app/global-error.tsx` (root-level). `src/lib/fetchWithRetry.ts` for retrying failed fetches (2 retries, exponential backoff). `src/lib/errorReporter.ts` captures unhandled errors.
-- **PDF export:** `src/lib/pdfExport.ts` — `exportTripPDFFromData()` generates structured PDF using jsPDF directly (not html2canvas). ASCII-safe rendering (Rs. instead of ₹, > instead of →). Text truncation for long names. Right-aligned price columns.
-- **Calendar export:** `src/lib/calendarExport.ts` generates .ics with flights, trains, hotels as VEVENTs.
-- **Visa data:** `src/data/visaRequirements.ts` — Indian passport perspective, 34+ countries with aliases (UK/United Kingdom, UAE/United Arab Emirates).
-- **Hub-to-hotel distances:** Route page fetches real Google Directions distances from airport/station to each hotel. Stored separately as `arr-{di}` (arrival) and `dep-{di}` (departure) because arrival and departure airports can differ.
+- **City geocoding:** Search "city" appended to avoid India location bias (e.g., "Barcelona city" → Spain).
+- **Airport resolution:** `resolveToAirports()` for IATA codes looks up name/city from catalog DB. For city names, geocodes + PostGIS nearby search.
+- **Price display:** All prices in INR. `formatPrice(amountINR, currency)`. PDF uses ASCII-safe `Rs.` instead of `₹`.
+- **PDF export:** `exportTripPDFFromData()` — structured jsPDF (not html2canvas). Text truncation, right-aligned price columns.
+- **TypeScript gotchas:** Don't use `for...of` on `Set` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` instead.
 
 ### Styling
 
-Light theme. Tailwind: `bg-primary` (#FAF7F2), `accent-cyan` (#E8654A coral), `accent-gold` (#0D9488 teal). Fonts: Syne/Plus Jakarta Sans/Space Mono. `scrollbar-hide` utility. `focus-visible` outline (2px coral) for accessibility.
-
-### Accessibility
-
-WCAG basics implemented: `aria-label` on all icon buttons, `role="dialog"` + `aria-modal` on all modals, `role="tablist"` + `role="tab"` + `aria-selected` on transport tabs, `role="alert"` on errors, `role="status"` + `aria-live="polite"` on auto-save.
-
-### PWA
-
-`public/manifest.json` (standalone, start_url `/my-trips`), `public/sw.js` (cache-first static, network-first API), registered via `ServiceWorkerRegister` component.
-
-### Monitoring
-
-- **Google Analytics:** `GoogleAnalytics` component loads GA4 via `NEXT_PUBLIC_GA_ID`.
-- **Error tracking:** `ErrorReporterInit` captures `window.error` + `unhandledrejection`. Ready for Sentry via `NEXT_PUBLIC_SENTRY_DSN`.
-- **Web Vitals:** `WebVitals` component measures LCP, FID, TTFB via PerformanceObserver.
+Light theme. Tailwind: `bg-primary` (#FAF7F2), `accent-cyan` (#E8654A coral), `accent-gold` (#0D9488 teal). Fonts: Syne/Plus Jakarta Sans/Space Mono.
 
 ### Environment Variables
 
 ```
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-CATALOG_SUPABASE_URL          # Catalog DB with airports table
-CATALOG_SUPABASE_ANON_KEY     # Catalog DB anon key
-NEXTAUTH_URL
-NEXTAUTH_SECRET
-FLIGHTS_API_URL               # Google Flights scraper API
-FLIGHTS_API_KEY               # Scraper API key
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-NEXT_PUBLIC_GA_ID             # Google Analytics 4 measurement ID
-ANTHROPIC_API_KEY             # Optional: enables AI trip suggestions (falls back to templates)
-NEXT_PUBLIC_SENTRY_DSN        # Optional: enables Sentry error reporting
+NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY
+CATALOG_SUPABASE_URL / CATALOG_SUPABASE_ANON_KEY
+NEXTAUTH_URL / NEXTAUTH_SECRET
+FLIGHTS_API_URL / FLIGHTS_API_KEY
+GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+AMADEUS_API_KEY / AMADEUS_API_SECRET / AMADEUS_BASE_URL
+OPENAI_API_KEY                # AI trip suggestions (primary)
+ANTHROPIC_API_KEY             # AI trip suggestions (fallback)
+NEXT_PUBLIC_GA_ID             # Google Analytics 4
+NEXT_PUBLIC_SENTRY_DSN        # Optional: Sentry
 ```
 
 ### Path Alias
