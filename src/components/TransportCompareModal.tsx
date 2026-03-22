@@ -28,6 +28,7 @@ interface Props {
   onSelectBus: () => void;
   children?: number;
   infants?: number;
+  onBookingDocUploaded?: (file: File, matchCities: string[]) => void;
   cachedFlights?: any[] | null;
 }
 
@@ -91,7 +92,7 @@ function padTime(t: string): string {
 export default function TransportCompareModal({
   isOpen, onClose, fromCity, toCity, fromCode, toCode, fromAirport, toAirport,
   date, adults, currentType, selectedFlight, selectedTrain,
-  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, children: tripChildren = 0, infants: tripInfants = 0, cachedFlights,
+  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, children: tripChildren = 0, infants: tripInfants = 0, onBookingDocUploaded, cachedFlights,
 }: Props) {
   const { currency } = useCurrency();
   const [tab, setTab] = useState<TabType>(currentType as TabType || 'flight');
@@ -236,6 +237,9 @@ export default function TransportCompareModal({
         setCustomPrice(String(Math.round(data.priceTotal)));
       }
       setShowCustomForm(true);
+      // Store file as a booking doc for viewing later
+      const cities = [data.from, data.to, fromCity, toCity].filter(Boolean).map((c: string) => c.toLowerCase());
+      if (onBookingDocUploaded) onBookingDocUploaded(file, cities);
     } catch (err: any) {
       setUploadError(err.message || 'Failed to read ticket');
     } finally {

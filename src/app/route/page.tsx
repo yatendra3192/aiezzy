@@ -1651,6 +1651,19 @@ function RoutePageContent() {
             selectedFlight={leg?.selectedFlight || null}
             selectedTrain={leg?.selectedTrain || null}
             cachedFlights={flightCacheRef.current[transportModal.legIndex] || null}
+            onBookingDocUploaded={async (file, matchCities) => {
+              try {
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('tripId', trip.tripId || 'pending');
+                fd.append('matchCities', matchCities.join(','));
+                const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
+                if (res.ok) {
+                  const doc = await res.json();
+                  trip.addBookingDoc(doc);
+                }
+              } catch { /* continue without saving doc */ }
+            }}
             onSelectFlight={(flight, airportInfo) => {
               if (leg) {
                 trip.selectFlight(leg.id, flight);
