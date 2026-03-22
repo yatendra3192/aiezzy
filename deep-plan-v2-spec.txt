@@ -1,0 +1,96 @@
+Deep Plan V2 — Full Day Planning Spec
+======================================
+
+## Core Principle
+Every day has 24 hours. Plan around FIXED PILLARS, fill remaining time with activities.
+
+## Fixed Pillars (user-adjustable defaults)
+1. Sleep: 10:00 PM - 7:00 AM (default, user can change)
+2. Breakfast: 8:00 AM (at hotel or nearby)
+3. Lunch: 12:30 PM
+4. Dinner: 7:00 PM
+5. Transport: exact times from selected flights/trains
+6. Hotel check-in: based on arrival time
+7. Hotel check-out: based on departure or standard 11:00 AM
+
+## Day Types (merged — no more separate "travel" vs "explore")
+
+### Arrival Day (e.g., fly Mumbai→Goa, arrive 4 PM)
+- 11:47 AM: Leave home
+- 12:25 PM: Airport (check-in note)
+- 1:55 PM: Flight departs
+- 3:00 PM: Arrive Goa Airport
+- 4:07 PM: Check into hotel
+  → NOTE: "Standard check-in is 3 PM. You're arriving at 4 PM — no early check-in needed."
+  → If arriving before 3 PM: "Consider requesting early check-in or leave luggage at reception"
+- 4:30 PM: Free time starts
+  → Suggest: "You have ~2.5 hours before dinner. Here are nearby activities:"
+  → Show 1-2 attractions from user's places or city attractions
+- 7:00 PM: Dinner
+- 8:30 PM: Evening walk / beach sunset (for beach destinations)
+- 10:00 PM: Sleep
+
+### Full Explore Day
+- 7:00 AM: Wake up
+- 8:00 AM: Breakfast (at hotel or suggest nearby cafe)
+- 9:00 AM: Leave hotel
+- 9:30-12:00: Morning activities (2-3 attractions)
+- 12:30 PM: Lunch (suggest restaurant near last attraction)
+- 2:00-5:00 PM: Afternoon activities (2-3 attractions)
+- 5:30 PM: Return to hotel / rest
+- 7:00 PM: Dinner
+- 8:30 PM: Night market / evening walk (optional)
+- 10:00 PM: Sleep
+
+### Departure Day (e.g., fly Goa→Barcelona at 6 PM)
+- 7:00 AM: Wake up
+- 8:00 AM: Breakfast
+- 9:00-11:00 AM: Morning exploration (1-2 nearby attractions)
+  → "You have the morning free before your flight"
+- 11:00 AM: Check out (standard checkout)
+  → NOTE: "Standard checkout is 11 AM. Your flight is at 6 PM — request late checkout or store luggage"
+- 11:30 AM-2:00 PM: More exploration / lunch
+- 2:30 PM: Head to airport
+- 3:30 PM: Airport check-in
+- 6:00 PM: Flight departs
+
+### Half-Day Transit (arrive morning, depart evening)
+- 8:00 AM: Arrive city
+- 8:30 AM: Check into hotel (early check-in note)
+- 9:00 AM-12:00 PM: Morning activities
+- 12:30 PM: Lunch
+- 2:00-3:00 PM: Afternoon activity
+- 3:30 PM: Check out, head to station
+- 5:00 PM: Train departs
+
+## Check-in/Check-out Logic
+- Standard check-in: 3:00 PM (editable by user)
+- Standard check-out: 11:00 AM (editable by user)
+- If arriving BEFORE check-in: show note "Consider requesting early check-in"
+- If departing AFTER check-out: show note "Request late checkout or store luggage"
+- If check-in and check-out on same day: show note "Day use / no overnight stay"
+
+## Activity Filling Algorithm
+1. Calculate free time blocks: gaps between fixed pillars
+2. For each free block > 1 hour:
+   a. Check user's places for this city
+   b. Fall back to CITY_ATTRACTIONS
+   c. Distribute activities, ~1.5-2 hours per activity
+   d. Add walk/transport between activities
+3. Show "Free time" label for remaining gaps
+4. Never overlap with meals or transport
+
+## User Controls
+- Adjustable wake/sleep time per day
+- Adjustable meal times per day (already have start time, extend to all meals)
+- Add/remove activities (already implemented)
+- Custom activity with time (already implemented)
+- Check-in/check-out time override per hotel
+- "I want to rest" toggle — removes afternoon activities
+
+## Implementation Plan
+Phase 1: Merge travel+explore days — add activities after hotel check-in
+Phase 2: Add departure day morning activities
+Phase 3: Check-in/check-out notes
+Phase 4: Sleep time display
+Phase 5: Smart activity distribution based on free time blocks

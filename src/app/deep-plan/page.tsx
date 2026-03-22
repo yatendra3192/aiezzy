@@ -361,11 +361,43 @@ function DeepPlanPageContent() {
             });
 
             const hotelArriveTime2 = arrTime ? addMinutes(arrTime, fromArrTerminalMin2) : null;
+            const hotelArriveMin2 = hotelArriveTime2 ? parseTime(hotelArriveTime2) : null;
             if (dest.nights > 0) {
+              const stdCheckIn2 = 15 * 60;
+              const checkInNote2 = hotelArriveMin2 !== null
+                ? (hotelArriveMin2 < stdCheckIn2 ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage' : null)
+                : null;
               arrivalDay.stops.push({
                 id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
                 time: hotelArriveTime2, transport: null, destIndex: destIdx,
+                note: checkInNote2 || undefined,
               });
+
+              // Add activities if arriving before 6 PM
+              const dinnerTime2 = 19 * 60;
+              if (hotelArriveMin2 !== null && hotelArriveMin2 < dinnerTime2 - 60) {
+                const freeStart2 = hotelArriveMin2 + 30;
+                const freeHrs2 = (dinnerTime2 - freeStart2) / 60;
+                const cityAttr2 = dest.places?.length ? dest.places.map(p => p.name) : (CITY_ATTRACTIONS[toCity.name] || []);
+                if (cityAttr2.length > 0 && freeHrs2 >= 1) {
+                  const count2 = freeHrs2 >= 3 ? 2 : 1;
+                  arrivalDay.stops.push({
+                    id: `dp${sc++}`, name: `Free time — ${Math.round(freeHrs2)} hours to explore ${toCity.name}`,
+                    type: 'attraction', time: formatTime24(freeStart2),
+                    transport: { icon: 'walk', duration: '', distance: '' },
+                    note: 'Evening exploration (optional)',
+                  });
+                  cityAttr2.slice(0, count2).forEach((attr, ei) => {
+                    arrivalDay.stops.push({
+                      id: `dp${sc++}`, name: attr, type: 'attraction',
+                      time: formatTime24(freeStart2 + 30 + ei * 90),
+                      transport: null,
+                    });
+                  });
+                }
+                arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '19:00', transport: null, mealType: 'dinner' });
+                arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null, note: 'Default sleep time' });
+              }
             } else {
               arrivalDay.stops.push({
                 id: `dp${sc++}`, name: `${toCity.name} Center`, type: 'destination',
@@ -388,11 +420,63 @@ function DeepPlanPageContent() {
             });
 
             const hotelArriveTime = arrTime ? addMinutes(arrTime, fromArrTerminalMin) : null;
+            const hotelArriveMin = hotelArriveTime ? parseTime(hotelArriveTime) : null;
             if (dest.nights > 0) {
+              // Check-in note
+              const stdCheckIn = 15 * 60; // 3:00 PM standard
+              const checkInNote = hotelArriveMin !== null
+                ? (hotelArriveMin < stdCheckIn ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage' : null)
+                : null;
               travelDay.stops.push({
                 id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
                 time: hotelArriveTime, transport: null, destIndex: destIdx,
+                note: checkInNote || undefined,
               });
+
+              // Add evening activities if arriving before 6 PM (have 1+ hours before dinner)
+              const dinnerTime = 19 * 60; // 7 PM
+              if (hotelArriveMin !== null && hotelArriveMin < dinnerTime - 60) {
+                const freeStartMin = hotelArriveMin + 30; // 30 min to settle in
+                const freeHours = (dinnerTime - freeStartMin) / 60;
+
+                // Get attractions for this city
+                const cityAttractions = dest.places && dest.places.length > 0
+                  ? dest.places.map(p => p.name)
+                  : (CITY_ATTRACTIONS[toCity.name] || []);
+
+                if (cityAttractions.length > 0 && freeHours >= 1) {
+                  // Suggest 1-2 activities for the evening
+                  const eveningCount = freeHours >= 3 ? 2 : 1;
+                  const eveningAttractions = cityAttractions.slice(0, eveningCount);
+
+                  travelDay.stops.push({
+                    id: `dp${sc++}`, name: `Free time — ${Math.round(freeHours)} hours to explore ${toCity.name}`,
+                    type: 'attraction', time: formatTime24(freeStartMin),
+                    transport: { icon: 'walk', duration: '', distance: '' },
+                    note: 'Evening exploration (optional)',
+                  });
+
+                  eveningAttractions.forEach((attr, ei) => {
+                    travelDay.stops.push({
+                      id: `dp${sc++}`, name: attr, type: 'attraction',
+                      time: formatTime24(freeStartMin + 30 + ei * 90),
+                      transport: ei < eveningAttractions.length - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                    });
+                  });
+                }
+
+                // Dinner
+                travelDay.stops.push({
+                  id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '19:00',
+                  transport: null, mealType: 'dinner',
+                });
+
+                // Sleep
+                travelDay.stops.push({
+                  id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00',
+                  transport: null, note: 'Default sleep time — adjust as needed',
+                });
+              }
             } else {
               travelDay.stops.push({
                 id: `dp${sc++}`, name: `${toCity.name} Center`, type: 'destination',
@@ -478,6 +562,7 @@ function DeepPlanPageContent() {
         });
 
         expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '20:00', transport: null, destIndex: destIdx });
+        expDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null, note: 'Default sleep time' });
         result.push(expDay);
         dayNum++;
       }
@@ -529,6 +614,49 @@ function DeepPlanPageContent() {
         const startName = lastDest.selectedHotel?.name || `Stay in ${fromCity.name}`;
 
         if (returnLeg.type === 'flight' || returnLeg.type === 'train') {
+          // Add morning activities before departure if leaving after noon
+          const leaveMin = leaveTime ? parseTime(leaveTime) : null;
+          if (leaveMin !== null && leaveMin > 11 * 60) { // Leaving after 11 AM — morning free
+            const stdCheckout = 11 * 60; // 11 AM standard checkout
+            const checkoutNote = leaveMin > stdCheckout + 60
+              ? 'Late flight — request late checkout or store luggage at reception'
+              : null;
+
+            // Breakfast
+            returnDay.stops.push({ id: `dp${sc++}`, name: 'Breakfast', type: 'hotel', time: '08:00', transport: null, mealType: 'breakfast' as const });
+
+            // Morning activities if > 2 hours free
+            const morningFreeHrs = (leaveMin - 9 * 60) / 60; // hours from 9 AM to leave time
+            if (morningFreeHrs >= 2) {
+              const fromCityAttr = CITY_ATTRACTIONS[fromCity.name] || [];
+              const morningCount = morningFreeHrs >= 4 ? 2 : 1;
+              if (fromCityAttr.length > 0) {
+                returnDay.stops.push({
+                  id: `dp${sc++}`, name: `Morning in ${fromCity.name} — ${Math.round(morningFreeHrs)} hours before departure`,
+                  type: 'attraction', time: '09:00',
+                  transport: { icon: 'walk', duration: '', distance: '' },
+                  note: 'Morning exploration before departure',
+                });
+                fromCityAttr.slice(-morningCount).forEach((attr, mi) => { // Use last attractions (earlier ones used on explore days)
+                  returnDay.stops.push({
+                    id: `dp${sc++}`, name: attr, type: 'attraction',
+                    time: formatTime24(9 * 60 + 30 + mi * 90),
+                    transport: null,
+                  });
+                });
+              }
+            }
+
+            // Checkout note
+            if (checkoutNote) {
+              returnDay.stops.push({
+                id: `dp${sc++}`, name: `Check out — ${startName}`, type: 'hotel',
+                time: formatTime24(Math.min(leaveMin - 30, stdCheckout)),
+                transport: null, note: checkoutNote,
+              });
+            }
+          }
+
           returnDay.stops.push({
             id: `dp${sc++}`, name: startName, type: 'hotel', time: leaveTime,
             transport: { icon: 'drive', duration: `${toTerminalMin} min`, distance: depHub?.transitToCenter.distance || '~' },
