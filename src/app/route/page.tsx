@@ -121,15 +121,26 @@ function RoutePageContent() {
 
   // Find booking docs for a city (from persistent context or session store)
   const getDocsForCity = (cityName: string): BookingDoc[] => {
+    if (!cityName || trip.bookingDocs.length === 0) {
+      // Fall back to session blob store
+      const blobDocs = getBookingFilesForCity(cityName);
+      return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
+    }
     const key = cityName.toLowerCase();
-    // Check persistent docs in trip context first
-    const ctxDocs = trip.bookingDocs.filter(d =>
+    // 1. Match by city in matchCities array
+    const cityMatch = trip.bookingDocs.filter(d =>
       d.matchCities.some(c => c.includes(key) || key.includes(c))
     );
-    if (ctxDocs.length > 0) return ctxDocs;
-    // Fall back to session blob store
-    const blobDocs = getBookingFilesForCity(cityName);
-    return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
+    if (cityMatch.length > 0) return cityMatch;
+    // 2. Match by city name in filename
+    const nameMatch = trip.bookingDocs.filter(d =>
+      d.name.toLowerCase().includes(key)
+    );
+    if (nameMatch.length > 0) return nameMatch;
+    // 3. Show docs with empty matchCities (AI didn't tag them)
+    const untagged = trip.bookingDocs.filter(d => d.matchCities.length === 0);
+    if (untagged.length > 0) return untagged;
+    return [];
   };
 
   // Real hub-to-hotel distances (fetched from Google Directions)

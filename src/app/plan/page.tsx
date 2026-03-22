@@ -569,7 +569,9 @@ function PlanPageContent() {
     // Upload files to Supabase Storage permanently and build city mapping
     if (uploadFiles.length > 0) {
       // Build city mapping from AI segments
+      // Collect all cities from all segments, then assign to files
       const fileCityMap: Record<number, string[]> = {};
+      const allCities: string[] = [];
       for (const seg of (data.segments || [])) {
         const fileIdx = seg.sourceFileIndex ?? 0;
         const cities: string[] = [];
@@ -578,13 +580,17 @@ function PlanPageContent() {
         if (seg.from) cities.push(seg.from.toLowerCase());
         if (!fileCityMap[fileIdx]) fileCityMap[fileIdx] = [];
         fileCityMap[fileIdx].push(...cities);
+        allCities.push(...cities);
       }
+      const uniqueAllCities = Array.from(new Set(allCities));
 
       // Upload each file to Supabase Storage
       const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
       for (let i = 0; i < uploadFiles.length; i++) {
         const file = uploadFiles[i];
-        const matchCities = Array.from(new Set(fileCityMap[i] || []));
+        // Use file-specific cities if available, otherwise tag with all trip cities
+        const fileCities = fileCityMap[i] || [];
+        const matchCities = Array.from(new Set(fileCities.length > 0 ? fileCities : uniqueAllCities));
         try {
           const formData = new FormData();
           formData.append('file', file);
