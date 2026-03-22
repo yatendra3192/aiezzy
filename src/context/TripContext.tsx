@@ -70,6 +70,13 @@ interface TripContextType extends TripState {
   removeBookingDoc: (docId: string) => void;
   setBookingDocs: (docs: BookingDoc[]) => void;
   updateDeepPlanData: (data: Partial<DeepPlanData>) => void;
+  buildFullTrip: (config: {
+    from: City; fromAddress: string;
+    departureDate: string; adults: number; children: number; infants: number;
+    tripType: 'roundTrip' | 'oneWay';
+    destinations: Array<{ city: City; nights: number; hotel?: Hotel }>;
+    transports: Array<{ flight?: Flight; train?: TrainOption; resolvedAirports?: any } | null>;
+  }) => void;
   saveTrip: () => Promise<string | null>;
   loadTrip: (tripId: string) => Promise<void>;
   resetTrip: () => void;
@@ -179,6 +186,46 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   const updateDeepPlanData = useCallback((data: Partial<DeepPlanData>) => {
     setState(s => dirty({ ...s, deepPlanData: { ...s.deepPlanData, ...data } }));
+  }, []);
+
+  // Build entire trip in one atomic setState (no stale state issues)
+  const buildFullTrip = useCallback((config: {
+    from: City; fromAddress: string;
+    departureDate: string; adults: number; children: number; infants: number;
+    tripType: 'roundTrip' | 'oneWay';
+    destinations: Array<{ city: City; nights: number; hotel?: Hotel }>;
+    transports: Array<{ flight?: Flight; train?: TrainOption; resolvedAirports?: any } | null>;
+  }) => {
+    const dests: Destination[] = config.destinations.map((d, i) => ({
+      id: `d${Date.now()}-${i}-${Math.random().toString(36).slice(2, 5)}`,
+      city: d.city, nights: d.nights, selectedHotel: d.hotel || null, places: [],
+    }));
+
+    const makeLeg = (t: { flight?: Flight; train?: TrainOption; resolvedAirports?: any } | null, idx: number) => {
+      const id = `tl${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`;
+      if (t?.flight) return { id, type: 'flight' as const, duration: t.flight.duration, distance: t.flight.route, selectedFlight: t.flight, selectedTrain: null, departureTime: t.flight.departure, arrivalTime: t.flight.arrival, resolvedAirports: t.resolvedAirports || null };
+      if (t?.train) return { id, type: 'train' as const, duration: t.train.duration, distance: '~', selectedFlight: null, selectedTrain: t.train, departureTime: t.train.departure, arrivalTime: t.train.arrival };
+      return { id, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
+    };
+
+    // Create legs: one per destination + optional return
+    const expectedLegs = config.tripType === 'roundTrip' ? dests.length + 1 : dests.length;
+    const legs: any[] = [];
+    for (let i = 0; i < expectedLegs; i++) {
+      legs.push(makeLeg(config.transports[i] || null, i));
+    }
+
+    setState({
+      ...defaultState,
+      from: config.from, fromAddress: config.fromAddress,
+      departureDate: config.departureDate,
+      adults: config.adults, children: config.children, infants: config.infants,
+      tripType: config.tripType,
+      destinations: dests, transportLegs: legs,
+      bookingDocs: [], deepPlanData: { customActivities: {}, dayNotes: {}, dayStartTimes: {} },
+      isDirty: true, tripId: null,
+    });
+    try { sessionStorage.removeItem('currentTripId'); } catch {}
   }, []);
 
   // ─── Places (user-selected attractions) ──────────────────────────────────
@@ -538,7 +585,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       updateTransportLeg, changeTransportType, selectFlight, selectTrain,
       updateDestinationHotel, addAdditionalHotel, removeAdditionalHotel, updateAdditionalHotelNights,
       moveDestination, reorderDestinations,
-      addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData,
+      addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData, buildFullTrip,
       saveTrip, loadTrip, resetTrip, clearTripId,
     }}>
       {children}

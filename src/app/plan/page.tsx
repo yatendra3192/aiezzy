@@ -483,174 +483,104 @@ function PlanPageContent() {
     if (!uploadResult) return;
     const data = uploadResult;
 
-    // Reset existing trip data
-    trip.resetTrip();
-
-    // Set origin
-    if (data.origin?.city) {
-      const knownCity = CITIES.find(c => c.name.toLowerCase() === data.origin.city.toLowerCase());
-      if (knownCity) {
-        trip.setFrom(knownCity);
-        trip.setFromAddress(knownCity.fullName || `${knownCity.name}, ${knownCity.country}`);
-      } else {
-        const fullName = `${data.origin.city}, ${data.origin.country || ''}`;
-        trip.setFrom({
-          name: data.origin.city,
-          country: data.origin.country || '',
-          fullName,
-          parentCity: data.origin.city,
-        });
-        trip.setFromAddress(fullName);
-      }
-    }
-
-    // Set departure date
-    if (data.departureDate) trip.setDepartureDate(data.departureDate);
-
-    // Set travelers
-    if (data.travelers) {
-      if (data.travelers.adults) trip.setAdults(data.travelers.adults);
-      if (data.travelers.children) trip.setChildren(data.travelers.children);
-      if (data.travelers.infants) trip.setInfants(data.travelers.infants);
-    }
-
-    // Set trip type
-    if (data.tripType) trip.setTripType(data.tripType === 'roundTrip' ? 'roundTrip' : 'oneWay');
-
-    // Resolve hotel addresses in parallel first, then add destinations with hotels atomically
-    if (data.destinations?.length) {
-      // Resolve all hotel addresses in parallel for coordinates
-      const hotelPromises = data.destinations.map(async (dest: any, i: number) => {
-        if (!dest.hotel?.name) return null;
-        let hotelAddress = dest.hotel.address || '';
-        let hotelLat: number | undefined;
-        let hotelLng: number | undefined;
-        if (hotelAddress) {
-          try {
-            const results = await searchPlaces(hotelAddress, 'all');
-            if (results.length > 0) {
-              const details = await getPlaceDetails(results[0].placeId);
-              if (details) {
-                hotelAddress = details.formattedAddress;
-                hotelLat = details.lat;
-                hotelLng = details.lng;
-              }
-            }
-          } catch { /* continue without coords */ }
-        }
-        return {
-          id: `custom-${Date.now()}-${i}`,
-          name: dest.hotel.name,
-          rating: 0,
-          pricePerNight: dest.hotel.pricePerNight || 0,
-          ratingColor: '#9ca3af',
-          ...(hotelAddress && { address: hotelAddress }),
-          ...(hotelLat && { lat: hotelLat }),
-          ...(hotelLng && { lng: hotelLng }),
-        } as import('@/data/mockData').Hotel;
-      });
-
-      const resolvedHotels = await Promise.all(hotelPromises);
-
-      // Build transport objects from segments (flights/trains in chronological order)
-      const transportSegs = (data.segments || [])
-        .filter((s: any) => s.type === 'flight' || s.type === 'train')
-        .sort((a: any, b: any) => (a.departureDate || '').localeCompare(b.departureDate || ''));
-
-      // Match transport segments to legs: segment[0] → leg to dest[0], segment[1] → leg to dest[1], etc.
-      const buildTransport = (seg: any) => {
-        if (!seg) return undefined;
-        const tAdults = data.travelers?.adults || 1;
-        if (seg.type === 'flight') {
-          const totalPrice = seg.priceTotal || 0;
-          const tChildren = data.travelers?.children || 0;
-          const tInfants = data.travelers?.infants || 0;
-          const divisor = tAdults + tChildren + (tInfants * 0.15);
-          const pricePerAdult = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
-          const depCode = seg.fromCode || '';
-          const arrCode = seg.toCode || '';
-          const flight: import('@/data/mockData').Flight = {
-            id: `custom-flight-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            airline: seg.carrier || 'Unknown',
-            airlineCode: (seg.carrier || '??').substring(0, 2).toUpperCase(),
-            flightNumber: seg.flightNumber || '',
-            departure: seg.departureTime || '',
-            arrival: seg.arrivalTime || '',
-            duration: seg.duration || '~',
-            stops: seg.stops || 'Nonstop',
-            route: depCode && arrCode ? `${depCode}-${arrCode}` : '?-?',
-            pricePerAdult,
-            color: '#6b7280',
-          };
-          return {
-            flight,
-            resolvedAirports: {
-              fromCode: depCode, toCode: arrCode,
-              fromCity: seg.from || '', toCity: seg.to || '',
-              fromAirport: seg.fromHub || seg.from || '', toAirport: seg.toHub || seg.to || '',
-              fromDistance: 0, toDistance: 0,
-            },
-          };
-        } else {
-          const totalPrice = seg.priceTotal || 0;
-          const price = tAdults > 0 ? Math.round(totalPrice / tAdults) : totalPrice;
-          const train: import('@/data/mockData').TrainOption = {
-            id: `custom-train-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            operator: seg.carrier || 'Unknown',
-            trainName: seg.carrier || 'Unknown',
-            trainNumber: seg.flightNumber || '',
-            departure: seg.departureTime || '',
-            arrival: seg.arrivalTime || '',
-            duration: seg.duration || '~',
-            stops: seg.stops || 'Direct',
-            fromStation: seg.fromHub || seg.from || '',
-            toStation: seg.toHub || seg.to || '',
-            price,
-            color: '#6b7280',
-          };
-          return { train };
-        }
+    // Resolve origin
+    const originCity = (() => {
+      if (!data.origin?.city) return CITIES[0];
+      return CITIES.find(c => c.name.toLowerCase() === data.origin.city.toLowerCase()) || {
+        name: data.origin.city, country: data.origin.country || '',
+        fullName: `${data.origin.city}, ${data.origin.country || ''}`, parentCity: data.origin.city,
       };
+    })();
+    const originAddress = originCity.fullName || `${originCity.name}, ${originCity.country}`;
 
-      // Add destinations with hotels AND transport legs
-      for (let i = 0; i < data.destinations.length; i++) {
-        const dest = data.destinations[i];
-        const knownCity = CITIES.find(c => c.name.toLowerCase() === dest.city.toLowerCase());
-        const city: City = knownCity || {
-          name: dest.city,
-          country: dest.country || '',
-          fullName: `${dest.city}, ${dest.country || ''}`,
-          parentCity: dest.city,
-        };
-        // Transport segment[i] corresponds to the leg arriving at destination[i]
-        const transport = buildTransport(transportSegs[i]);
-        trip.addDestination(city, dest.nights || 2, resolvedHotels[i] || undefined, transport);
-      }
-
-      // Handle return leg for round trips (last transport segment)
-      if (data.tripType === 'roundTrip' && transportSegs.length > data.destinations.length) {
-        const returnSeg = transportSegs[transportSegs.length - 1];
-        if (returnSeg) {
-          // Return leg is set after destinations are added — use a small delay for state to settle
-          const returnTransport = buildTransport(returnSeg);
-          if (returnTransport) {
-            await new Promise(r => setTimeout(r, 200));
-            const legs = trip.transportLegs;
-            const returnLeg = legs[legs.length - 1];
-            if (returnLeg) {
-              if (returnTransport.flight) {
-                trip.selectFlight(returnLeg.id, returnTransport.flight);
-                if (returnTransport.resolvedAirports) {
-                  trip.updateTransportLeg(returnLeg.id, { resolvedAirports: returnTransport.resolvedAirports });
-                }
-              } else if (returnTransport.train) {
-                trip.selectTrain(returnLeg.id, returnTransport.train);
-              }
-            }
+    // Resolve hotels in parallel
+    const resolvedHotels = await Promise.all((data.destinations || []).map(async (dest: any, i: number) => {
+      if (!dest.hotel?.name) return undefined;
+      let addr = dest.hotel.address || '';
+      let lat: number | undefined, lng: number | undefined;
+      if (addr) {
+        try {
+          const results = await searchPlaces(addr, 'all');
+          if (results.length > 0) {
+            const details = await getPlaceDetails(results[0].placeId);
+            if (details) { addr = details.formattedAddress; lat = details.lat; lng = details.lng; }
           }
-        }
+        } catch {}
       }
+      return { id: `custom-${Date.now()}-${i}`, name: dest.hotel.name, rating: 0, pricePerNight: dest.hotel.pricePerNight || 0, ratingColor: '#9ca3af', ...(addr && { address: addr }), ...(lat && { lat }), ...(lng && { lng }) } as import('@/data/mockData').Hotel;
+    }));
+
+    // Build transport from segments (chronological)
+    const transportSegs = (data.segments || [])
+      .filter((s: any) => s.type === 'flight' || s.type === 'train')
+      .sort((a: any, b: any) => (a.departureDate || '').localeCompare(b.departureDate || ''));
+
+    const tAdults = data.travelers?.adults || 1;
+    const tChildren = data.travelers?.children || 0;
+    const tInfants = data.travelers?.infants || 0;
+
+    const buildTransport = (seg: any): { flight?: import('@/data/mockData').Flight; train?: import('@/data/mockData').TrainOption; resolvedAirports?: any } | null => {
+      if (!seg) return null;
+      if (seg.type === 'flight') {
+        const totalPrice = seg.priceTotal || 0;
+        const divisor = tAdults + tChildren + (tInfants * 0.15);
+        const depCode = seg.fromCode || '';
+        const arrCode = seg.toCode || '';
+        return {
+          flight: {
+            id: `cf-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            airline: seg.carrier || 'Unknown', airlineCode: (seg.carrier || '??').substring(0, 2).toUpperCase(),
+            flightNumber: seg.flightNumber || '', departure: seg.departureTime || '', arrival: seg.arrivalTime || '',
+            duration: seg.duration || '~', stops: seg.stops || 'Nonstop',
+            route: depCode && arrCode ? `${depCode}-${arrCode}` : '?-?',
+            pricePerAdult: divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice, color: '#6b7280',
+          },
+          resolvedAirports: {
+            fromCode: depCode, toCode: arrCode, fromCity: seg.from || '', toCity: seg.to || '',
+            fromAirport: seg.fromHub || seg.from || '', toAirport: seg.toHub || seg.to || '',
+            fromDistance: 0, toDistance: 0,
+          },
+        };
+      } else {
+        const totalPrice = seg.priceTotal || 0;
+        return {
+          train: {
+            id: `ct-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            operator: seg.carrier || 'Unknown', trainName: seg.carrier || 'Unknown',
+            trainNumber: seg.flightNumber || '', departure: seg.departureTime || '', arrival: seg.arrivalTime || '',
+            duration: seg.duration || '~', stops: seg.stops || 'Direct',
+            fromStation: seg.fromHub || seg.from || '', toStation: seg.toHub || seg.to || '',
+            price: tAdults > 0 ? Math.round(totalPrice / tAdults) : totalPrice, color: '#6b7280',
+          },
+        };
+      }
+    };
+
+    // Build destinations array
+    const destConfigs = (data.destinations || []).map((dest: any, i: number) => {
+      const knownCity = CITIES.find(c => c.name.toLowerCase() === dest.city.toLowerCase());
+      return {
+        city: knownCity || { name: dest.city, country: dest.country || '', fullName: `${dest.city}, ${dest.country || ''}`, parentCity: dest.city } as City,
+        nights: dest.nights || 2,
+        hotel: resolvedHotels[i] || undefined,
+      };
+    });
+
+    // Build transports array — one per leg (destinations.length legs + optional return)
+    const transports: Array<{ flight?: import('@/data/mockData').Flight; train?: import('@/data/mockData').TrainOption; resolvedAirports?: any } | null> = [];
+    const expectedLegs = data.tripType === 'roundTrip' ? destConfigs.length + 1 : destConfigs.length;
+    for (let i = 0; i < expectedLegs; i++) {
+      transports.push(buildTransport(transportSegs[i] || null));
     }
+
+    // Build entire trip in ONE atomic setState — no stale state issues
+    trip.buildFullTrip({
+      from: originCity, fromAddress: originAddress,
+      departureDate: data.departureDate || new Date().toISOString().split('T')[0],
+      adults: tAdults, children: tChildren, infants: tInfants,
+      tripType: data.tripType === 'roundTrip' ? 'roundTrip' : 'oneWay',
+      destinations: destConfigs, transports,
+    });
 
     // Upload files to Supabase Storage permanently and build city mapping
     if (uploadFiles.length > 0) {
