@@ -1291,9 +1291,13 @@ function RoutePageContent() {
                                 </a>
                                 {(() => {
                                   const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
-                                  const fromCity = info?.fromCity || '';
-                                  const toCity = info?.toCity || '';
-                                  const flightDocs = getTransportDocs(fromCity, toCity);
+                                  // Use trip city names (e.g., "Mumbai", "Amsterdam") for matching, not airport names
+                                  const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                                  const depCity = i === 0 ? trip.from : trip.destinations[depDestIdx]?.city;
+                                  const arrCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+                                  const fName = depCity?.name || info?.fromCity || '';
+                                  const tName = arrCity?.name || info?.toCity || '';
+                                  const flightDocs = getTransportDocs(fName, tName);
                                   return flightDocs.length > 0 ? (
                                     <button onClick={() => setViewingBooking(flightDocs[0])}
                                       className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
@@ -1355,9 +1359,13 @@ function RoutePageContent() {
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}</span>
                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                 {(() => {
+                                  // Use city names for matching, fall back to station names
+                                  const tDepIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                                  const tDepCity = i === 0 ? trip.from : trip.destinations[tDepIdx]?.city;
+                                  const tArrCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
                                   const trainDocs = getTransportDocs(
-                                    leg.selectedTrain!.fromStation || '',
-                                    leg.selectedTrain!.toStation || ''
+                                    tDepCity?.name || leg.selectedTrain!.fromStation || '',
+                                    tArrCity?.name || leg.selectedTrain!.toStation || ''
                                   );
                                   return trainDocs.length > 0 ? (
                                     <button onClick={() => setViewingBooking(trainDocs[0])}
