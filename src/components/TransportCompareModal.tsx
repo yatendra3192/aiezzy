@@ -188,9 +188,8 @@ export default function TransportCompareModal({
   const handleCustomTrain = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
-    // Use TRIP's passenger counts (what route page uses to multiply back)
-    const divisor = adults + tripChildren + (tripInfants * 0.15);
-    const price = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
+    // Train pricing: route page uses price × adults only (no infant/children surcharge)
+    const price = adults > 0 ? Math.round(totalPrice / adults) : totalPrice;
     const train: TrainOption = {
       id: `custom-train-${Date.now()}`,
       operator: customCarrier.trim(),
