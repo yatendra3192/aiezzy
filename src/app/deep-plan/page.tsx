@@ -101,10 +101,10 @@ function DeepPlanPageContent() {
   const [isRestoring, setIsRestoring] = useState(false);
 
   // Deep plan data from context (persisted to DB)
-  const deepPlan = trip.deepPlanData;
-  const [dayStartTimes, setDayStartTimesLocal] = useState<Record<number, string>>(deepPlan.dayStartTimes);
-  const [customActivities, setCustomActivitiesLocal] = useState<Record<number, Array<{name: string; time: string}>>>(deepPlan.customActivities);
-  const [dayNotes, setDayNotesLocal] = useState<Record<number, string>>(deepPlan.dayNotes);
+  const deepPlan = trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
+  const [dayStartTimes, setDayStartTimesLocal] = useState<Record<number, string>>(deepPlan.dayStartTimes || {});
+  const [customActivities, setCustomActivitiesLocal] = useState<Record<number, Array<{name: string; time: string}>>>(deepPlan.customActivities || {});
+  const [dayNotes, setDayNotesLocal] = useState<Record<number, string>>(deepPlan.dayNotes || {});
   // UI-only state (not persisted)
   const [showActivityInput, setShowActivityInput] = useState<Record<number, boolean>>({});
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
@@ -146,9 +146,9 @@ function DeepPlanPageContent() {
 
   // Sync local state when trip context loads deep plan data
   useEffect(() => {
-    if (Object.keys(deepPlan.customActivities).length > 0) setCustomActivitiesLocal(deepPlan.customActivities);
-    if (Object.keys(deepPlan.dayNotes).length > 0) setDayNotesLocal(deepPlan.dayNotes);
-    if (Object.keys(deepPlan.dayStartTimes).length > 0) setDayStartTimesLocal(deepPlan.dayStartTimes);
+    if (deepPlan.customActivities && Object.keys(deepPlan.customActivities).length > 0) setCustomActivitiesLocal(deepPlan.customActivities);
+    if (deepPlan.dayNotes && Object.keys(deepPlan.dayNotes).length > 0) setDayNotesLocal(deepPlan.dayNotes);
+    if (deepPlan.dayStartTimes && Object.keys(deepPlan.dayStartTimes).length > 0) setDayStartTimesLocal(deepPlan.dayStartTimes);
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);

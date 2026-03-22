@@ -121,7 +121,7 @@ function RoutePageContent() {
 
   // Find booking docs for a city (from persistent context or session store)
   const getDocsForCity = (cityName: string): BookingDoc[] => {
-    if (!cityName || trip.bookingDocs.length === 0) {
+    if (!cityName || !trip.bookingDocs || trip.bookingDocs.length === 0) {
       // Fall back to session blob store
       const blobDocs = getBookingFilesForCity(cityName);
       return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
@@ -1566,7 +1566,7 @@ function RoutePageContent() {
               </button>
             )}
             {/* My Documents */}
-            {trip.bookingDocs.length > 0 && (
+            {trip.bookingDocs?.length > 0 && (
               <div className="bg-bg-card border border-border-subtle rounded-xl p-3">
                 <p className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider mb-2">My Documents</p>
                 <div className="space-y-1.5">
