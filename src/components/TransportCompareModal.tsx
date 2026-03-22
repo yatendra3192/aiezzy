@@ -149,7 +149,9 @@ export default function TransportCompareModal({
 
   const handleCustomFlight = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
-    const price = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    // Total price entered → convert to per-adult (route page multiplies back by pax count)
+    const price = adults > 0 ? Math.round(totalPrice / adults) : totalPrice;
     const depCode = customFromCode.trim().toUpperCase() || fromCode || '?';
     const arrCode = customToCode.trim().toUpperCase() || toCode || '?';
     const flight: Flight = {
@@ -175,7 +177,9 @@ export default function TransportCompareModal({
 
   const handleCustomTrain = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
-    const price = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    // Total price entered → convert to per-person (route page multiplies back by pax count)
+    const price = adults > 0 ? Math.round(totalPrice / adults) : totalPrice;
     const train: TrainOption = {
       id: `custom-train-${Date.now()}`,
       operator: customCarrier.trim(),
