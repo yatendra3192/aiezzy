@@ -619,31 +619,41 @@ function PlanPageContent() {
       destinations: destConfigs, transports,
     });
 
-    // Upload files to Supabase Storage permanently and build city mapping
+    // Upload files to Supabase Storage — match each file to a specific segment
     if (uploadFiles.length > 0) {
-      // Build city mapping from AI segments
-      // Collect all cities from all segments, then assign to files
-      const fileCityMap: Record<number, string[]> = {};
-      const allCities: string[] = [];
-      for (const seg of (data.segments || [])) {
-        const fileIdx = seg.sourceFileIndex ?? 0;
-        const cities: string[] = [];
-        if (seg.city) cities.push(seg.city.toLowerCase());
-        if (seg.to) cities.push(seg.to.toLowerCase());
-        if (seg.from) cities.push(seg.from.toLowerCase());
-        if (!fileCityMap[fileIdx]) fileCityMap[fileIdx] = [];
-        fileCityMap[fileIdx].push(...cities);
-        allCities.push(...cities);
-      }
-      const uniqueAllCities = Array.from(new Set(allCities));
+      // All segments sorted chronologically (same order as in buildTransport)
+      const allSegs = (data.segments || []).sort((a: any, b: any) =>
+        (a.departureDate || a.checkIn || '').localeCompare(b.departureDate || b.checkIn || '')
+      );
 
-      // Upload each file to Supabase Storage
+      // Match files to segments: file[0]→segment[0], file[1]→segment[1], etc.
+      // Each file gets SPECIFIC cities and type from its matched segment
       const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
       for (let i = 0; i < uploadFiles.length; i++) {
         const file = uploadFiles[i];
-        // Use file-specific cities if available, otherwise tag with all trip cities
-        const fileCities = fileCityMap[i] || [];
-        const matchCities = Array.from(new Set(fileCities.length > 0 ? fileCities : uniqueAllCities));
+        const seg = allSegs[i]; // Match by position (user typically uploads in trip order)
+        const matchCities: string[] = [];
+        let docType: 'hotel' | 'transport' | 'general' = 'general';
+
+        if (seg) {
+          if (seg.type === 'flight' || seg.type === 'train') {
+            docType = 'transport';
+            if (seg.from) matchCities.push(seg.from.toLowerCase());
+            if (seg.to) matchCities.push(seg.to.toLowerCase());
+          } else if (seg.type === 'hotel') {
+            docType = 'hotel';
+            if (seg.city) matchCities.push(seg.city.toLowerCase());
+          }
+        }
+
+        // Fallback: try filename for clues
+        if (matchCities.length === 0) {
+          const fname = file.name.toLowerCase();
+          for (const dest of data.destinations || []) {
+            if (fname.includes(dest.city.toLowerCase())) matchCities.push(dest.city.toLowerCase());
+          }
+        }
+
         try {
           const formData = new FormData();
           formData.append('file', file);
@@ -652,15 +662,10 @@ function PlanPageContent() {
           const res = await fetch('/api/booking-docs', { method: 'POST', body: formData });
           if (res.ok) {
             const doc = await res.json();
-            // Tag doc type based on whether its cities match transport or hotel segments
-            const segTypes = (data.segments || []).filter((s: any) => {
-              const idx = s.sourceFileIndex ?? 0;
-              return idx === i;
-            }).map((s: any) => s.type);
-            doc.docType = segTypes.includes('flight') || segTypes.includes('train') ? 'transport' : segTypes.includes('hotel') ? 'hotel' : 'general';
+            doc.docType = docType;
             uploadedDocs.push(doc);
           }
-        } catch { /* continue uploading other files */ }
+        } catch { /* continue */ }
       }
 
       if (uploadedDocs.length > 0) {
