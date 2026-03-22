@@ -42,7 +42,7 @@ interface TripState {
 interface TripContextType extends TripState {
   setFrom: (city: City) => void;
   setFromAddress: (address: string) => void;
-  addDestination: (city: City, nights?: number, hotel?: Hotel) => void;
+  addDestination: (city: City, nights?: number, hotel?: Hotel, transport?: { flight?: Flight; train?: TrainOption; resolvedAirports?: any }) => void;
   removeDestination: (id: string) => void;
   updateNights: (id: string, nights: number) => void;
   updateDestinationNotes: (destId: string, notes: string) => void;
@@ -107,9 +107,20 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const setFrom = useCallback((city: City) => setState(s => dirty({ ...s, from: city })), []);
   const setFromAddress = useCallback((address: string) => setState(s => dirty({ ...s, fromAddress: address })), []);
 
-  const addDestination = useCallback((city: City, nights = 2, hotel?: Hotel) => {
+  const addDestination = useCallback((city: City, nights = 2, hotel?: Hotel, transport?: { flight?: Flight; train?: TrainOption; resolvedAirports?: any }) => {
     const newDest: Destination = { id: `d${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, city, nights, selectedHotel: hotel || null, places: [] };
-    const newLeg = { id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
+    const newLeg = transport?.flight ? {
+      id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: 'flight' as const, duration: transport.flight.duration, distance: transport.flight.route,
+      selectedFlight: transport.flight, selectedTrain: null,
+      departureTime: transport.flight.departure, arrivalTime: transport.flight.arrival,
+      resolvedAirports: transport.resolvedAirports || null,
+    } : transport?.train ? {
+      id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: 'train' as const, duration: transport.train.duration, distance: '~',
+      selectedFlight: null, selectedTrain: transport.train,
+      departureTime: transport.train.departure, arrivalTime: transport.train.arrival,
+    } : { id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
     setState(s => {
       const newDests = [...s.destinations, newDest];
       const newLegs = [...s.transportLegs, newLeg];

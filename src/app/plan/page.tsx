@@ -552,7 +552,67 @@ function PlanPageContent() {
 
       const resolvedHotels = await Promise.all(hotelPromises);
 
-      // Add destinations with hotels already attached (no stale state issue)
+      // Build transport objects from segments (flights/trains in chronological order)
+      const transportSegs = (data.segments || [])
+        .filter((s: any) => s.type === 'flight' || s.type === 'train')
+        .sort((a: any, b: any) => (a.departureDate || '').localeCompare(b.departureDate || ''));
+
+      // Match transport segments to legs: segment[0] → leg to dest[0], segment[1] → leg to dest[1], etc.
+      const buildTransport = (seg: any) => {
+        if (!seg) return undefined;
+        const tAdults = data.travelers?.adults || 1;
+        if (seg.type === 'flight') {
+          const totalPrice = seg.priceTotal || 0;
+          const tChildren = data.travelers?.children || 0;
+          const tInfants = data.travelers?.infants || 0;
+          const divisor = tAdults + tChildren + (tInfants * 0.15);
+          const pricePerAdult = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
+          const depCode = seg.fromCode || '';
+          const arrCode = seg.toCode || '';
+          const flight: import('@/data/mockData').Flight = {
+            id: `custom-flight-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            airline: seg.carrier || 'Unknown',
+            airlineCode: (seg.carrier || '??').substring(0, 2).toUpperCase(),
+            flightNumber: seg.flightNumber || '',
+            departure: seg.departureTime || '',
+            arrival: seg.arrivalTime || '',
+            duration: seg.duration || '~',
+            stops: seg.stops || 'Nonstop',
+            route: depCode && arrCode ? `${depCode}-${arrCode}` : '?-?',
+            pricePerAdult,
+            color: '#6b7280',
+          };
+          return {
+            flight,
+            resolvedAirports: {
+              fromCode: depCode, toCode: arrCode,
+              fromCity: seg.from || '', toCity: seg.to || '',
+              fromAirport: seg.fromHub || seg.from || '', toAirport: seg.toHub || seg.to || '',
+              fromDistance: 0, toDistance: 0,
+            },
+          };
+        } else {
+          const totalPrice = seg.priceTotal || 0;
+          const price = tAdults > 0 ? Math.round(totalPrice / tAdults) : totalPrice;
+          const train: import('@/data/mockData').TrainOption = {
+            id: `custom-train-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            operator: seg.carrier || 'Unknown',
+            trainName: seg.carrier || 'Unknown',
+            trainNumber: seg.flightNumber || '',
+            departure: seg.departureTime || '',
+            arrival: seg.arrivalTime || '',
+            duration: seg.duration || '~',
+            stops: seg.stops || 'Direct',
+            fromStation: seg.fromHub || seg.from || '',
+            toStation: seg.toHub || seg.to || '',
+            price,
+            color: '#6b7280',
+          };
+          return { train };
+        }
+      };
+
+      // Add destinations with hotels AND transport legs
       for (let i = 0; i < data.destinations.length; i++) {
         const dest = data.destinations[i];
         const knownCity = CITIES.find(c => c.name.toLowerCase() === dest.city.toLowerCase());
@@ -562,7 +622,33 @@ function PlanPageContent() {
           fullName: `${dest.city}, ${dest.country || ''}`,
           parentCity: dest.city,
         };
-        trip.addDestination(city, dest.nights || 2, resolvedHotels[i] || undefined);
+        // Transport segment[i] corresponds to the leg arriving at destination[i]
+        const transport = buildTransport(transportSegs[i]);
+        trip.addDestination(city, dest.nights || 2, resolvedHotels[i] || undefined, transport);
+      }
+
+      // Handle return leg for round trips (last transport segment)
+      if (data.tripType === 'roundTrip' && transportSegs.length > data.destinations.length) {
+        const returnSeg = transportSegs[transportSegs.length - 1];
+        if (returnSeg) {
+          // Return leg is set after destinations are added — use a small delay for state to settle
+          const returnTransport = buildTransport(returnSeg);
+          if (returnTransport) {
+            await new Promise(r => setTimeout(r, 200));
+            const legs = trip.transportLegs;
+            const returnLeg = legs[legs.length - 1];
+            if (returnLeg) {
+              if (returnTransport.flight) {
+                trip.selectFlight(returnLeg.id, returnTransport.flight);
+                if (returnTransport.resolvedAirports) {
+                  trip.updateTransportLeg(returnLeg.id, { resolvedAirports: returnTransport.resolvedAirports });
+                }
+              } else if (returnTransport.train) {
+                trip.selectTrain(returnLeg.id, returnTransport.train);
+              }
+            }
+          }
+        }
       }
     }
 
