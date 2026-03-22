@@ -37,11 +37,15 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 
 **Catalog Supabase** (`CATALOG_SUPABASE_URL`): 47,830 airports with PostGIS. Used via `nearby_airports(lat, lng, radius_km)` RPC.
 
+**Supabase Storage**: `booking-docs` bucket for uploaded booking PDFs/images. Path: `userId/tripId/timestamp-filename`. Signed URLs (1-year expiry). Auto-creates bucket on first upload via service role.
+
 **JSONB embedding pattern (no-migration):** Extra data stored inside existing JSONB columns:
 - `places` → `_places` inside `trip_destinations.city` JSONB
 - `additionalHotels` → `_additionalHotels` inside `trip_destinations.selected_hotel` JSONB
 - `resolvedAirports` → `_resolvedAirports` inside `trip_transport_legs.selected_flight` JSONB
-On save, API embeds; on load, extracts and returns separately.
+- `bookingDocs` → `_bookingDocs` inside `trips.from_city` JSONB
+- `deepPlanData` → `_deepPlanData` inside `trips.from_city` JSONB
+On save, API embeds; on load, extracts and returns separately. **Always null-safe** — old trips without new fields must not crash (use `|| {}`, `|| []`, `?.`).
 
 ### State Management
 
@@ -50,10 +54,13 @@ On save, API embeds; on load, extracts and returns separately.
 - **Destinations flow** (templates/AI): `addDestination` directly adds cities with `places: []`
 - `groupPlacesIntoCities()` has two-pass normalization: normalizes parentCity from fullName when API fails, then cross-references against known city groups
 - `setTripType` preserves removed return leg in `removedReturnLegRef` for restoration when toggling back to round trip
-- Transport pricing: adults + children pay full fare, infants pay 15% on flights/trains
+- Transport pricing: adults + children pay full fare, infants pay 15% on **flights only**. Trains: `price × adults` (no infant surcharge)
 - Hotel rooms: `Math.ceil((adults + children) / 2)` rooms per hotel
+- `buildFullTrip()` creates entire trip (destinations + transport + hotels) in one atomic `setState` — avoids React batching issues with sequential `addDestination` calls
+- `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
+- `deepPlanData: DeepPlanData` — custom activities, day notes, start times persisted via `_deepPlanData` JSONB embedding
 
-**CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`.
+**CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
 
 ### API Routes
 
@@ -65,6 +72,11 @@ On save, API embeds; on load, extracts and returns separately.
 - `/api/trips` — CRUD with JSONB embedding for places/additionalHotels.
 - `/api/weather` — Open-Meteo API (free). 1-hour cache. Only works ≤16 days out.
 - `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). System prompt for travel expertise.
+- `/api/ai/extract-booking` — GPT-4.1-mini vision extracts hotel booking details (name, address, price, nights) from PDF/image.
+- `/api/ai/extract-transport` — GPT-4.1-mini vision extracts flight/train details (carrier, number, times, airports/stations, IATA codes, duration, passengers, total price). Timezone-aware duration.
+- `/api/ai/extract-trip` — Bulk extraction: all uploaded files → complete trip structure (origin, destinations, hotels, transport segments, travelers). Returns `fileDescriptions` for document mapping.
+- `/api/ai/classify-doc` — Lightweight single-file classifier: returns `{type, from, to, city}`. Used to tag uploaded docs with correct cities/type. Each file gets its own AI call (parallel) for reliable mapping.
+- `/api/booking-docs` — Upload/delete/refresh-URLs for booking documents in Supabase Storage.
 - `/api/admin/migrate` — DB migrations.
 
 ### External Scraper API
@@ -75,16 +87,19 @@ Self-hosted at `FLIGHTS_API_URL` (Railway). Repo: `api4Aiezzy2`. Hotel parser ex
 
 Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with multi-level fallbacks: Google locality → known CITIES → secondaryText parsing → formattedAddress parsing. On "Plan My Route", groups places by city, then `optimizeRoute()` finds shortest path. Templates/AI use `addDestination()` bypassing places flow. Plan page shows `userPlaces` when present, falls back to `destinations`.
 
+**Upload Bookings flow:** User uploads all booking PDFs/screenshots → `/api/ai/extract-trip` processes them in one batch → preview modal shows extracted trip → "Build My Trip" calls `buildFullTrip()` to create everything atomically. Each file is individually classified via `/api/ai/classify-doc` (parallel calls) for accurate document-to-booking mapping. Transport segments matched to legs by city name fuzzy matching (not index). This flow must NOT disturb the manual trip creation flow.
+
 ### Route Page (`/route`) — Key Behaviors
 
 - **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster.
-- **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). No `autoSelectLoadingRef` guard (was causing infinite "Saving in a moment..." bug).
+- **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, flight/train/hotel IDs+prices, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). Must include selection IDs in dependency array — otherwise replacing a flight (same count) won't trigger save.
 - **Reload stability:** `tripStableRef` prevents date/nights effects from re-fetching on initial load. Set after 500ms for ALL arrival paths (plan page, reload, new trip).
 - **Manual refresh:** "Update Flights & Trains" button appears when date/nights change. No auto-refetch — user clicks when ready. Also fetches for empty legs (new return leg after one-way→round-trip toggle).
 - **Editable trip info:** Date picker, adults/children/infants +/- buttons, trip type toggle inline on route page.
 - **Full-screen modals:** Both transport and hotel modals are full-screen overlays with back arrow navigation.
-- **Hotel modal:** Left sidebar with rating/price/amenity filters, list/grid toggle, Google Places photos, deal badges, Maps + Booking.com links with dates.
-- **Transport modal:** Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display.
+- **Hotel modal:** Left sidebar with rating/price/amenity filters, list/grid toggle, Google Places photos, deal badges, Maps + Booking.com links with dates. "Add custom stay" with Google Places autocomplete for address + coordinates. Upload booking PDF/screenshot → GPT extracts address, price, nights.
+- **Transport modal:** Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display. "Add your own flight/train" with manual entry (carrier, number, airports/stations, IATA codes, times, duration, stops, price). Upload ticket → GPT extracts all fields. Price field is TOTAL for all passengers — handlers divide by trip's passenger formula.
+- **Booking doc viewer:** Full-screen modal for viewing uploaded PDFs (iframe) and images. "Booking" links on cards matched by `docType` (hotel/transport) and city names. Transport docs require BOTH from AND to cities to match. Train cards fall back to station names when city names don't match (Brussels vs Bruges).
 - **Hub-to-hotel distances:** Separate `arr-{di}` (arrival) and `dep-{di}` (departure) distances because airports can differ.
 - **Hotel room calc:** `Math.ceil((adults + children) / 2)` rooms, displayed as "₹X/night × N × R rooms".
 
@@ -94,13 +109,18 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Overnight flight handling:** Detects flights >12h or next-day arrivals. Splits into departure day + optional "In Transit" days + arrival day. Each calendar date gets its own day card. No cramming overnight arrivals into departure day.
 
+**Persisted to DB:** Custom activities, day notes, and day start times stored in `deepPlanData` (via `_deepPlanData` JSONB embedding). Previously was sessionStorage-only.
+
 ### Key Patterns
 
 - **City geocoding:** Search "city" appended to avoid India location bias (e.g., "Barcelona city" → Spain).
 - **Airport resolution:** `resolveToAirports()` for IATA codes looks up name/city from catalog DB. For city names, geocodes + PostGIS nearby search.
-- **Price display:** All prices in INR. `formatPrice(amountINR, currency)`. PDF uses ASCII-safe `Rs.` instead of `₹`.
+- **Price display:** All prices in INR. `formatPrice(amountINR, currency)`. Live rates from `open.er-api.com` cached 1 hour. PDF uses ASCII-safe `Rs.` instead of `₹`.
+- **Price calculation for custom transport:** Total price entered → divided by trip's passenger formula. Flights: `total / (adults + children + infants×0.15)`. Trains: `total / adults`. Route page multiplies back.
 - **PDF export:** `exportTripPDFFromData()` — structured jsPDF (not html2canvas). Text truncation, right-aligned price columns.
 - **TypeScript gotchas:** Don't use `for...of` on `Set` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` instead.
+- **Null safety for new fields:** `bookingDocs` and `deepPlanData` may be undefined on trips saved before these features. Always use `trip.bookingDocs?.length`, `trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} }`.
+- **Hotel `address`/`lat`/`lng`:** Optional fields on `Hotel` interface. Custom stays and Google hotels store address for accurate distance calculations via Google Directions.
 
 ### Styling
 
