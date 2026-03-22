@@ -1363,10 +1363,18 @@ function RoutePageContent() {
                                   const tDepIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
                                   const tDepCity = i === 0 ? trip.from : trip.destinations[tDepIdx]?.city;
                                   const tArrCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
-                                  const trainDocs = getTransportDocs(
+                                  // Try city names first, then station names as fallback
+                                  let trainDocs = getTransportDocs(
                                     tDepCity?.name || leg.selectedTrain!.fromStation || '',
                                     tArrCity?.name || leg.selectedTrain!.toStation || ''
                                   );
+                                  // Fallback: try station names (train may go via different city, e.g., Brussels → Bruges)
+                                  if (trainDocs.length === 0 && leg.selectedTrain!.fromStation) {
+                                    trainDocs = getTransportDocs(
+                                      leg.selectedTrain!.fromStation,
+                                      leg.selectedTrain!.toStation || ''
+                                    );
+                                  }
                                   return trainDocs.length > 0 ? (
                                     <button onClick={() => setViewingBooking(trainDocs[0])}
                                       className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
