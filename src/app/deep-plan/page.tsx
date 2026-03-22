@@ -34,6 +34,8 @@ interface DayPlan {
   stops: DeepStop[];
   type: 'travel' | 'explore' | 'departure';
   city: string;
+  /** For travel days: the city the traveller departs from */
+  departureCity?: string;
   /** Cost for this day in INR */
   dayCost: number;
   /** Cost label */
@@ -101,11 +103,13 @@ function DeepPlanPageContent() {
   // Per-day start times (keyed by day number)
   const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
   // Custom activities per day (keyed by day number)
-  const [customActivities, setCustomActivities] = useState<Record<number, string[]>>({});
+  const [customActivities, setCustomActivities] = useState<Record<number, Array<{name: string; time: string}>>>({});
   // Activity input visibility per day
   const [showActivityInput, setShowActivityInput] = useState<Record<number, boolean>>({});
   // Activity input text per day
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
+  // Activity input time per day
+  const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
   // Day notes (keyed by day number)
   const [dayNotes, setDayNotes] = useState<Record<number, string>>({});
   // Day notes visibility
@@ -232,9 +236,10 @@ function DeepPlanPageContent() {
       }
 
       // ── TRAVEL DAY to this destination ──
+      const departureCityName = destIdx === 0 ? (trip.from.parentCity || trip.from.name) : (prevDest!.city.parentCity || prevDest!.city.name);
       const travelDay: DayPlan = {
         day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-        type: 'travel', city: toCity.name, dayCost: travelDayCost, costLabel: travelCostLabel,
+        type: 'travel', city: toCity.name, departureCity: departureCityName, dayCost: travelDayCost, costLabel: travelCostLabel,
       };
 
       if (leg) {
@@ -443,7 +448,7 @@ function DeepPlanPageContent() {
         });
 
         // Leave hotel
-        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '15 min', distance: '0.8 mi' } });
+        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '', distance: '' } });
 
         // Distribute ALL attractions evenly across explore days
         const perDay = Math.ceil(attractions.length / exploreDays);
@@ -462,9 +467,7 @@ function DeepPlanPageContent() {
 
           expDay.stops.push({
             id: `dp${sc++}`, name: attr, type: 'attraction', time: `${10 + ai * 2}:00`,
-            transport: ai < dayAttractions.length - 1
-              ? { icon: 'walk', duration: `${15 + ai * 5} min`, distance: `${(0.5 + ai * 0.3).toFixed(1)} mi` }
-              : { icon: 'walk', duration: '12 min', distance: '0.6 mi' },
+            transport: { icon: 'walk', duration: '', distance: '' },
           });
         });
 
@@ -505,7 +508,7 @@ function DeepPlanPageContent() {
 
       const returnDay: DayPlan = {
         day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-        type: 'departure', city: trip.from.name, dayCost: returnDayCost, costLabel: returnCostLabel,
+        type: 'departure', city: trip.from.name, departureCity: lastDest.city.parentCity || lastDest.city.name, dayCost: returnDayCost, costLabel: returnCostLabel,
       };
 
       if (returnLeg) {
@@ -654,15 +657,13 @@ function DeepPlanPageContent() {
         // Find dinner index
         const dinnerIdx = adjustedStops.findIndex(s => s.mealType === 'dinner');
         const insertIdx = dinnerIdx >= 0 ? dinnerIdx : adjustedStops.length - 1;
-        const lastAttractionStop = adjustedStops.slice(0, insertIdx).reverse().find(s => s.type === 'attraction' && !s.mealType);
-        const baseTimeMin = lastAttractionStop && lastAttractionStop.time ? parseTime(lastAttractionStop.time) + 90 : parseTime(startTime) + 300;
 
-        const customStops: DeepStop[] = customs.map((name, ci) => ({
+        const customStops: DeepStop[] = customs.map((activity, ci) => ({
           id: `custom-${day.day}-${ci}`,
-          name,
+          name: activity.name,
           type: 'attraction' as const,
-          time: formatTime24(baseTimeMin + ci * 90),
-          transport: { icon: 'walk', duration: '10 min', distance: '0.5 mi' },
+          time: activity.time,
+          transport: { icon: 'walk', duration: '', distance: '' },
         }));
 
         const newStops = [...adjustedStops];
@@ -687,14 +688,36 @@ function DeepPlanPageContent() {
     return { fromCity, toCity };
   };
 
+  const getDefaultActivityTime = (dayNumber: number): string => {
+    const existing = customActivities[dayNumber] || [];
+    // Find the adjusted day to get the last attraction time
+    const dayData = days.find(d => d.day === dayNumber);
+    if (existing.length > 0) {
+      // 2 hours after last custom activity
+      const lastTime = existing[existing.length - 1].time;
+      const lastMin = parseTime(lastTime);
+      return formatTime24(lastMin + 120);
+    }
+    if (dayData) {
+      // Find last non-meal attraction
+      const lastAttr = dayData.stops.slice().reverse().find(s => s.type === 'attraction' && !s.mealType);
+      if (lastAttr?.time) {
+        return formatTime24(parseTime(lastAttr.time) + 120);
+      }
+    }
+    return '16:00';
+  };
+
   const handleAddActivity = (dayNumber: number) => {
     const text = activityInputText[dayNumber]?.trim();
     if (!text) return;
+    const time = activityInputTime[dayNumber] || getDefaultActivityTime(dayNumber);
     setCustomActivities(prev => ({
       ...prev,
-      [dayNumber]: [...(prev[dayNumber] || []), text],
+      [dayNumber]: [...(prev[dayNumber] || []), { name: text, time }],
     }));
     setActivityInputText(prev => ({ ...prev, [dayNumber]: '' }));
+    setActivityInputTime(prev => ({ ...prev, [dayNumber]: '' }));
     setShowActivityInput(prev => ({ ...prev, [dayNumber]: false }));
   };
 
@@ -708,7 +731,7 @@ function DeepPlanPageContent() {
   const handleDeleteStop = (dayNumber: number, stopName: string) => {
     // For built-in attractions, we don't modify the memo. Only custom activities can be deleted.
     const customs = customActivities[dayNumber] || [];
-    const idx = customs.indexOf(stopName);
+    const idx = customs.findIndex(c => c.name === stopName);
     if (idx >= 0) {
       handleDeleteActivity(dayNumber, idx);
     }
@@ -730,7 +753,7 @@ function DeepPlanPageContent() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[900px]">
         <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
           {/* Header with breadcrumb and print button */}
-          <div className="flex items-center justify-between mb-4">
+          <div className="print-hide flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
               <span className="text-text-muted text-xs">/</span>
@@ -756,7 +779,7 @@ function DeepPlanPageContent() {
           {adjustedDays.map((day, dayIdx) => {
             const dayStyle = DAY_TYPE_STYLES[day.type];
             const isoDate = toIsoDate(day.date);
-            const isCustomDeletable = (stopName: string) => (customActivities[day.day] || []).includes(stopName);
+            const isCustomDeletable = (stopName: string) => (customActivities[day.day] || []).some(c => c.name === stopName);
 
             // Detect overnight bridge: previous day ends at a hotel and current day starts at the same place
             const prevDay = dayIdx > 0 ? adjustedDays[dayIdx - 1] : null;
@@ -791,7 +814,15 @@ function DeepPlanPageContent() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <WeatherBadge city={day.city} date={isoDate} />
+                      {day.departureCity && day.departureCity !== day.city ? (
+                        <>
+                          <WeatherBadge city={day.departureCity} date={isoDate} />
+                          <span className="text-text-muted text-[10px]">&rarr;</span>
+                          <WeatherBadge city={day.city} date={isoDate} />
+                        </>
+                      ) : (
+                        <WeatherBadge city={day.city} date={isoDate} />
+                      )}
                     </div>
                   </div>
 
@@ -976,6 +1007,7 @@ function DeepPlanPageContent() {
                           }
 
                           // Default: simple transport line (drive, walk, etc.)
+                          const hasDurationInfo = stop.transport.duration && stop.transport.distance;
                           return (
                             <div className="pl-4 py-1">
                               <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
@@ -988,7 +1020,11 @@ function DeepPlanPageContent() {
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
                                     <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
                                   </svg>
-                                  <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                  {hasDurationInfo ? (
+                                    <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                  ) : (
+                                    <span className="text-xs font-body text-text-muted capitalize">{stop.transport.icon === 'walk' ? 'Walk' : stop.transport.icon}</span>
+                                  )}
                                   {legIdx !== undefined && <span className="text-[10px] text-text-muted font-body print-hide">Change</span>}
                                 </button>
                               </div>
@@ -1015,15 +1051,21 @@ function DeepPlanPageContent() {
                         Add Activity
                       </button>
                     ) : (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <input
                           type="text"
                           placeholder="Activity name..."
                           value={activityInputText[day.day] || ''}
                           onChange={e => setActivityInputText(prev => ({ ...prev, [day.day]: e.target.value }))}
                           onKeyDown={e => { if (e.key === 'Enter') handleAddActivity(day.day); if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
-                          className="flex-1 text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
+                          className="flex-1 min-w-[120px] text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
                           autoFocus
+                        />
+                        <input
+                          type="time"
+                          value={activityInputTime[day.day] || getDefaultActivityTime(day.day)}
+                          onChange={e => setActivityInputTime(prev => ({ ...prev, [day.day]: e.target.value }))}
+                          className="text-xs font-mono bg-bg-card border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary focus:outline-none focus:border-accent-cyan w-[90px]"
                         />
                         <button
                           onClick={() => handleAddActivity(day.day)}
@@ -1173,25 +1215,70 @@ function DeepPlanPageContent() {
           body {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            font-size: 90% !important;
           }
+          /* Hide all interactive elements */
+          .print-hide {
+            display: none !important;
+          }
+          /* Hide header navigation / breadcrumb (uses print-hide class) */
+          /* Full width, no max-width constraint */
           .deep-plan-page {
             padding: 0 !important;
+            max-width: 100% !important;
+          }
+          .deep-plan-page > div {
+            max-width: 100% !important;
           }
           .deep-plan-page .card-warm-lg {
             border: none !important;
             box-shadow: none !important;
             border-radius: 0 !important;
             padding: 16px !important;
+            max-width: 100% !important;
           }
-          .print-hide {
-            display: none !important;
+          /* Remove card shadows and rounded corners on day cards */
+          .deep-plan-page .rounded-xl {
+            border-radius: 4px !important;
+            box-shadow: none !important;
           }
-          /* Avoid page breaks inside days */
-          .mb-10 {
+          .deep-plan-page .rounded-lg {
+            border-radius: 2px !important;
+            box-shadow: none !important;
+          }
+          .deep-plan-page .rounded-full {
+            box-shadow: none !important;
+          }
+          /* Day type badges: remove background color, use border instead */
+          .deep-plan-page .bg-blue-50 {
+            background-color: transparent !important;
+            border: 1px solid #93c5fd !important;
+          }
+          .deep-plan-page .bg-emerald-50 {
+            background-color: transparent !important;
+            border: 1px solid #6ee7b7 !important;
+          }
+          .deep-plan-page .bg-orange-50 {
+            background-color: transparent !important;
+            border: 1px solid #fdba74 !important;
+          }
+          /* Compact font size */
+          .deep-plan-page h1 {
+            font-size: 16px !important;
+          }
+          .deep-plan-page h2 {
+            font-size: 12px !important;
+          }
+          .deep-plan-page h3 {
+            font-size: 11px !important;
+          }
+          /* Avoid page breaks inside day cards */
+          .deep-plan-page .mb-10 {
             page-break-inside: avoid;
+            break-inside: avoid;
           }
-          /* Force background colors in print */
-          .bg-blue-50, .bg-emerald-50, .bg-orange-50 {
+          /* Force background colors where needed */
+          .deep-plan-page [style*="backgroundColor"] {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
