@@ -119,26 +119,29 @@ function RoutePageContent() {
   const [showPackingList, setShowPackingList] = useState(false);
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
 
-  // Find booking docs for a city (from persistent context or session store)
-  const getDocsForCity = (cityName: string): BookingDoc[] => {
+  // Find booking docs for a city, optionally filtered by type
+  const getDocsForCity = (cityName: string, docType?: 'hotel' | 'transport'): BookingDoc[] => {
     if (!cityName || !trip.bookingDocs || trip.bookingDocs.length === 0) {
-      // Fall back to session blob store
       const blobDocs = getBookingFilesForCity(cityName);
       return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
     }
     const key = cityName.toLowerCase();
-    // 1. Match by city in matchCities array
+    // Filter by docType if specified, allow untyped docs to match either
+    const typeFilter = (d: BookingDoc) => !docType || !d.docType || d.docType === docType || d.docType === 'general';
+    // 1. Match by city + type
     const cityMatch = trip.bookingDocs.filter(d =>
-      d.matchCities.some(c => c.includes(key) || key.includes(c))
+      typeFilter(d) && d.matchCities.some(c => c.includes(key) || key.includes(c))
     );
     if (cityMatch.length > 0) return cityMatch;
-    // 2. Match by city name in filename
+    // 2. Match by filename + type
     const nameMatch = trip.bookingDocs.filter(d =>
-      d.name.toLowerCase().includes(key)
+      typeFilter(d) && d.name.toLowerCase().includes(key)
     );
     if (nameMatch.length > 0) return nameMatch;
-    // 3. Show docs with empty matchCities (AI didn't tag them)
-    const untagged = trip.bookingDocs.filter(d => d.matchCities.length === 0);
+    // 3. Untagged docs of matching type
+    const untagged = trip.bookingDocs.filter(d =>
+      typeFilter(d) && d.matchCities.length === 0
+    );
     if (untagged.length > 0) return untagged;
     return [];
   };
@@ -1065,7 +1068,7 @@ function RoutePageContent() {
                                     <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                   </a>
                                   {(() => {
-                                    const docs = getDocsForCity(stop.explore || stop.name);
+                                    const docs = getDocsForCity(stop.explore || stop.name, 'hotel');
                                     return docs.length > 0 ? (
                                       <button onClick={() => setViewingBooking(docs[0])}
                                         className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
@@ -1281,8 +1284,8 @@ function RoutePageContent() {
                                   const fromCity = info?.fromCity || '';
                                   const toCity = info?.toCity || '';
                                   const docs = [
-                                    ...getDocsForCity(fromCity),
-                                    ...getDocsForCity(toCity),
+                                    ...getDocsForCity(fromCity, 'transport'),
+                                    ...getDocsForCity(toCity, 'transport'),
                                   ].filter((d, idx, arr) => arr.findIndex(x => x.url === d.url) === idx);
                                   const flightDocs = docs.filter(d => d.mimeType.includes('pdf') || d.mimeType.includes('image'));
                                   return flightDocs.length > 0 ? (
@@ -1651,7 +1654,7 @@ function RoutePageContent() {
             selectedFlight={leg?.selectedFlight || null}
             selectedTrain={leg?.selectedTrain || null}
             cachedFlights={flightCacheRef.current[transportModal.legIndex] || null}
-            onBookingDocUploaded={async (file, matchCities) => {
+            onBookingDocUploaded={async (file, matchCities, docType) => {
               try {
                 const fd = new FormData();
                 fd.append('file', file);
@@ -1660,6 +1663,7 @@ function RoutePageContent() {
                 const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
                 if (res.ok) {
                   const doc = await res.json();
+                  doc.docType = docType;
                   trip.addBookingDoc(doc);
                 }
               } catch { /* continue without saving doc */ }

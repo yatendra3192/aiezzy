@@ -28,7 +28,7 @@ interface Props {
   onSelectBus: () => void;
   children?: number;
   infants?: number;
-  onBookingDocUploaded?: (file: File, matchCities: string[]) => void;
+  onBookingDocUploaded?: (file: File, matchCities: string[], docType: 'hotel' | 'transport' | 'general') => void;
   cachedFlights?: any[] | null;
 }
 
@@ -239,7 +239,7 @@ export default function TransportCompareModal({
       setShowCustomForm(true);
       // Store file as a booking doc for viewing later
       const cities = [data.from, data.to, fromCity, toCity].filter(Boolean).map((c: string) => c.toLowerCase());
-      if (onBookingDocUploaded) onBookingDocUploaded(file, cities);
+      if (onBookingDocUploaded) onBookingDocUploaded(file, cities, 'transport');
     } catch (err: any) {
       setUploadError(err.message || 'Failed to read ticket');
     } finally {

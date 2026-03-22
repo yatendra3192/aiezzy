@@ -10,6 +10,7 @@ export interface BookingDoc {
   url: string;
   mimeType: string;
   matchCities: string[];
+  docType?: 'hotel' | 'transport' | 'general';
   uploadedAt: string;
 }
 

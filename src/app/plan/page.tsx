@@ -599,6 +599,12 @@ function PlanPageContent() {
           const res = await fetch('/api/booking-docs', { method: 'POST', body: formData });
           if (res.ok) {
             const doc = await res.json();
+            // Tag doc type based on whether its cities match transport or hotel segments
+            const segTypes = (data.segments || []).filter((s: any) => {
+              const idx = s.sourceFileIndex ?? 0;
+              return idx === i;
+            }).map((s: any) => s.type);
+            doc.docType = segTypes.includes('flight') || segTypes.includes('train') ? 'transport' : segTypes.includes('hotel') ? 'hotel' : 'general';
             uploadedDocs.push(doc);
           }
         } catch { /* continue uploading other files */ }
