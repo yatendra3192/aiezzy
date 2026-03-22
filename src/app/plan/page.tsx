@@ -11,6 +11,7 @@ import { searchPlaces, getPlaceDetails, PlacePrediction } from '@/lib/googleApi'
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
 import AISuggestModal from '@/components/AISuggestModal';
+import { setBookingFiles, setBookingCityMap, clearBookingStore } from '@/lib/bookingStore';
 
 // ─── Google Places Autocomplete ──────────────────────────────────────────────
 
@@ -562,6 +563,43 @@ function PlanPageContent() {
           parentCity: dest.city,
         };
         trip.addDestination(city, dest.nights || 2, resolvedHotels[i] || undefined);
+      }
+    }
+
+    // Upload files to Supabase Storage permanently and build city mapping
+    if (uploadFiles.length > 0) {
+      // Build city mapping from AI segments
+      const fileCityMap: Record<number, string[]> = {};
+      for (const seg of (data.segments || [])) {
+        const fileIdx = seg.sourceFileIndex ?? 0;
+        const cities: string[] = [];
+        if (seg.city) cities.push(seg.city.toLowerCase());
+        if (seg.to) cities.push(seg.to.toLowerCase());
+        if (seg.from) cities.push(seg.from.toLowerCase());
+        if (!fileCityMap[fileIdx]) fileCityMap[fileIdx] = [];
+        fileCityMap[fileIdx].push(...cities);
+      }
+
+      // Upload each file to Supabase Storage
+      const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
+      for (let i = 0; i < uploadFiles.length; i++) {
+        const file = uploadFiles[i];
+        const matchCities = Array.from(new Set(fileCityMap[i] || []));
+        try {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('tripId', trip.tripId || 'pending');
+          formData.append('matchCities', matchCities.join(','));
+          const res = await fetch('/api/booking-docs', { method: 'POST', body: formData });
+          if (res.ok) {
+            const doc = await res.json();
+            uploadedDocs.push(doc);
+          }
+        } catch { /* continue uploading other files */ }
+      }
+
+      if (uploadedDocs.length > 0) {
+        trip.setBookingDocs(uploadedDocs);
       }
     }
 

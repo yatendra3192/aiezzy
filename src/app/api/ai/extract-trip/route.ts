@@ -36,6 +36,7 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
   "segments": [
     {
       "type": "flight or train or hotel",
+      "sourceFileIndex": 0,
       "from": "Departure city (for transport)",
       "to": "Arrival city (for transport)",
       "departureDate": "YYYY-MM-DD",
@@ -81,7 +82,8 @@ Rules:
 - Combine info across documents — a flight booking and hotel booking for the same city should create one destination entry
 - Use null for any field you cannot determine
 - segments array should contain every individual booking (each flight, each hotel) in chronological order
-- destinations array should be the deduplicated city-level summary in travel order`
+- destinations array should be the deduplicated city-level summary in travel order
+- sourceFileIndex: 0-based index of which uploaded file/image this segment was extracted from (first file=0, second=1, etc). This is critical for linking documents to bookings`
       }
     ];
 

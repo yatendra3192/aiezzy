@@ -3,6 +3,22 @@
 import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { City, Destination, TransportLeg, Hotel, HotelStay, Flight, TrainOption, Place, CITIES, DEFAULT_TRANSPORT_LEGS } from '@/data/mockData';
 
+export interface BookingDoc {
+  id: string;
+  name: string;
+  storagePath: string;
+  url: string;
+  mimeType: string;
+  matchCities: string[];
+  uploadedAt: string;
+}
+
+export interface DeepPlanData {
+  customActivities: Record<number, Array<{ name: string; time: string }>>;
+  dayNotes: Record<number, string>;
+  dayStartTimes: Record<number, string>;
+}
+
 interface TripState {
   tripId: string | null;
   from: City;
@@ -15,6 +31,8 @@ interface TripState {
   infants: number;
   tripType: 'roundTrip' | 'oneWay';
   transportLegs: TransportLeg[];
+  bookingDocs: BookingDoc[];
+  deepPlanData: DeepPlanData;
   isSaving: boolean;
   isDirty: boolean;
   lastSavedAt: Date | null;
@@ -47,6 +65,10 @@ interface TripContextType extends TripState {
   updateAdditionalHotelNights: (destId: string, hotelIndex: number, nights: number) => void;
   moveDestination: (id: string, direction: 'left' | 'right') => void;
   reorderDestinations: (newOrder: Destination[]) => void;
+  addBookingDoc: (doc: BookingDoc) => void;
+  removeBookingDoc: (docId: string) => void;
+  setBookingDocs: (docs: BookingDoc[]) => void;
+  updateDeepPlanData: (data: Partial<DeepPlanData>) => void;
   saveTrip: () => Promise<string | null>;
   loadTrip: (tripId: string) => Promise<void>;
   resetTrip: () => void;
@@ -65,6 +87,8 @@ const defaultState: TripState = {
   infants: 0,
   tripType: 'roundTrip',
   transportLegs: [],
+  bookingDocs: [],
+  deepPlanData: { customActivities: {}, dayNotes: {}, dayStartTimes: {} },
   isSaving: false,
   isDirty: false,
   lastSavedAt: null,
@@ -126,6 +150,23 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   const reorderDestinations = useCallback((newOrder: Destination[]) => {
     setState(s => dirty({ ...s, destinations: newOrder }));
+  }, []);
+
+  // ─── Booking Documents ──────────────────────────────────────────────────
+  const addBookingDoc = useCallback((doc: BookingDoc) => {
+    setState(s => dirty({ ...s, bookingDocs: [...s.bookingDocs, doc] }));
+  }, []);
+
+  const removeBookingDoc = useCallback((docId: string) => {
+    setState(s => dirty({ ...s, bookingDocs: s.bookingDocs.filter(d => d.id !== docId) }));
+  }, []);
+
+  const setBookingDocs = useCallback((docs: BookingDoc[]) => {
+    setState(s => dirty({ ...s, bookingDocs: docs }));
+  }, []);
+
+  const updateDeepPlanData = useCallback((data: Partial<DeepPlanData>) => {
+    setState(s => dirty({ ...s, deepPlanData: { ...s.deepPlanData, ...data } }));
   }, []);
 
   // ─── Places (user-selected attractions) ──────────────────────────────────
@@ -360,7 +401,11 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     const s = currentState as TripState;
 
     const payload = {
-      from: s.from,
+      from: {
+        ...s.from,
+        _bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
+        _deepPlanData: (Object.keys(s.deepPlanData.customActivities).length > 0 || Object.keys(s.deepPlanData.dayNotes).length > 0 || Object.keys(s.deepPlanData.dayStartTimes).length > 0) ? s.deepPlanData : undefined,
+      },
       fromAddress: s.fromAddress,
       destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, additionalHotels: d.additionalHotels || [], notes: d.notes, places: d.places || [] })),
       transportLegs: s.transportLegs.map(l => ({
@@ -413,9 +458,12 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     // Reconstruct userPlaces from all destinations' places for Plan page editing
     const reconstructedPlaces: Place[] = loadedDests.flatMap((d: any) => d.places || []);
 
+    // Extract _bookingDocs and _deepPlanData from from_city JSONB
+    const { _bookingDocs, _deepPlanData, ...fromCity } = data.from || {};
+
     setState({
       tripId: data.tripId,
-      from: data.from || CITIES[0],
+      from: fromCity.name ? fromCity : CITIES[0],
       fromAddress: data.fromAddress || '',
       destinations: loadedDests,
       userPlaces: reconstructedPlaces,
@@ -439,6 +487,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       children: data.children,
       infants: data.infants,
       tripType: data.tripType,
+      bookingDocs: _bookingDocs || [],
+      deepPlanData: _deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} },
       isSaving: false,
       isDirty: false,
       lastSavedAt: data.updatedAt ? new Date(data.updatedAt) : null,
@@ -476,6 +526,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       updateTransportLeg, changeTransportType, selectFlight, selectTrain,
       updateDestinationHotel, addAdditionalHotel, removeAdditionalHotel, updateAdditionalHotelNights,
       moveDestination, reorderDestinations,
+      addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData,
       saveTrip, loadTrip, resetTrip, clearTripId,
     }}>
       {children}

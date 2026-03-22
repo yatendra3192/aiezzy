@@ -100,25 +100,43 @@ function DeepPlanPageContent() {
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // Per-day start times (keyed by day number)
-  const [dayStartTimes, setDayStartTimes] = useState<Record<number, string>>({});
-  // Custom activities per day (keyed by day number)
-  const [customActivities, setCustomActivities] = useState<Record<number, Array<{name: string; time: string}>>>({});
-  // Activity input visibility per day
+  // Deep plan data from context (persisted to DB)
+  const deepPlan = trip.deepPlanData;
+  const [dayStartTimes, setDayStartTimesLocal] = useState<Record<number, string>>(deepPlan.dayStartTimes);
+  const [customActivities, setCustomActivitiesLocal] = useState<Record<number, Array<{name: string; time: string}>>>(deepPlan.customActivities);
+  const [dayNotes, setDayNotesLocal] = useState<Record<number, string>>(deepPlan.dayNotes);
+  // UI-only state (not persisted)
   const [showActivityInput, setShowActivityInput] = useState<Record<number, boolean>>({});
-  // Activity input text per day
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
-  // Activity input time per day
   const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
-  // Day notes (keyed by day number)
-  const [dayNotes, setDayNotes] = useState<Record<number, string>>({});
-  // Day notes visibility
   const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
+
+  // Wrappers that update both local state and context
+  const setDayStartTimes = (updater: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
+    setDayStartTimesLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ dayStartTimes: next });
+      return next;
+    });
+  };
+  const setCustomActivities = (updater: Record<number, Array<{name: string; time: string}>> | ((prev: Record<number, Array<{name: string; time: string}>>) => Record<number, Array<{name: string; time: string}>>)) => {
+    setCustomActivitiesLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ customActivities: next });
+      return next;
+    });
+  };
+  const setDayNotes = (updater: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
+    setDayNotesLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ dayNotes: next });
+      return next;
+    });
+  };
 
   // Restore trip from URL param, context, or sessionStorage on page reload
   useEffect(() => {
-    if (trip.destinations.length > 0) return; // Already have destinations in context
-
+    if (trip.destinations.length > 0) return;
     const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
@@ -126,35 +144,12 @@ function DeepPlanPageContent() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Restore custom activities and day notes from sessionStorage on mount
+  // Sync local state when trip context loads deep plan data
   useEffect(() => {
-    const tripKey = trip.tripId || urlTripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
-    if (!tripKey) return;
-    try {
-      const savedActivities = sessionStorage.getItem(`deepPlan_activities_${tripKey}`);
-      if (savedActivities) setCustomActivities(JSON.parse(savedActivities));
-      const savedNotes = sessionStorage.getItem(`deepPlan_notes_${tripKey}`);
-      if (savedNotes) setDayNotes(JSON.parse(savedNotes));
-    } catch { /* ignore parse errors */ }
+    if (Object.keys(deepPlan.customActivities).length > 0) setCustomActivitiesLocal(deepPlan.customActivities);
+    if (Object.keys(deepPlan.dayNotes).length > 0) setDayNotesLocal(deepPlan.dayNotes);
+    if (Object.keys(deepPlan.dayStartTimes).length > 0) setDayStartTimesLocal(deepPlan.dayStartTimes);
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist custom activities to sessionStorage when they change
-  useEffect(() => {
-    const tripKey = trip.tripId || urlTripId;
-    if (!tripKey) return;
-    try {
-      sessionStorage.setItem(`deepPlan_activities_${tripKey}`, JSON.stringify(customActivities));
-    } catch { /* ignore quota errors */ }
-  }, [customActivities, trip.tripId, urlTripId]);
-
-  // Persist day notes to sessionStorage when they change
-  useEffect(() => {
-    const tripKey = trip.tripId || urlTripId;
-    if (!tripKey) return;
-    try {
-      sessionStorage.setItem(`deepPlan_notes_${tripKey}`, JSON.stringify(dayNotes));
-    } catch { /* ignore quota errors */ }
-  }, [dayNotes, trip.tripId, urlTripId]);
 
   const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);
   const [trainModal, setTrainModal] = useState<{ legIndex: number } | null>(null);

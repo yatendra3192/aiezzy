@@ -13,6 +13,8 @@ import { generateICS, downloadICS } from '@/lib/calendarExport';
 import { exportTripPDFFromData } from '@/lib/pdfExport';
 import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
 import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
+import { getBookingFilesForCity } from '@/lib/bookingStore';
+import { BookingDoc } from '@/context/TripContext';
 import HotelModal from '@/components/HotelModal';
 import TransportCompareModal from '@/components/TransportCompareModal';
 import ShareTripModal from '@/components/ShareTripModal';
@@ -115,6 +117,20 @@ function RoutePageContent() {
   const [hotelModal, setHotelModal] = useState<{ destIndex: number; isAdditional?: boolean } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showPackingList, setShowPackingList] = useState(false);
+  const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
+
+  // Find booking docs for a city (from persistent context or session store)
+  const getDocsForCity = (cityName: string): BookingDoc[] => {
+    const key = cityName.toLowerCase();
+    // Check persistent docs in trip context first
+    const ctxDocs = trip.bookingDocs.filter(d =>
+      d.matchCities.some(c => c.includes(key) || key.includes(c))
+    );
+    if (ctxDocs.length > 0) return ctxDocs;
+    // Fall back to session blob store
+    const blobDocs = getBookingFilesForCity(cityName);
+    return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
+  };
 
   // Real hub-to-hotel distances (fetched from Google Directions)
   const hubToHotelRef = useRef<Record<string, { distance: string; duration: string }>>({});
@@ -1037,6 +1053,16 @@ function RoutePageContent() {
                                     Book
                                     <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                   </a>
+                                  {(() => {
+                                    const docs = getDocsForCity(stop.explore || stop.name);
+                                    return docs.length > 0 ? (
+                                      <button onClick={() => setViewingBooking(docs[0])}
+                                        className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                        Booking
+                                      </button>
+                                    ) : null;
+                                  })()}
                                   <button onClick={() => stop.destIndex !== undefined && setHotelModal({ destIndex: stop.destIndex })}
                                     className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
                                 </div>
@@ -1239,6 +1265,23 @@ function RoutePageContent() {
                                   Book
                                   <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                                 </a>
+                                {(() => {
+                                  const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+                                  const fromCity = info?.fromCity || '';
+                                  const toCity = info?.toCity || '';
+                                  const docs = [
+                                    ...getDocsForCity(fromCity),
+                                    ...getDocsForCity(toCity),
+                                  ].filter((d, idx, arr) => arr.findIndex(x => x.url === d.url) === idx);
+                                  const flightDocs = docs.filter(d => d.mimeType.includes('pdf') || d.mimeType.includes('image'));
+                                  return flightDocs.length > 0 ? (
+                                    <button onClick={() => setViewingBooking(flightDocs[0])}
+                                      className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                      Booking
+                                    </button>
+                                  ) : null;
+                                })()}
                                 <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
                               </div>
                             </div>
@@ -1511,6 +1554,32 @@ function RoutePageContent() {
                 Packing List
               </button>
             )}
+            {/* My Documents */}
+            {trip.bookingDocs.length > 0 && (
+              <div className="bg-bg-card border border-border-subtle rounded-xl p-3">
+                <p className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider mb-2">My Documents</p>
+                <div className="space-y-1.5">
+                  {trip.bookingDocs.map(doc => (
+                    <button key={doc.id} onClick={() => setViewingBooking(doc)}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent-cyan/5 transition-colors text-left">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500 flex-shrink-0">
+                        {doc.mimeType.includes('pdf')
+                          ? <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>
+                          : <><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>
+                        }
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-body text-text-primary truncate">{doc.name}</p>
+                        {doc.matchCities.length > 0 && (
+                          <p className="text-[8px] text-text-muted font-body truncate">{doc.matchCities.join(', ')}</p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
@@ -1655,6 +1724,47 @@ function RoutePageContent() {
         totalNights={totalNights}
         tripId={trip.tripId}
       />
+
+      {/* Booking Document Viewer */}
+      <AnimatePresence>
+        {viewingBooking && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+            onClick={() => setViewingBooking(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-bg-surface rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600 flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span className="text-sm font-display font-bold text-text-primary truncate">{viewingBooking.name}</span>
+                </div>
+                <button onClick={() => setViewingBooking(null)}
+                  className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary transition-colors flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-2 flex items-center justify-center bg-gray-100">
+                {viewingBooking.mimeType === 'application/pdf' ? (
+                  <iframe src={viewingBooking.url} className="w-full h-full min-h-[70vh] rounded" title="Booking PDF" />
+                ) : (
+                  <img src={viewingBooking.url} alt="Booking document" className="max-w-full max-h-[80vh] object-contain rounded" />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
