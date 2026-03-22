@@ -2,11 +2,16 @@
 
 {% block title %}Top Travel Destinations {{ current_year }} — Trip Cost Guides | Aiezzy{% endblock %}
 {% block meta_description %}Explore 50+ destinations worldwide with comprehensive trip cost guides. Find daily budgets for budget, mid-range, and luxury travel. Plan smarter with Aiezzy.{% endblock %}
-{% block meta_keywords %}<meta name="keywords" content="travel destinations, trip cost guide, travel budget, best places to visit {{ current_year }}, cheap travel destinations, travel planning">{% endblock %}
+{% block meta_keywords %}travel destinations, trip cost guide, travel budget, best places to visit {{ current_year }}, cheap travel destinations{% endblock %}
 {% block canonical %}https://aiezzy.com/destinations{% endblock %}
-{% block og_title %}Top Travel Destinations {{ current_year }} — Trip Cost Guides | Aiezzy{% endblock %}
-{% block og_description %}Comprehensive trip cost guides for 50+ destinations worldwide. Daily budgets, tips, and planning tools.{% endblock %}
-{% block og_url %}https://aiezzy.com/destinations{% endblock %}
+{% block og_tags %}
+<meta property="og:title" content="Top Travel Destinations {{ current_year }} — Trip Cost Guides | Aiezzy">
+<meta property="og:description" content="Comprehensive trip cost guides for 50+ destinations worldwide.">
+<meta property="og:url" content="https://aiezzy.com/destinations">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Aiezzy">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock %}
 
 {% block schema %}
 <script type="application/ld+json">

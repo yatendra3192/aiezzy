@@ -2,11 +2,16 @@
 
 {% block title %}{{ guide.title }} | Aiezzy{% endblock %}
 {% block meta_description %}{{ guide.meta_description }}{% endblock %}
-{% block meta_keywords %}<meta name="keywords" content="{{ guide.keywords|join(', ') }}">{% endblock %}
+{% block meta_keywords %}{{ guide.keywords|join(', ') }}{% endblock %}
 {% block canonical %}https://aiezzy.com/guide/{{ guide.slug }}{% endblock %}
-{% block og_title %}{{ guide.title }} | Aiezzy{% endblock %}
-{% block og_description %}{{ guide.meta_description }}{% endblock %}
-{% block og_url %}https://aiezzy.com/guide/{{ guide.slug }}{% endblock %}
+{% block og_tags %}
+<meta property="og:title" content="{{ guide.title }} | Aiezzy">
+<meta property="og:description" content="{{ guide.meta_description }}">
+<meta property="og:url" content="https://aiezzy.com/guide/{{ guide.slug }}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Aiezzy">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock %}
 
 {% block schema %}
 <script type="application/ld+json">

@@ -2,11 +2,16 @@
 
 {% block title %}{{ post.title }} | Aiezzy Blog{% endblock %}
 {% block meta_description %}{{ post.meta_description }}{% endblock %}
-{% block meta_keywords %}<meta name="keywords" content="{{ post.keywords|join(', ') }}">{% endblock %}
+{% block meta_keywords %}{{ post.keywords|join(', ') }}{% endblock %}
 {% block canonical %}https://aiezzy.com/blog/{{ post.slug }}{% endblock %}
-{% block og_title %}{{ post.title }}{% endblock %}
-{% block og_description %}{{ post.meta_description }}{% endblock %}
-{% block og_url %}https://aiezzy.com/blog/{{ post.slug }}{% endblock %}
+{% block og_tags %}
+<meta property="og:title" content="{{ post.title }}">
+<meta property="og:description" content="{{ post.meta_description }}">
+<meta property="og:url" content="https://aiezzy.com/blog/{{ post.slug }}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Aiezzy">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock %}
 
 {% block schema %}
 <script type="application/ld+json">

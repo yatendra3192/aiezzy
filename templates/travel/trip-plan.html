@@ -2,23 +2,20 @@
 
 {% block title %}{{ origin.city_short }} to {{ dest.city }} Trip Plan — Cost, Flights &amp; Itinerary ({{ current_year }}){% endblock %}
 
-{% block meta %}
-    <meta name="description" content="Plan your trip from {{ origin.city }} to {{ dest.city }}. {{ pair.sample_itinerary|length }}-day itinerary, flight costs from ${{ pair.flight_cost_economy }}, hotel prices, and top things to do in {{ dest.city }}. Updated for {{ current_year }}.">
-    <meta name="keywords" content="{{ origin.city }} to {{ dest.city }} trip, {{ origin.city }} to {{ dest.city }} vacation cost, {{ origin.city }} to {{ dest.city }} flights, {{ origin.city_short }} to {{ dest.city }} travel, {{ dest.city }} itinerary {{ current_year }}">
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
-    <link rel="canonical" href="https://aiezzy.com/trip/{{ pair.slug }}">
-
+{% block meta_description %}Plan your trip from {{ origin.city }} to {{ dest.city }}. {{ pair.sample_itinerary|length }}-day itinerary, flight costs from ${{ pair.flight_cost_economy }}, hotel prices, and top things to do in {{ dest.city }}. Updated for {{ current_year }}.{% endblock %}
+{% block meta_keywords %}{{ origin.city }} to {{ dest.city }} trip, {{ origin.city }} to {{ dest.city }} vacation cost, {{ origin.city }} to {{ dest.city }} flights, {{ dest.city }} itinerary {{ current_year }}{% endblock %}
+{% block canonical %}https://aiezzy.com/trip/{{ pair.slug }}{% endblock %}
+{% block og_tags %}
     <meta property="og:type" content="article">
     <meta property="og:url" content="https://aiezzy.com/trip/{{ pair.slug }}">
     <meta property="og:title" content="{{ origin.city_short }} to {{ dest.city }} Trip Plan — Cost, Flights &amp; Itinerary ({{ current_year }})">
     <meta property="og:description" content="Complete {{ pair.sample_itinerary|length }}-day {{ dest.city }} trip plan from {{ origin.city }}. Economy flights from ${{ pair.flight_cost_economy }}, daily costs, sample itinerary, and travel tips.">
-    <meta property="og:image" content="https://aiezzy.com/logo.png">
     <meta property="og:site_name" content="Aiezzy">
-
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ origin.city_short }} to {{ dest.city }} Trip Plan ({{ current_year }})">
     <meta name="twitter:description" content="{{ pair.sample_itinerary|length }}-day itinerary with flights from ${{ pair.flight_cost_economy }}, hotels, costs &amp; things to do in {{ dest.city }}.">
-
+{% endblock %}
+{% block schema %}
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
@@ -76,7 +73,7 @@
     </script>
 {% endblock %}
 
-{% block styles %}
+{% block extra_css %}
 <style>
     /* ===== BREADCRUMBS ===== */
     .breadcrumbs {
@@ -1227,7 +1224,7 @@
 
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
 (function() {
     var form = document.getElementById('tripWaitlistForm');

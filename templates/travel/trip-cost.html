@@ -2,25 +2,20 @@
 
 {% block title %}How Much Does a Trip to {{ dest.city }} Cost in {{ current_year }}? — Budget Breakdown{% endblock %}
 
-{% block meta %}
-<meta name="description" content="Complete {{ dest.city }}, {{ dest.country }} trip cost breakdown for {{ current_year }}. Budget (${{ dest.costs.budget.daily_total }}/day), mid-range, and luxury estimates for flights, hotels, meals, activities, and transport.">
-<meta name="keywords" content="trip to {{ dest.city }} cost, {{ dest.city }} travel budget, {{ dest.city }} vacation cost, {{ dest.city }} trip budget {{ current_year }}, how much does {{ dest.city }} cost, {{ dest.city }} travel expenses">
-<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large">
-<link rel="canonical" href="https://aiezzy.com/trip-cost/{{ dest.slug }}">
-
+{% block meta_description %}Complete {{ dest.city }}, {{ dest.country }} trip cost breakdown for {{ current_year }}. Budget (${{ dest.costs.budget.daily_total }}/day), mid-range, and luxury estimates for flights, hotels, meals, activities, and transport.{% endblock %}
+{% block meta_keywords %}trip to {{ dest.city }} cost, {{ dest.city }} travel budget, {{ dest.city }} vacation cost, {{ dest.city }} trip budget {{ current_year }}, how much does {{ dest.city }} cost{% endblock %}
+{% block canonical %}https://aiezzy.com/trip-cost/{{ dest.slug }}{% endblock %}
+{% block og_tags %}
 <meta property="og:type" content="article">
 <meta property="og:url" content="https://aiezzy.com/trip-cost/{{ dest.slug }}">
 <meta property="og:title" content="How Much Does a Trip to {{ dest.city }} Cost in {{ current_year }}? — Full Budget Breakdown">
 <meta property="og:description" content="{{ dest.city }} trip costs from ${{ dest.costs.budget.daily_total }}/day (budget) to ${{ dest.costs.luxury.daily_total }}/day (luxury). Flights, hotels, meals, activities — everything broken down.">
-<meta property="og:image" content="https://aiezzy.com/logo.png">
 <meta property="og:site_name" content="Aiezzy">
-
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:url" content="https://aiezzy.com/trip-cost/{{ dest.slug }}">
 <meta name="twitter:title" content="{{ dest.city }} Trip Cost {{ current_year }} — Budget Breakdown">
 <meta name="twitter:description" content="How much does a trip to {{ dest.city }} cost? Budget: ${{ dest.costs.budget.daily_total }}/day. Full breakdown of flights, hotels, food, activities.">
-<meta name="twitter:image" content="https://aiezzy.com/logo.png">
-
+{% endblock %}
+{% block schema %}
 <script type="application/ld+json">
 {
     "@context": "https://schema.org",
