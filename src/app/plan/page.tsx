@@ -619,27 +619,35 @@ function PlanPageContent() {
       destinations: destConfigs, transports,
     });
 
-    // Upload files to Supabase Storage — use AI's fileDescriptions to tag each file
+    // Upload files: classify each file individually via AI, then upload to Supabase
     if (uploadFiles.length > 0) {
-      const fileDescs: any[] = data.fileDescriptions || [];
+      // Step 1: Classify each file in parallel (each gets its own AI call)
+      const classifyPromises = uploadFiles.map(async (file) => {
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const res = await fetch('/api/ai/classify-doc', { method: 'POST', body: fd });
+          if (res.ok) return await res.json();
+        } catch {}
+        return { type: 'general', from: null, to: null, city: null };
+      });
+      const classifications = await Promise.all(classifyPromises);
 
+      // Step 2: Upload each file to Supabase with correct tags
       const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
       for (let i = 0; i < uploadFiles.length; i++) {
         const file = uploadFiles[i];
-        // Find the AI's description for this file
-        const desc = fileDescs.find((d: any) => d.fileIndex === i) || fileDescs[i];
+        const cls = classifications[i];
         const matchCities: string[] = [];
         let docType: 'hotel' | 'transport' | 'general' = 'general';
 
-        if (desc) {
-          if (desc.type === 'flight' || desc.type === 'train') {
-            docType = 'transport';
-            if (desc.from) matchCities.push(desc.from.toLowerCase());
-            if (desc.to) matchCities.push(desc.to.toLowerCase());
-          } else if (desc.type === 'hotel') {
-            docType = 'hotel';
-            if (desc.city) matchCities.push(desc.city.toLowerCase());
-          }
+        if (cls.type === 'flight' || cls.type === 'train') {
+          docType = 'transport';
+          if (cls.from) matchCities.push(cls.from.toLowerCase());
+          if (cls.to) matchCities.push(cls.to.toLowerCase());
+        } else if (cls.type === 'hotel') {
+          docType = 'hotel';
+          if (cls.city) matchCities.push(cls.city.toLowerCase());
         }
 
         try {
