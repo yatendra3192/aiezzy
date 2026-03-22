@@ -631,9 +631,9 @@ function RoutePageContent() {
   const rooms = Math.ceil((trip.adults + trip.children) / 2); // ~2 persons per room (infants share with adults)
   // Transport cost: adults + children (full fare) + infants (15% of adult fare)
   const transportPax = trip.adults + trip.children; // children pay full fare
-  const infantMultiplier = trip.infants * 0.15; // infants pay 15% of adult fare
+  const infantMultiplier = trip.infants * 0.15; // infants pay 15% on flights ONLY
   const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult * (transportPax + infantMultiplier), 0);
-  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * (transportPax + infantMultiplier), 0);
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * trip.adults, 0);
   const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
     const extras = d.additionalHotels || [];
     const extraNights = extras.reduce((es, h) => es + h.nights, 0);
