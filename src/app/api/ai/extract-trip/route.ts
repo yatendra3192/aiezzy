@@ -81,15 +81,26 @@ Rules:
 - Analyze ALL documents together to build one complete trip itinerary
 - Deduce the origin city from the first departure point
 - Order destinations chronologically based on travel dates
+- DESTINATIONS must match the cities where the traveler STAYS (has a hotel). Do NOT add transit cities as destinations
+  - Example: if train goes Amsterdam → Brussels but hotel is in Bruges, the destination is "Bruges" NOT "Brussels"
 - For hotels: extract full street address, calculate nights from check-in/check-out, calculate per-night price from total if needed
 - Convert ALL prices to INR (EUR×93, USD×85, GBP×108, THB×2.5, JPY×0.57). If already INR keep as-is
-- If travelers count is shown (e.g., "3 guests", "2 passengers"), extract it. Otherwise default to adults=1
+- TRAVELERS (critical): Carefully identify adults vs children vs infants:
+  - adults: passengers age 12+
+  - children: passengers age 2-11
+  - infants: passengers age 0-2. Look for "INF", "infant", baby names, age indicators
+  - Do NOT count infants as adults. "2 adults + 1 infant" means adults=2, infants=1
 - Determine tripType: if there's a return flight/train to origin city, it's "roundTrip", else "oneWay"
 - Combine info across documents — a flight booking and hotel booking for the same city should create one destination entry
 - Use null for any field you cannot determine
-- segments array should contain every individual booking (each flight, each hotel) in chronological order
-- destinations array should be the deduplicated city-level summary in travel order
-- sourceFileIndex: 0-based index of which uploaded file/image this segment was extracted from (first file=0, second=1, etc). This is critical for linking documents to bookings`
+- SEGMENTS: each flight, hotel, or train as a separate entry in chronological order
+  - For transport: include fromHub (full airport/station name), toHub, fromCode (IATA), toCode
+  - For transport: use duration shown on ticket, NOT naive time subtraction (different timezones!)
+  - For multi-leg flights: include total duration including layovers
+  - priceTotal must be the TOTAL price for ALL passengers (do NOT divide)
+- DESTINATIONS must be exactly the cities where hotels are booked, in travel order
+- segments should map 1:1 to legs: first transport segment = origin→dest[0], second = dest[0]→dest[1], etc.
+- sourceFileIndex: 0-based index of source file. Critical for linking documents to bookings`
       }
     ];
 

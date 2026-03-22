@@ -566,11 +566,48 @@ function PlanPageContent() {
       };
     });
 
-    // Build transports array — one per leg (destinations.length legs + optional return)
+    // Match transport segments to legs by city names (more reliable than index)
+    // Leg structure: leg[0] = origin→dest[0], leg[1] = dest[0]→dest[1], ..., leg[n] = dest[n-1]→origin (return)
+    const originName = (data.origin?.city || '').toLowerCase();
+    const destNames = destConfigs.map((d: any) => d.city.name.toLowerCase());
+    const legCities: Array<[string, string]> = [];
+    for (let i = 0; i < destConfigs.length; i++) {
+      const from = i === 0 ? originName : destNames[i - 1];
+      legCities.push([from, destNames[i]]);
+    }
+    if (data.tripType === 'roundTrip') {
+      legCities.push([destNames[destNames.length - 1] || '', originName]);
+    }
+
+    const usedSegIndices = new Set<number>();
     const transports: Array<{ flight?: import('@/data/mockData').Flight; train?: import('@/data/mockData').TrainOption; resolvedAirports?: any } | null> = [];
-    const expectedLegs = data.tripType === 'roundTrip' ? destConfigs.length + 1 : destConfigs.length;
-    for (let i = 0; i < expectedLegs; i++) {
-      transports.push(buildTransport(transportSegs[i] || null));
+
+    for (const [fromC, toC] of legCities) {
+      // Try to find matching segment by city names (fuzzy: from includes legFrom AND to includes legTo)
+      let bestIdx = -1;
+      for (let si = 0; si < transportSegs.length; si++) {
+        if (usedSegIndices.has(si)) continue;
+        const seg = transportSegs[si];
+        const segFrom = (seg.from || '').toLowerCase();
+        const segTo = (seg.to || '').toLowerCase();
+        if ((segFrom.includes(fromC) || fromC.includes(segFrom)) &&
+            (segTo.includes(toC) || toC.includes(segTo))) {
+          bestIdx = si;
+          break;
+        }
+      }
+      // Fallback: find first unused segment in chronological order
+      if (bestIdx === -1) {
+        for (let si = 0; si < transportSegs.length; si++) {
+          if (!usedSegIndices.has(si)) { bestIdx = si; break; }
+        }
+      }
+      if (bestIdx >= 0) {
+        usedSegIndices.add(bestIdx);
+        transports.push(buildTransport(transportSegs[bestIdx]));
+      } else {
+        transports.push(null);
+      }
     }
 
     // Build entire trip in ONE atomic setState — no stale state issues
