@@ -239,10 +239,6 @@ export default function TransportCompareModal({
       // Always show total price in the field — handlers will calculate per-adult
       if (data.priceTotal) {
         setCustomPrice(String(Math.round(data.priceTotal)));
-      } else if (data.pricePerAdult) {
-        // If only per-adult given, reconstruct total
-        const pax = (data.adults || 1) + (data.children || 0) + ((data.infants || 0) * 0.15);
-        setCustomPrice(String(Math.round(data.pricePerAdult * pax)));
       }
       setShowCustomForm(true);
     } catch (err: any) {

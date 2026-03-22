@@ -37,7 +37,6 @@ export async function POST(req: NextRequest) {
   "adults": 1,
   "children": 0,
   "infants": 0,
-  "pricePerAdult": 0,
   "priceTotal": 0,
   "currency": "INR",
   "bookingRef": "PNR or booking reference code",
@@ -60,9 +59,10 @@ Rules:
   - infants: number of infant passengers (age 0-2). Look for "INF", "infant", baby names, or age indicators
   - A single ticket may cover multiple passengers — look for passenger list, names, or "2 Adults + 1 Infant" type text
   - If ticket says "3 passengers" with no age breakdown, check names for clues (baby/infant names are often listed)
-- PRICING: Extract the total price paid for ALL passengers combined as priceTotal
-  - If per-person price is shown separately, use that as pricePerAdult
-  - If only total is shown, set pricePerAdult to 0 and we will calculate it
+- PRICING: Extract the TOTAL price paid for ALL passengers combined as priceTotal
+  - This must be the grand total shown on the ticket/booking (e.g., ₹80,322 for all passengers)
+  - Do NOT divide by number of passengers — always return the full total
+  - If only per-person price is shown, multiply by total passengers to get priceTotal
 - Convert ALL prices to INR (EUR×93, USD×85, GBP×108). If already INR keep as-is
 - Use null for fields you cannot determine`
       },
