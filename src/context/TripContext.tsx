@@ -23,7 +23,7 @@ interface TripState {
 interface TripContextType extends TripState {
   setFrom: (city: City) => void;
   setFromAddress: (address: string) => void;
-  addDestination: (city: City, nights?: number) => void;
+  addDestination: (city: City, nights?: number, hotel?: Hotel) => void;
   removeDestination: (id: string) => void;
   updateNights: (id: string, nights: number) => void;
   updateDestinationNotes: (destId: string, notes: string) => void;
@@ -82,8 +82,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   const setFrom = useCallback((city: City) => setState(s => dirty({ ...s, from: city })), []);
   const setFromAddress = useCallback((address: string) => setState(s => dirty({ ...s, fromAddress: address })), []);
 
-  const addDestination = useCallback((city: City, nights = 2) => {
-    const newDest: Destination = { id: `d${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, city, nights, selectedHotel: null, places: [] };
+  const addDestination = useCallback((city: City, nights = 2, hotel?: Hotel) => {
+    const newDest: Destination = { id: `d${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, city, nights, selectedHotel: hotel || null, places: [] };
     const newLeg = { id: `tl${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: 'drive' as const, duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
     setState(s => {
       const newDests = [...s.destinations, newDest];

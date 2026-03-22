@@ -8,6 +8,8 @@ import { motion, Reorder } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { CITIES, City, Place } from '@/data/mockData';
 import { searchPlaces, getPlaceDetails, PlacePrediction } from '@/lib/googleApi';
+import { useCurrency } from '@/context/CurrencyContext';
+import { formatPrice } from '@/lib/currency';
 import AISuggestModal from '@/components/AISuggestModal';
 
 // ─── Google Places Autocomplete ──────────────────────────────────────────────
@@ -255,6 +257,7 @@ function PlanPageContent() {
   const urlTripId = searchParams.get('id');
   const { data: session } = useSession();
   const trip = useTrip();
+  const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [editingFrom, setEditingFrom] = useState(!trip.fromAddress);
 
@@ -274,6 +277,13 @@ function PlanPageContent() {
   const [optimizedOrder, setOptimizedOrder] = useState<typeof trip.destinations | null>(null);
   const [optimizeSavings, setOptimizeSavings] = useState('');
   const [pendingOptimize, setPendingOptimize] = useState(false);
+  // Booking upload state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadExtracting, setUploadExtracting] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const tripFileInputRef = useRef<HTMLInputElement>(null);
 
   // After groupPlacesIntoCities populates destinations, trigger route optimization
   useEffect(() => {
@@ -445,6 +455,122 @@ function PlanPageContent() {
     router.push(tripId ? `/route?id=${tripId}` : '/route');
   };
 
+  // Handle booking files upload and extraction
+  const handleTripUpload = async () => {
+    if (!uploadFiles.length) return;
+    setUploadExtracting(true);
+    setUploadError('');
+    setUploadResult(null);
+
+    try {
+      const formData = new FormData();
+      uploadFiles.forEach(f => formData.append('files', f));
+
+      const res = await fetch('/api/ai/extract-trip', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Failed to process bookings');
+      const data = await res.json();
+      setUploadResult(data);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to extract trip details');
+    } finally {
+      setUploadExtracting(false);
+    }
+  };
+
+  // Apply extracted trip data to context
+  const applyUploadResult = async () => {
+    if (!uploadResult) return;
+    const data = uploadResult;
+
+    // Reset existing trip data
+    trip.resetTrip();
+
+    // Set origin
+    if (data.origin?.city) {
+      const knownCity = CITIES.find(c => c.name.toLowerCase() === data.origin.city.toLowerCase());
+      if (knownCity) {
+        trip.setFrom(knownCity);
+        trip.setFromAddress(knownCity.fullName || `${knownCity.name}, ${knownCity.country}`);
+      } else {
+        const fullName = `${data.origin.city}, ${data.origin.country || ''}`;
+        trip.setFrom({
+          name: data.origin.city,
+          country: data.origin.country || '',
+          fullName,
+          parentCity: data.origin.city,
+        });
+        trip.setFromAddress(fullName);
+      }
+    }
+
+    // Set departure date
+    if (data.departureDate) trip.setDepartureDate(data.departureDate);
+
+    // Set travelers
+    if (data.travelers) {
+      if (data.travelers.adults) trip.setAdults(data.travelers.adults);
+      if (data.travelers.children) trip.setChildren(data.travelers.children);
+      if (data.travelers.infants) trip.setInfants(data.travelers.infants);
+    }
+
+    // Set trip type
+    if (data.tripType) trip.setTripType(data.tripType === 'roundTrip' ? 'roundTrip' : 'oneWay');
+
+    // Resolve hotel addresses in parallel first, then add destinations with hotels atomically
+    if (data.destinations?.length) {
+      // Resolve all hotel addresses in parallel for coordinates
+      const hotelPromises = data.destinations.map(async (dest: any, i: number) => {
+        if (!dest.hotel?.name) return null;
+        let hotelAddress = dest.hotel.address || '';
+        let hotelLat: number | undefined;
+        let hotelLng: number | undefined;
+        if (hotelAddress) {
+          try {
+            const results = await searchPlaces(hotelAddress, 'all');
+            if (results.length > 0) {
+              const details = await getPlaceDetails(results[0].placeId);
+              if (details) {
+                hotelAddress = details.formattedAddress;
+                hotelLat = details.lat;
+                hotelLng = details.lng;
+              }
+            }
+          } catch { /* continue without coords */ }
+        }
+        return {
+          id: `custom-${Date.now()}-${i}`,
+          name: dest.hotel.name,
+          rating: 0,
+          pricePerNight: dest.hotel.pricePerNight || 0,
+          ratingColor: '#9ca3af',
+          ...(hotelAddress && { address: hotelAddress }),
+          ...(hotelLat && { lat: hotelLat }),
+          ...(hotelLng && { lng: hotelLng }),
+        } as import('@/data/mockData').Hotel;
+      });
+
+      const resolvedHotels = await Promise.all(hotelPromises);
+
+      // Add destinations with hotels already attached (no stale state issue)
+      for (let i = 0; i < data.destinations.length; i++) {
+        const dest = data.destinations[i];
+        const knownCity = CITIES.find(c => c.name.toLowerCase() === dest.city.toLowerCase());
+        const city: City = knownCity || {
+          name: dest.city,
+          country: dest.country || '',
+          fullName: `${dest.city}, ${dest.country || ''}`,
+          parentCity: dest.city,
+        };
+        trip.addDestination(city, dest.nights || 2, resolvedHotels[i] || undefined);
+      }
+    }
+
+    setShowUploadModal(false);
+    setUploadFiles([]);
+    setUploadResult(null);
+    setEditingFrom(false);
+  };
+
   if (isRestoring) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -522,15 +648,26 @@ function PlanPageContent() {
                 <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase">
                   {trip.userPlaces.length > 0 ? 'Places to Visit' : 'Destinations'}
                 </label>
-                <button
-                  onClick={() => setShowAISuggest(true)}
-                  className="flex items-center gap-1 text-[10px] font-display font-bold text-accent-cyan hover:text-accent-cyan/80 transition-colors bg-accent-cyan/10 px-2.5 py-1 rounded-lg"
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z" />
-                  </svg>
-                  AI Suggest
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="flex items-center gap-1 text-[10px] font-display font-bold text-accent-gold hover:text-accent-gold/80 transition-colors bg-accent-gold/10 px-2.5 py-1 rounded-lg"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Upload Bookings
+                  </button>
+                  <button
+                    onClick={() => setShowAISuggest(true)}
+                    className="flex items-center gap-1 text-[10px] font-display font-bold text-accent-cyan hover:text-accent-cyan/80 transition-colors bg-accent-cyan/10 px-2.5 py-1 rounded-lg"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z" />
+                    </svg>
+                    AI Suggest
+                  </button>
+                </div>
               </div>
 
               {/* User Places list (places-first flow) */}
@@ -777,6 +914,193 @@ function PlanPageContent() {
         isOpen={showAISuggest}
         onClose={() => setShowAISuggest(false)}
       />
+
+      {/* Upload Bookings Modal */}
+      {showUploadModal && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget && !uploadExtracting) { setShowUploadModal(false); setUploadFiles([]); setUploadResult(null); setUploadError(''); } }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+            className="bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-6 w-full max-w-[480px] max-h-[85vh] overflow-y-auto">
+
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-bold text-lg text-text-primary">Upload Bookings</h3>
+              {!uploadExtracting && (
+                <button onClick={() => { setShowUploadModal(false); setUploadFiles([]); setUploadResult(null); setUploadError(''); }}
+                  className="text-text-muted hover:text-text-primary text-lg">&times;</button>
+              )}
+            </div>
+
+            {!uploadResult ? (
+              <>
+                <p className="text-text-secondary text-xs font-body mb-4">
+                  Upload your flight tickets, hotel confirmations, Airbnb bookings — we&apos;ll extract everything and build your trip automatically.
+                </p>
+
+                {/* File drop zone */}
+                <input ref={tripFileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden"
+                  onChange={e => {
+                    const files = Array.from(e.target.files || []);
+                    setUploadFiles(prev => [...prev, ...files]);
+                    e.target.value = '';
+                  }} />
+
+                <button onClick={() => tripFileInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-accent-gold/30 hover:border-accent-gold rounded-xl p-6 transition-all hover:bg-accent-gold/5 flex flex-col items-center gap-2">
+                  <div className="w-12 h-12 rounded-full bg-accent-gold/10 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                  </div>
+                  <p className="text-sm font-display font-bold text-text-primary">Click to upload files</p>
+                  <p className="text-[10px] text-text-muted font-body">PDFs, screenshots, images — up to 10MB each</p>
+                </button>
+
+                {/* Selected files list */}
+                {uploadFiles.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    {uploadFiles.map((file, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-card border border-border-subtle">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold flex-shrink-0">
+                          {file.type === 'application/pdf' || file.name.endsWith('.pdf')
+                            ? <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>
+                            : <><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>
+                          }
+                        </svg>
+                        <span className="text-xs font-body text-text-primary truncate flex-1">{file.name}</span>
+                        <span className="text-[9px] text-text-muted font-mono flex-shrink-0">{(file.size / 1024).toFixed(0)}KB</span>
+                        <button onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}
+                          className="text-text-muted hover:text-red-500 text-sm flex-shrink-0">&times;</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {uploadError && (
+                  <p className="text-red-500 text-xs font-body mt-2">{uploadError}</p>
+                )}
+
+                {/* Extract button */}
+                <button onClick={handleTripUpload}
+                  disabled={uploadFiles.length === 0 || uploadExtracting}
+                  className={`w-full mt-4 py-3 rounded-xl font-display font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                    uploadFiles.length > 0 && !uploadExtracting
+                      ? 'bg-accent-gold text-white hover:bg-accent-gold/90'
+                      : 'bg-bg-card text-text-muted cursor-not-allowed'
+                  }`}>
+                  {uploadExtracting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Reading your bookings...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z" />
+                      </svg>
+                      Extract Trip Details ({uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''})
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (
+              /* Show extracted results for confirmation */
+              <>
+                <div className="space-y-3">
+                  {/* Origin */}
+                  {uploadResult.origin && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-bg-card border border-border-subtle">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-cyan flex-shrink-0">
+                        <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/>
+                      </svg>
+                      <div>
+                        <p className="text-[9px] text-text-muted font-body uppercase">From</p>
+                        <p className="text-sm font-display font-bold text-text-primary">{uploadResult.origin.city}, {uploadResult.origin.country}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Trip info row */}
+                  <div className="flex gap-2">
+                    {uploadResult.departureDate && (
+                      <div className="flex-1 px-3 py-2 rounded-lg bg-bg-card border border-border-subtle">
+                        <p className="text-[9px] text-text-muted font-body uppercase">Departure</p>
+                        <p className="text-xs font-mono font-bold text-text-primary">{new Date(uploadResult.departureDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      </div>
+                    )}
+                    {uploadResult.travelers && (
+                      <div className="flex-1 px-3 py-2 rounded-lg bg-bg-card border border-border-subtle">
+                        <p className="text-[9px] text-text-muted font-body uppercase">Travelers</p>
+                        <p className="text-xs font-mono font-bold text-text-primary">
+                          {uploadResult.travelers.adults} adult{uploadResult.travelers.adults !== 1 ? 's' : ''}
+                          {uploadResult.travelers.children > 0 && `, ${uploadResult.travelers.children} child`}
+                          {uploadResult.travelers.infants > 0 && `, ${uploadResult.travelers.infants} infant`}
+                        </p>
+                      </div>
+                    )}
+                    <div className="px-3 py-2 rounded-lg bg-bg-card border border-border-subtle">
+                      <p className="text-[9px] text-text-muted font-body uppercase">Type</p>
+                      <p className="text-xs font-mono font-bold text-text-primary">{uploadResult.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</p>
+                    </div>
+                  </div>
+
+                  {/* Destinations */}
+                  {uploadResult.destinations?.length > 0 && (
+                    <div>
+                      <p className="text-[9px] text-text-muted font-body uppercase mb-1.5">Destinations</p>
+                      <div className="space-y-1.5">
+                        {uploadResult.destinations.map((dest: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent-cyan/5 border border-accent-cyan/20">
+                            <span className="w-5 h-5 rounded-full bg-accent-cyan text-white text-[9px] font-mono font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-display font-bold text-text-primary">{dest.city}, {dest.country}</p>
+                              <p className="text-[10px] text-text-muted font-body">
+                                {dest.nights} night{dest.nights !== 1 ? 's' : ''}
+                                {dest.hotel?.name && ` · ${dest.hotel.name}`}
+                              </p>
+                            </div>
+                            {dest.hotel?.pricePerNight > 0 && (
+                              <span className="text-[10px] font-mono text-accent-gold flex-shrink-0">{formatPrice(dest.hotel.pricePerNight, currency)}/n</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Flight/transport segments */}
+                  {uploadResult.segments?.filter((s: any) => s.type === 'flight' || s.type === 'train').length > 0 && (
+                    <div>
+                      <p className="text-[9px] text-text-muted font-body uppercase mb-1.5">Transport</p>
+                      <div className="space-y-1">
+                        {uploadResult.segments.filter((s: any) => s.type === 'flight' || s.type === 'train').map((seg: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-bg-card border border-border-subtle text-[10px]">
+                            <span className="text-text-muted font-body">{seg.type === 'flight' ? '✈' : '🚆'}</span>
+                            <span className="font-display font-semibold text-text-primary">{seg.from} → {seg.to}</span>
+                            {seg.carrier && <span className="text-text-muted font-body">· {seg.carrier} {seg.flightNumber || ''}</span>}
+                            {seg.departureDate && <span className="text-text-muted font-mono ml-auto">{new Date(seg.departureDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 mt-4">
+                  <button onClick={() => { setUploadResult(null); setUploadFiles([]); }}
+                    className="flex-1 bg-bg-card border border-border-subtle text-text-secondary font-display font-bold text-sm py-3 rounded-xl hover:border-accent-cyan/30 transition-all">
+                    Re-upload
+                  </button>
+                  <button onClick={applyUploadResult}
+                    className="flex-1 bg-accent-gold text-white font-display font-bold text-sm py-3 rounded-xl hover:bg-accent-gold/90 transition-all">
+                    Build My Trip
+                  </button>
+                </div>
+              </>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
     </div>
   );
 }
