@@ -51,8 +51,13 @@ Rules:
 - fromHub: FULL airport name (e.g., "Chhatrapati Shivaji Maharaj International Airport") or station name (e.g., "Paris Gare du Nord")
 - toHub: FULL arrival airport or station name
 - fromCode/toCode: 3-letter IATA codes for flights (e.g., BOM, AMS, CDG). Use null for trains
-- Times must be in 24-hour HH:MM format
-- Calculate duration from departure and arrival if not shown
+- Times must be in 24-hour HH:MM format (use LOCAL times at each airport/station)
+- DURATION (critical — timezone-aware):
+  - ALWAYS use the duration explicitly shown on the ticket if available (e.g., "09h 50m", "6h 15m")
+  - For multi-segment/connecting flights: sum ALL segment durations + layover times to get total journey duration
+  - Example: BCN 10:00 → AUH 19:15 (6h15m) + 1h55m layover + AUH 21:10 → BOM 01:50 (3h10m) = total 11h 20m
+  - Do NOT simply subtract arrival time from departure time — different cities have different timezones!
+  - Naive subtraction (01:50 - 10:00 = 15h50m) gives WRONG results for cross-timezone flights
 - PASSENGER BREAKDOWN (critical): Carefully identify from the ticket:
   - adults: number of adult passengers (age 12+)
   - children: number of child passengers (age 2-11)
