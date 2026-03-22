@@ -110,7 +110,7 @@ function RoutePageContent() {
       setTimeout(() => setAutoSaveStatus('idle'), 3000);
     }, 5000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedCount, trip.destinations.map(d => d.nights).join(','), trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCount, trip.destinations.map(d => d.nights).join(','), trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType, trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}-${l.selectedFlight?.pricePerAdult || 0}`).join(','), trip.destinations.map(d => `${d.selectedHotel?.id || ''}-${d.selectedHotel?.pricePerNight || 0}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
