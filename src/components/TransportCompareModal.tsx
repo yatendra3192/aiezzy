@@ -186,30 +186,26 @@ export default function TransportCompareModal({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/ai/extract-booking', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error('Failed to read booking');
+      const res = await fetch('/api/ai/extract-transport', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Failed to read ticket');
       const data = await res.json();
-      // Fill form with extracted data
-      if (data.name) setCustomCarrier(data.name);
-      if (data.bookingRef) setCustomNumber(data.bookingRef);
-      // Try to extract time info
-      const segments = data.segments || [];
-      if (segments.length > 0) {
-        const seg = segments[0];
-        if (seg.carrier) setCustomCarrier(seg.carrier);
-        if (seg.flightNumber || seg.trainNumber) setCustomNumber(seg.flightNumber || seg.trainNumber || '');
-        if (seg.departureTime) setCustomDep(seg.departureTime);
-        if (seg.arrivalTime) setCustomArr(seg.arrivalTime);
+      if (data.carrier) setCustomCarrier(data.carrier);
+      if (data.number) setCustomNumber(data.number);
+      if (data.departure) setCustomDep(data.departure);
+      if (data.arrival) setCustomArr(data.arrival);
+      if (data.duration) setCustomDuration(data.duration);
+      if (data.pricePerPerson) {
+        setCustomPrice(String(Math.round(data.pricePerPerson * (data.passengers || adults))));
+      } else if (data.priceTotal) {
+        setCustomPrice(String(Math.round(data.priceTotal)));
       }
-      if (data.priceTotal) setCustomPrice(String(Math.round(data.priceTotal)));
-      else if (data.pricePerNight) setCustomPrice(String(Math.round(data.pricePerNight)));
       setShowCustomForm(true);
     } catch (err: any) {
-      setUploadError(err.message || 'Failed to read booking');
+      setUploadError(err.message || 'Failed to read ticket');
     } finally {
       setUploadExtracting(false);
     }
-  }, []);
+  }, [adults]);
 
   // Reset state on open — MUST be before fetch effects so fetches see clean state
   useEffect(() => {
