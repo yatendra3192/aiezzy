@@ -1645,6 +1645,8 @@ function RoutePageContent() {
             toAirport={findAirportName(toCity)}
             date={legDateStr}
             adults={trip.adults}
+            children={trip.children}
+            infants={trip.infants}
             currentType={leg?.type || 'drive'}
             selectedFlight={leg?.selectedFlight || null}
             selectedTrain={leg?.selectedTrain || null}

@@ -26,6 +26,8 @@ interface Props {
   onSelectTrain: (train: TrainOption) => void;
   onSelectDrive: () => void;
   onSelectBus: () => void;
+  children?: number;
+  infants?: number;
   cachedFlights?: any[] | null;
 }
 
@@ -89,7 +91,7 @@ function padTime(t: string): string {
 export default function TransportCompareModal({
   isOpen, onClose, fromCity, toCity, fromCode, toCode, fromAirport, toAirport,
   date, adults, currentType, selectedFlight, selectedTrain,
-  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, cachedFlights,
+  onSelectFlight, onSelectTrain, onSelectDrive, onSelectBus, children: tripChildren = 0, infants: tripInfants = 0, cachedFlights,
 }: Props) {
   const { currency } = useCurrency();
   const [tab, setTab] = useState<TabType>(currentType as TabType || 'flight');
@@ -155,13 +157,9 @@ export default function TransportCompareModal({
   const handleCustomFlight = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
-    // Use ticket's passenger breakdown if available (from AI extraction), else use trip's adults
+    // Use TRIP's passenger counts (what route page uses to multiply back)
     // Route page formula: pricePerAdult × (adults + children + infants × 0.15)
-    // So: pricePerAdult = totalPrice / (ticketAdults + ticketChildren + ticketInfants × 0.15)
-    const tAdults = ticketAdults || adults;
-    const tChildren = ticketChildren;
-    const tInfants = ticketInfants;
-    const divisor = tAdults + tChildren + (tInfants * 0.15);
+    const divisor = adults + tripChildren + (tripInfants * 0.15);
     const price = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
     const depCode = customFromCode.trim().toUpperCase() || fromCode || '?';
     const arrCode = customToCode.trim().toUpperCase() || toCode || '?';
@@ -189,11 +187,8 @@ export default function TransportCompareModal({
   const handleCustomTrain = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
-    // Same formula as flights for consistency
-    const tAdults = ticketAdults || adults;
-    const tChildren = ticketChildren;
-    const tInfants = ticketInfants;
-    const divisor = tAdults + tChildren + (tInfants * 0.15);
+    // Use TRIP's passenger counts (what route page uses to multiply back)
+    const divisor = adults + tripChildren + (tripInfants * 0.15);
     const price = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
     const train: TrainOption = {
       id: `custom-train-${Date.now()}`,
