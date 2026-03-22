@@ -619,38 +619,26 @@ function PlanPageContent() {
       destinations: destConfigs, transports,
     });
 
-    // Upload files to Supabase Storage — match each file to a specific segment
+    // Upload files to Supabase Storage — use AI's fileDescriptions to tag each file
     if (uploadFiles.length > 0) {
-      // All segments sorted chronologically (same order as in buildTransport)
-      const allSegs = (data.segments || []).sort((a: any, b: any) =>
-        (a.departureDate || a.checkIn || '').localeCompare(b.departureDate || b.checkIn || '')
-      );
+      const fileDescs: any[] = data.fileDescriptions || [];
 
-      // Match files to segments: file[0]→segment[0], file[1]→segment[1], etc.
-      // Each file gets SPECIFIC cities and type from its matched segment
       const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
       for (let i = 0; i < uploadFiles.length; i++) {
         const file = uploadFiles[i];
-        const seg = allSegs[i]; // Match by position (user typically uploads in trip order)
+        // Find the AI's description for this file
+        const desc = fileDescs.find((d: any) => d.fileIndex === i) || fileDescs[i];
         const matchCities: string[] = [];
         let docType: 'hotel' | 'transport' | 'general' = 'general';
 
-        if (seg) {
-          if (seg.type === 'flight' || seg.type === 'train') {
+        if (desc) {
+          if (desc.type === 'flight' || desc.type === 'train') {
             docType = 'transport';
-            if (seg.from) matchCities.push(seg.from.toLowerCase());
-            if (seg.to) matchCities.push(seg.to.toLowerCase());
-          } else if (seg.type === 'hotel') {
+            if (desc.from) matchCities.push(desc.from.toLowerCase());
+            if (desc.to) matchCities.push(desc.to.toLowerCase());
+          } else if (desc.type === 'hotel') {
             docType = 'hotel';
-            if (seg.city) matchCities.push(seg.city.toLowerCase());
-          }
-        }
-
-        // Fallback: try filename for clues
-        if (matchCities.length === 0) {
-          const fname = file.name.toLowerCase();
-          for (const dest of data.destinations || []) {
-            if (fname.includes(dest.city.toLowerCase())) matchCities.push(dest.city.toLowerCase());
+            if (desc.city) matchCities.push(desc.city.toLowerCase());
           }
         }
 

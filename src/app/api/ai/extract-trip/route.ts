@@ -74,6 +74,17 @@ Return ONLY valid JSON (no markdown, no code fences) in this exact format:
         "pricePerNight": 0
       }
     }
+  ],
+  "fileDescriptions": [
+    {
+      "fileIndex": 0,
+      "type": "flight or train or hotel",
+      "from": "Departure city (for transport) or null",
+      "to": "Arrival city (for transport) or null",
+      "city": "City name (for hotels) or null",
+      "carrier": "Airline or train operator (for transport) or null",
+      "summary": "Brief description e.g. 'IndiGo Mumbai to Amsterdam flight ticket'"
+    }
   ]
 }
 
@@ -100,7 +111,13 @@ Rules:
   - priceTotal must be the TOTAL price for ALL passengers (do NOT divide)
 - DESTINATIONS must be exactly the cities where hotels are booked, in travel order
 - segments should map 1:1 to legs: first transport segment = origin→dest[0], second = dest[0]→dest[1], etc.
-- sourceFileIndex: 0-based index of source file. Critical for linking documents to bookings`
+- sourceFileIndex: 0-based index of source file (first uploaded file=0, second=1, etc)
+- fileDescriptions: MUST have one entry per uploaded file/image. For each file, describe what it contains:
+  - fileIndex: 0-based matching the upload order
+  - type: "flight", "train", or "hotel" based on content
+  - from/to: departure and arrival city for transport documents
+  - city: city name for hotel/accommodation documents
+  - This is critical for linking each PDF/image to the correct booking on the trip`
       }
     ];
 
