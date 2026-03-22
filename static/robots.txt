@@ -3,5 +3,6 @@ Allow: /
 
 Sitemap: https://aiezzy.com/sitemap.xml
 
-# Aiezzy - AI Trip Planner (Coming Soon)
-# Free tools still available at aiezzy.com/tools
+# Aiezzy - AI Trip Planner
+# Travel cost guides, trip plans, and planning tools
+# Free tools available at aiezzy.com/tools

@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Aiezzy Travel Blog — Tips, Guides & Inspiration{% endblock %}
+{% block meta_description %}Expert travel tips, destination guides, and budget planning advice from the Aiezzy team. Plan smarter trips with our latest articles.{% endblock %}
+{% block meta_keywords %}<meta name="keywords" content="travel blog, travel tips, budget travel, trip planning, travel guides, destination guides">{% endblock %}
+{% block canonical %}https://aiezzy.com/blog{% endblock %}
+{% block og_title %}Aiezzy Travel Blog — Tips, Guides & Inspiration{% endblock %}
+{% block og_description %}Expert travel tips, destination guides, and budget planning advice from the Aiezzy team.{% endblock %}
+{% block og_url %}https://aiezzy.com/blog{% endblock %}
+
+{% block schema %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    "name": "Aiezzy Travel Blog",
+    "description": "Expert travel tips, destination guides, and budget planning advice",
+    "url": "https://aiezzy.com/blog",
+    "publisher": {
+        "@type": "Organization",
+        "name": "Aiezzy",
+        "url": "https://aiezzy.com"
+    }
+}
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== BLOG LISTING ===== */
+    .blog-hero {
+        padding: 120px 24px 60px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .blog-hero::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background:
+            radial-gradient(ellipse 80% 50% at 50% -20%, rgba(15,118,110,0.08), transparent),
+            radial-gradient(ellipse 60% 40% at 80% 80%, rgba(245,158,11,0.06), transparent);
+        pointer-events: none;
+    }
+    .blog-hero-inner {
+        max-width: 640px;
+        margin: 0 auto;
+        position: relative;
+    }
+    .blog-hero h1 {
+        font-size: clamp(36px, 5vw, 52px);
+        font-weight: 900;
+        letter-spacing: -2px;
+        line-height: 1.1;
+        margin-bottom: 16px;
+    }
+    .blog-hero h1 .highlight {
+        background: linear-gradient(135deg, var(--brand), var(--brand-light));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .blog-hero .subtitle {
+        font-size: 18px;
+        color: var(--text-muted);
+        line-height: 1.7;
+    }
+
+    /* Posts grid */
+    .blog-grid-wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 24px 80px;
+    }
+    .blog-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+    }
+
+    /* Post card */
+    .post-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 28px;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.25s ease;
+        display: flex;
+        flex-direction: column;
+    }
+    .post-card:hover {
+        border-color: var(--brand-light);
+        transform: translateY(-3px);
+        box-shadow: 0 12px 32px rgba(15,118,110,0.08);
+    }
+    .post-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+    .post-category {
+        display: inline-block;
+        padding: 4px 12px;
+        background: #F0FDFA;
+        color: var(--brand);
+        border-radius: 100px;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .post-date {
+        font-weight: 500;
+    }
+    .post-card h2 {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        line-height: 1.3;
+        margin-bottom: 10px;
+        color: var(--text);
+    }
+    .post-card:hover h2 {
+        color: var(--brand);
+    }
+    .post-excerpt {
+        font-size: 14px;
+        color: var(--text-muted);
+        line-height: 1.7;
+        margin-bottom: 20px;
+        flex: 1;
+    }
+    .post-read-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--brand);
+        transition: gap 0.2s;
+    }
+    .post-card:hover .post-read-link {
+        gap: 10px;
+    }
+    .post-read-link .arrow {
+        font-size: 16px;
+        transition: transform 0.2s;
+    }
+    .post-card:hover .post-read-link .arrow {
+        transform: translateX(2px);
+    }
+
+    /* Empty state */
+    .blog-empty {
+        text-align: center;
+        padding: 80px 24px;
+        color: var(--text-muted);
+    }
+    .blog-empty h2 {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--text);
+        margin-bottom: 12px;
+    }
+    .blog-empty p {
+        font-size: 16px;
+        margin-bottom: 32px;
+    }
+    .blog-empty-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 28px;
+        background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+        color: white;
+        text-decoration: none;
+        border-radius: 100px;
+        font-size: 15px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .blog-empty-cta:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 24px rgba(15,118,110,0.3);
+    }
+
+    @media (max-width: 640px) {
+        .blog-grid {
+            grid-template-columns: 1fr;
+        }
+        .post-card { padding: 24px 20px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Breadcrumbs -->
+<div class="breadcrumbs" style="padding-top: 80px;">
+    <a href="/">Home</a>
+    <span>/</span>
+    <strong>Blog</strong>
+</div>
+
+<!-- Hero -->
+<section class="blog-hero">
+    <div class="blog-hero-inner">
+        <h1>Travel <span class="highlight">Blog</span></h1>
+        <p class="subtitle">Tips, guides, and inspiration to help you plan smarter trips on any budget.</p>
+    </div>
+</section>
+
+<!-- Posts Grid -->
+<div class="blog-grid-wrap">
+    {% if posts %}
+    <div class="blog-grid">
+        {% for post in posts %}
+        <a href="/blog/{{ post.slug }}" class="post-card">
+            <div class="post-card-meta">
+                {% if post.category %}
+                <span class="post-category">{{ post.category }}</span>
+                {% endif %}
+                <span class="post-date">{{ post.date }}</span>
+            </div>
+            <h2>{{ post.title }}</h2>
+            <p class="post-excerpt">{{ post.excerpt }}</p>
+            <span class="post-read-link">
+                Read article <span class="arrow">&rarr;</span>
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="blog-empty">
+        <h2>Coming Soon</h2>
+        <p>We're working on fresh travel content. Check back soon or join the waitlist to get notified.</p>
+        <a href="/" class="blog-empty-cta">Join Waitlist &rarr;</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,533 @@
+{% extends "base.html" %}
+
+{% block title %}{{ guide.title }} | Aiezzy{% endblock %}
+{% block meta_description %}{{ guide.meta_description }}{% endblock %}
+{% block meta_keywords %}<meta name="keywords" content="{{ guide.keywords|join(', ') }}">{% endblock %}
+{% block canonical %}https://aiezzy.com/guide/{{ guide.slug }}{% endblock %}
+{% block og_title %}{{ guide.title }} | Aiezzy{% endblock %}
+{% block og_description %}{{ guide.meta_description }}{% endblock %}
+{% block og_url %}https://aiezzy.com/guide/{{ guide.slug }}{% endblock %}
+
+{% block schema %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    "name": "{{ guide.h1 }}",
+    "description": "{{ guide.meta_description }}",
+    "step": [
+        {% for section in guide.sections %}
+        {
+            "@type": "HowToStep",
+            "position": {{ loop.index }},
+            "name": "{{ section.heading }}",
+            "text": "{{ section.content|truncate(200, true, '...')|replace('"', '\\"') }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+</script>
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": "{{ guide.h1 }}",
+    "description": "{{ guide.meta_description }}",
+    "author": {
+        "@type": "Organization",
+        "name": "Aiezzy Travel Team",
+        "url": "https://aiezzy.com"
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": "Aiezzy",
+        "url": "https://aiezzy.com",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "https://aiezzy.com/static/favicon.png"
+        }
+    },
+    "datePublished": "{{ current_year }}-01-01",
+    "dateModified": "{{ current_year }}-03-22",
+    "mainEntityOfPage": "https://aiezzy.com/guide/{{ guide.slug }}"
+}
+</script>
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+        {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://aiezzy.com/"
+        },
+        {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Guides",
+            "item": "https://aiezzy.com/guides"
+        },
+        {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "{{ guide.h1 }}",
+            "item": "https://aiezzy.com/guide/{{ guide.slug }}"
+        }
+    ]
+}
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== GUIDE PAGE ===== */
+    .guide-layout {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 100px 24px 40px;
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 48px;
+        align-items: start;
+    }
+
+    /* Sidebar / Table of Contents */
+    .guide-sidebar {
+        position: sticky;
+        top: 88px;
+    }
+    .toc {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 24px;
+    }
+    .toc-title {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--brand);
+        margin-bottom: 16px;
+    }
+    .toc-list {
+        list-style: none;
+    }
+    .toc-list li {
+        margin-bottom: 4px;
+    }
+    .toc-list a {
+        display: block;
+        padding: 8px 12px;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        border-radius: 8px;
+        transition: all 0.2s;
+        line-height: 1.4;
+    }
+    .toc-list a:hover {
+        background: #F0FDFA;
+        color: var(--brand);
+    }
+    .toc-list a.active {
+        background: #F0FDFA;
+        color: var(--brand);
+        font-weight: 600;
+    }
+
+    /* Mobile TOC toggle */
+    .toc-mobile-toggle {
+        display: none;
+        width: 100%;
+        padding: 14px 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--brand);
+        cursor: pointer;
+        text-align: left;
+        margin-bottom: 24px;
+    }
+    .toc-mobile-toggle::after {
+        content: ' \25BC';
+        float: right;
+        font-size: 12px;
+    }
+
+    /* Main content */
+    .guide-main {
+        min-width: 0;
+    }
+    .guide-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 32px;
+        font-size: 14px;
+        color: var(--text-muted);
+    }
+    .guide-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .guide-meta-item strong {
+        color: var(--text);
+        font-weight: 600;
+    }
+    .guide-meta-divider {
+        width: 4px;
+        height: 4px;
+        background: var(--border);
+        border-radius: 50%;
+    }
+
+    .guide-main h1 {
+        font-size: clamp(32px, 5vw, 48px);
+        font-weight: 900;
+        letter-spacing: -2px;
+        line-height: 1.1;
+        margin-bottom: 20px;
+    }
+    .guide-intro {
+        font-size: 18px;
+        color: var(--text-muted);
+        line-height: 1.8;
+        margin-bottom: 48px;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    /* Article sections */
+    .guide-section {
+        margin-bottom: 48px;
+        scroll-margin-top: 88px;
+    }
+    .guide-section h2 {
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        margin-bottom: 16px;
+        color: var(--text);
+    }
+    .guide-section-content {
+        font-size: 16px;
+        color: #475569;
+        line-height: 1.8;
+    }
+    .guide-section-content p {
+        margin-bottom: 16px;
+    }
+    .guide-section-content ul,
+    .guide-section-content ol {
+        margin: 16px 0;
+        padding-left: 24px;
+    }
+    .guide-section-content li {
+        margin-bottom: 8px;
+        line-height: 1.7;
+    }
+    .guide-section-content strong {
+        color: var(--text);
+        font-weight: 600;
+    }
+    .guide-section-content a {
+        color: var(--brand);
+        font-weight: 500;
+    }
+    .guide-section-content a:hover {
+        text-decoration: none;
+    }
+
+    /* Related destinations */
+    .guide-related {
+        padding: 48px 0;
+        border-top: 1px solid var(--border);
+        margin-top: 48px;
+    }
+    .guide-related h2 {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 24px;
+    }
+    .guide-related-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 16px;
+    }
+    .guide-dest-card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+    .guide-dest-card:hover {
+        border-color: var(--brand-light);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(15,118,110,0.08);
+    }
+    .guide-dest-card .emoji {
+        font-size: 28px;
+        flex-shrink: 0;
+    }
+    .guide-dest-card .info h4 {
+        font-size: 15px;
+        font-weight: 700;
+    }
+    .guide-dest-card .info .country {
+        font-size: 13px;
+        color: var(--text-muted);
+    }
+
+    /* Related tools */
+    .guide-tools {
+        margin-top: 32px;
+    }
+    .guide-tools h3 {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+    .guide-tools-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .guide-tool-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: linear-gradient(135deg, #F0FDFA, #ECFDF5);
+        border: 1px solid #99F6E4;
+        border-radius: 100px;
+        text-decoration: none;
+        color: var(--brand);
+        font-size: 14px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .guide-tool-link:hover {
+        background: var(--brand);
+        color: white;
+        border-color: var(--brand);
+    }
+
+    /* CTA banner */
+    .guide-cta {
+        background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+        border-radius: 20px;
+        padding: 48px 40px;
+        text-align: center;
+        margin-top: 48px;
+    }
+    .guide-cta h2 {
+        font-size: 28px;
+        font-weight: 800;
+        color: white;
+        margin-bottom: 12px;
+    }
+    .guide-cta p {
+        font-size: 16px;
+        color: rgba(255,255,255,0.8);
+        margin-bottom: 32px;
+    }
+    .guide-cta .waitlist-form input {
+        border-color: rgba(255,255,255,0.3);
+        background: rgba(255,255,255,0.15);
+        color: white;
+    }
+    .guide-cta .waitlist-form input::placeholder { color: rgba(255,255,255,0.6); }
+    .guide-cta .waitlist-form button {
+        background: var(--accent);
+    }
+    .guide-cta .waitlist-form button:hover {
+        background: var(--accent-hover);
+        box-shadow: 0 8px 24px rgba(245,158,11,0.3);
+    }
+    .guide-cta .waitlist-success {
+        background: rgba(255,255,255,0.15);
+        border-color: rgba(255,255,255,0.3);
+        color: white;
+    }
+
+    @media (max-width: 900px) {
+        .guide-layout {
+            grid-template-columns: 1fr;
+            padding-top: 80px;
+        }
+        .guide-sidebar {
+            position: static;
+        }
+        .toc {
+            display: none;
+        }
+        .toc.mobile-open {
+            display: block;
+            margin-top: 8px;
+        }
+        .toc-mobile-toggle {
+            display: block;
+        }
+    }
+    @media (max-width: 640px) {
+        .guide-related-grid {
+            grid-template-columns: 1fr;
+        }
+        .guide-cta {
+            padding: 32px 24px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Breadcrumbs -->
+<div class="breadcrumbs" style="padding-top: 80px;">
+    <a href="/">Home</a>
+    <span>/</span>
+    <a href="/guides">Guides</a>
+    <span>/</span>
+    <strong>{{ guide.h1 }}</strong>
+</div>
+
+<div class="guide-layout">
+    <!-- Sidebar: Table of Contents -->
+    <aside class="guide-sidebar">
+        <button class="toc-mobile-toggle" onclick="document.querySelector('.toc').classList.toggle('mobile-open')">
+            Table of Contents
+        </button>
+        <nav class="toc">
+            <div class="toc-title">Contents</div>
+            <ul class="toc-list">
+                {% for section in guide.sections %}
+                <li>
+                    <a href="#section-{{ loop.index }}" data-section="{{ loop.index }}">{{ section.heading }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="guide-main">
+        <!-- Meta info -->
+        <div class="guide-meta">
+            <div class="guide-meta-item">
+                <span>By</span>
+                <strong>Aiezzy Travel Team</strong>
+            </div>
+            <div class="guide-meta-divider"></div>
+            <div class="guide-meta-item">
+                <span>Last updated</span>
+                <strong>March {{ current_year }}</strong>
+            </div>
+        </div>
+
+        <h1>{{ guide.h1 }}</h1>
+        <p class="guide-intro">{{ guide.intro }}</p>
+
+        <!-- Sections -->
+        {% for section in guide.sections %}
+        <section class="guide-section" id="section-{{ loop.index }}">
+            <h2>{{ section.heading }}</h2>
+            <div class="guide-section-content">
+                {{ section.content|safe }}
+            </div>
+        </section>
+        {% endfor %}
+
+        <!-- Related Destinations -->
+        {% if related_destinations %}
+        <div class="guide-related">
+            <h2>Related Destinations</h2>
+            <div class="guide-related-grid">
+                {% for dest in related_destinations %}
+                <a href="/trip-cost/{{ dest.slug }}" class="guide-dest-card">
+                    <span class="emoji">{{ dest.image_emoji }}</span>
+                    <div class="info">
+                        <h4>{{ dest.city }}</h4>
+                        <span class="country">{{ dest.country }}</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+
+            {% if guide.related_tools %}
+            <div class="guide-tools">
+                <h3>Related Tools</h3>
+                <div class="guide-tools-links">
+                    {% for tool_slug in guide.related_tools %}
+                    <a href="/tools/{{ tool_slug }}" class="guide-tool-link">
+                        {{ tool_slug|replace('-', ' ')|title }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- CTA -->
+        <div class="guide-cta">
+            <h2>Ready to plan your trip?</h2>
+            <p>Join the waitlist for Aiezzy's AI trip planner — total cost, full schedule, one screen.</p>
+            <form class="waitlist-form" id="guideWaitlistForm">
+                <input type="email" placeholder="your@email.com" id="guideWaitlistEmail" required>
+                <button type="submit">Get Early Access</button>
+            </form>
+            <div class="waitlist-success" id="guideWaitlistSuccess">
+                You're on the list! We'll let you know when Aiezzy is ready.
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+handleWaitlist('guideWaitlistForm', 'guideWaitlistEmail', 'guideWaitlistSuccess');
+
+// Highlight active TOC item on scroll
+(function() {
+    const sections = document.querySelectorAll('.guide-section');
+    const tocLinks = document.querySelectorAll('.toc-list a');
+
+    if (!sections.length || !tocLinks.length) return;
+
+    function updateActive() {
+        let current = '';
+        sections.forEach(function(section) {
+            const top = section.getBoundingClientRect().top;
+            if (top <= 120) {
+                current = section.id;
+            }
+        });
+        tocLinks.forEach(function(link) {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    window.addEventListener('scroll', updateActive, { passive: true });
+    updateActive();
+})();
+</script>
+{% endblock %}
