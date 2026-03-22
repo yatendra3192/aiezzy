@@ -34,8 +34,10 @@ export async function POST(req: NextRequest) {
   "from": "Departure city name",
   "to": "Arrival city name",
   "date": "YYYY-MM-DD",
-  "passengers": 1,
-  "pricePerPerson": 0,
+  "adults": 1,
+  "children": 0,
+  "infants": 0,
+  "pricePerAdult": 0,
   "priceTotal": 0,
   "currency": "INR",
   "bookingRef": "PNR or booking reference code",
@@ -52,8 +54,16 @@ Rules:
 - fromCode/toCode: 3-letter IATA codes for flights (e.g., BOM, AMS, CDG). Use null for trains
 - Times must be in 24-hour HH:MM format
 - Calculate duration from departure and arrival if not shown
+- PASSENGER BREAKDOWN (critical): Carefully identify from the ticket:
+  - adults: number of adult passengers (age 12+)
+  - children: number of child passengers (age 2-11)
+  - infants: number of infant passengers (age 0-2). Look for "INF", "infant", baby names, or age indicators
+  - A single ticket may cover multiple passengers — look for passenger list, names, or "2 Adults + 1 Infant" type text
+  - If ticket says "3 passengers" with no age breakdown, check names for clues (baby/infant names are often listed)
+- PRICING: Extract the total price paid for ALL passengers combined as priceTotal
+  - If per-person price is shown separately, use that as pricePerAdult
+  - If only total is shown, set pricePerAdult to 0 and we will calculate it
 - Convert ALL prices to INR (EUR×93, USD×85, GBP×108). If already INR keep as-is
-- If pricePerPerson not shown but priceTotal and passengers are, divide
 - Use null for fields you cannot determine`
       },
     ];

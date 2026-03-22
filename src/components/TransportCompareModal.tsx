@@ -134,6 +134,10 @@ export default function TransportCompareModal({
   const [customFromCode, setCustomFromCode] = useState(''); // IATA code
   const [customToCode, setCustomToCode] = useState('');
   const [customStops, setCustomStops] = useState('Nonstop');
+  // Passenger breakdown from uploaded ticket (for accurate per-adult price)
+  const [ticketAdults, setTicketAdults] = useState(0);
+  const [ticketChildren, setTicketChildren] = useState(0);
+  const [ticketInfants, setTicketInfants] = useState(0);
   // Upload booking
   const [uploadExtracting, setUploadExtracting] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -145,13 +149,20 @@ export default function TransportCompareModal({
     setCustomPrice(''); setCustomDuration(''); setUploadError('');
     setCustomFromHub(''); setCustomToHub(''); setCustomFromCode(''); setCustomToCode('');
     setCustomStops('Nonstop');
+    setTicketAdults(0); setTicketChildren(0); setTicketInfants(0);
   };
 
   const handleCustomFlight = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
-    // Total price entered → convert to per-adult (route page multiplies back by pax count)
-    const price = adults > 0 ? Math.round(totalPrice / adults) : totalPrice;
+    // Use ticket's passenger breakdown if available (from AI extraction), else use trip's adults
+    // Route page formula: pricePerAdult × (adults + children + infants × 0.15)
+    // So: pricePerAdult = totalPrice / (ticketAdults + ticketChildren + ticketInfants × 0.15)
+    const tAdults = ticketAdults || adults;
+    const tChildren = ticketChildren;
+    const tInfants = ticketInfants;
+    const divisor = tAdults + tChildren + (tInfants * 0.15);
+    const price = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
     const depCode = customFromCode.trim().toUpperCase() || fromCode || '?';
     const arrCode = customToCode.trim().toUpperCase() || toCode || '?';
     const flight: Flight = {
@@ -178,8 +189,12 @@ export default function TransportCompareModal({
   const handleCustomTrain = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const totalPrice = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
-    // Total price entered → convert to per-person (route page multiplies back by pax count)
-    const price = adults > 0 ? Math.round(totalPrice / adults) : totalPrice;
+    // Same formula as flights for consistency
+    const tAdults = ticketAdults || adults;
+    const tChildren = ticketChildren;
+    const tInfants = ticketInfants;
+    const divisor = tAdults + tChildren + (tInfants * 0.15);
+    const price = divisor > 0 ? Math.round(totalPrice / divisor) : totalPrice;
     const train: TrainOption = {
       id: `custom-train-${Date.now()}`,
       operator: customCarrier.trim(),
@@ -217,10 +232,17 @@ export default function TransportCompareModal({
       if (data.fromCode) setCustomFromCode(data.fromCode);
       if (data.toCode) setCustomToCode(data.toCode);
       if (data.stops) setCustomStops(data.stops);
-      if (data.pricePerPerson) {
-        setCustomPrice(String(Math.round(data.pricePerPerson * (data.passengers || adults))));
-      } else if (data.priceTotal) {
+      // Store passenger breakdown from ticket for accurate per-adult calculation
+      if (data.adults) setTicketAdults(data.adults);
+      if (data.children) setTicketChildren(data.children);
+      if (data.infants) setTicketInfants(data.infants);
+      // Always show total price in the field — handlers will calculate per-adult
+      if (data.priceTotal) {
         setCustomPrice(String(Math.round(data.priceTotal)));
+      } else if (data.pricePerAdult) {
+        // If only per-adult given, reconstruct total
+        const pax = (data.adults || 1) + (data.children || 0) + ((data.infants || 0) * 0.15);
+        setCustomPrice(String(Math.round(data.pricePerAdult * pax)));
       }
       setShowCustomForm(true);
     } catch (err: any) {
@@ -689,7 +711,16 @@ export default function TransportCompareModal({
                           Add {tab === 'flight' ? 'Flight' : 'Train'}
                         </button>
                       </div>
-                      <p className="text-[8px] text-text-muted font-body">Enter 0 for pre-booked (no extra cost)</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-[8px] text-text-muted font-body">Enter total price for all passengers. Enter 0 for pre-booked.</p>
+                        {(ticketAdults > 0 || ticketChildren > 0 || ticketInfants > 0) && (
+                          <p className="text-[8px] text-accent-cyan font-body font-semibold">
+                            Detected: {ticketAdults} adult{ticketAdults !== 1 ? 's' : ''}
+                            {ticketChildren > 0 && `, ${ticketChildren} child${ticketChildren !== 1 ? 'ren' : ''}`}
+                            {ticketInfants > 0 && `, ${ticketInfants} infant${ticketInfants !== 1 ? 's' : ''}`}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
