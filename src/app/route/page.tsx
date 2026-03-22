@@ -1347,7 +1347,22 @@ function RoutePageContent() {
                           <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1 mt-1">
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}</span>
-                              <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline flex-shrink-0 ml-2">Change</button>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                {(() => {
+                                  const trainDocs = [
+                                    ...getDocsForCity(leg.selectedTrain!.fromStation || '', 'transport'),
+                                    ...getDocsForCity(leg.selectedTrain!.toStation || '', 'transport'),
+                                  ].filter((d, idx, arr) => arr.findIndex(x => x.url === d.url) === idx);
+                                  return trainDocs.length > 0 ? (
+                                    <button onClick={() => setViewingBooking(trainDocs[0])}
+                                      className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                      Booking
+                                    </button>
+                                  ) : null;
+                                })()}
+                                <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                              </div>
                             </div>
                             {(() => {
                               const depH = parseInt(leg.selectedTrain!.departure?.split(':')[0] || '0');
