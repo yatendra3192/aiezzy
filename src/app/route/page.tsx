@@ -126,24 +126,34 @@ function RoutePageContent() {
       return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
     }
     const key = cityName.toLowerCase();
-    // Filter by docType if specified, allow untyped docs to match either
     const typeFilter = (d: BookingDoc) => !docType || !d.docType || d.docType === docType || d.docType === 'general';
-    // 1. Match by city + type
     const cityMatch = trip.bookingDocs.filter(d =>
       typeFilter(d) && d.matchCities.some(c => c.includes(key) || key.includes(c))
     );
     if (cityMatch.length > 0) return cityMatch;
-    // 2. Match by filename + type
     const nameMatch = trip.bookingDocs.filter(d =>
       typeFilter(d) && d.name.toLowerCase().includes(key)
     );
     if (nameMatch.length > 0) return nameMatch;
-    // 3. Untagged docs of matching type
     const untagged = trip.bookingDocs.filter(d =>
       typeFilter(d) && d.matchCities.length === 0
     );
     if (untagged.length > 0) return untagged;
     return [];
+  };
+
+  // For transport: require BOTH from AND to cities to match the doc
+  const getTransportDocs = (fromName: string, toName: string): BookingDoc[] => {
+    if (!trip.bookingDocs?.length) return [];
+    const fKey = fromName.toLowerCase();
+    const tKey = toName.toLowerCase();
+    return trip.bookingDocs.filter(d => {
+      if (d.docType && d.docType !== 'transport' && d.docType !== 'general') return false;
+      const cities = d.matchCities;
+      const hasFrom = cities.some(c => c.includes(fKey) || fKey.includes(c));
+      const hasTo = cities.some(c => c.includes(tKey) || tKey.includes(c));
+      return hasFrom && hasTo;
+    });
   };
 
   // Real hub-to-hotel distances (fetched from Google Directions)
@@ -1283,11 +1293,7 @@ function RoutePageContent() {
                                   const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
                                   const fromCity = info?.fromCity || '';
                                   const toCity = info?.toCity || '';
-                                  const docs = [
-                                    ...getDocsForCity(fromCity, 'transport'),
-                                    ...getDocsForCity(toCity, 'transport'),
-                                  ].filter((d, idx, arr) => arr.findIndex(x => x.url === d.url) === idx);
-                                  const flightDocs = docs.filter(d => d.mimeType.includes('pdf') || d.mimeType.includes('image'));
+                                  const flightDocs = getTransportDocs(fromCity, toCity);
                                   return flightDocs.length > 0 ? (
                                     <button onClick={() => setViewingBooking(flightDocs[0])}
                                       className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
@@ -1349,10 +1355,10 @@ function RoutePageContent() {
                               <span className="text-xs font-display font-bold text-text-primary">{leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}</span>
                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                 {(() => {
-                                  const trainDocs = [
-                                    ...getDocsForCity(leg.selectedTrain!.fromStation || '', 'transport'),
-                                    ...getDocsForCity(leg.selectedTrain!.toStation || '', 'transport'),
-                                  ].filter((d, idx, arr) => arr.findIndex(x => x.url === d.url) === idx);
+                                  const trainDocs = getTransportDocs(
+                                    leg.selectedTrain!.fromStation || '',
+                                    leg.selectedTrain!.toStation || ''
+                                  );
                                   return trainDocs.length > 0 ? (
                                     <button onClick={() => setViewingBooking(trainDocs[0])}
                                       className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
