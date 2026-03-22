@@ -126,7 +126,10 @@ function RoutePageContent() {
   useEffect(() => {
     trip.destinations.forEach((dest, di) => {
       if (!dest.selectedHotel) return;
-      const hotelQuery = `${dest.selectedHotel.name}, ${dest.city.name}`;
+      // Use precise address/coordinates if available (custom stays with Google Places), fall back to name + city
+      const hotelQuery = dest.selectedHotel.address
+        ? dest.selectedHotel.address
+        : `${dest.selectedHotel.name}, ${dest.city.name}`;
 
       // ARRIVAL: previous leg's landing airport/station → hotel
       const arrLeg = trip.transportLegs[di];
@@ -1618,6 +1621,7 @@ function RoutePageContent() {
             checkInDate={trip.departureDate}
             checkOutDate={(() => { const d = new Date(trip.departureDate); d.setDate(d.getDate() + dest.nights); return d.toISOString().split('T')[0]; })()}
             selectedHotel={hotelModal.isAdditional ? null : dest.selectedHotel}
+            onUpdateNights={n => trip.updateNights(dest.id, n)}
             onSelectHotel={hotel => {
               if (hotelModal.isAdditional) {
                 // Calculate remaining nights for additional hotel

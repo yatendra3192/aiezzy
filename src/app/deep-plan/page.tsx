@@ -375,12 +375,13 @@ function DeepPlanPageContent() {
 
               // Add activities if arriving before 6 PM
               const dinnerTime2 = 19 * 60;
+              const sleepTime2 = 22 * 60;
               if (hotelArriveMin2 !== null && hotelArriveMin2 < dinnerTime2 - 60) {
                 const freeStart2 = hotelArriveMin2 + 30;
-                const freeHrs2 = (dinnerTime2 - freeStart2) / 60;
+                const freeHrs2 = (sleepTime2 - freeStart2) / 60;
                 const cityAttr2 = dest.places?.length ? dest.places.map(p => p.name) : (CITY_ATTRACTIONS[toCity.name] || []);
                 if (cityAttr2.length > 0 && freeHrs2 >= 1) {
-                  const count2 = freeHrs2 >= 3 ? 2 : 1;
+                  const count2 = freeHrs2 >= 5 ? 3 : freeHrs2 >= 3 ? 2 : 1;
                   arrivalDay.stops.push({
                     id: `dp${sc++}`, name: `Free time — ${Math.round(freeHrs2)} hours to explore ${toCity.name}`,
                     type: 'attraction', time: formatTime24(freeStart2),
@@ -435,22 +436,23 @@ function DeepPlanPageContent() {
 
               // Add evening activities if arriving before 6 PM (have 1+ hours before dinner)
               const dinnerTime = 19 * 60; // 7 PM
+              const sleepTime = 22 * 60; // 10 PM
               if (hotelArriveMin !== null && hotelArriveMin < dinnerTime - 60) {
                 const freeStartMin = hotelArriveMin + 30; // 30 min to settle in
-                const freeHours = (dinnerTime - freeStartMin) / 60;
+                const totalFreeHours = (sleepTime - freeStartMin) / 60; // Total evening free time until sleep
 
                 // Get attractions for this city
                 const cityAttractions = dest.places && dest.places.length > 0
                   ? dest.places.map(p => p.name)
                   : (CITY_ATTRACTIONS[toCity.name] || []);
 
-                if (cityAttractions.length > 0 && freeHours >= 1) {
-                  // Suggest 1-2 activities for the evening
-                  const eveningCount = freeHours >= 3 ? 2 : 1;
+                if (cityAttractions.length > 0 && totalFreeHours >= 1) {
+                  // Suggest activities: 1 for <3h, 2 for 3-5h, 3 for 5h+
+                  const eveningCount = totalFreeHours >= 5 ? 3 : totalFreeHours >= 3 ? 2 : 1;
                   const eveningAttractions = cityAttractions.slice(0, eveningCount);
 
                   travelDay.stops.push({
-                    id: `dp${sc++}`, name: `Free time — ${Math.round(freeHours)} hours to explore ${toCity.name}`,
+                    id: `dp${sc++}`, name: `Free time — ${Math.round(totalFreeHours)} hours to explore ${toCity.name}`,
                     type: 'attraction', time: formatTime24(freeStartMin),
                     transport: { icon: 'walk', duration: '', distance: '' },
                     note: 'Evening exploration (optional)',
@@ -540,17 +542,27 @@ function DeepPlanPageContent() {
         const dayAttractions = attractions.slice(startIdx, startIdx + perDay);
         if (dayAttractions.length === 0) dayAttractions.push(attractions[0]);
 
-        dayAttractions.forEach((attr, ai) => {
-          // Insert lunch between attractions (after first attraction)
-          if (ai === 1) {
-            expDay.stops.push({
-              id: `dp${sc++}`, name: 'Lunch', type: 'attraction', time: '12:30',
-              transport: null, mealType: 'lunch',
-            });
-          }
+        // Morning attractions
+        const morningAttr = dayAttractions.slice(0, Math.ceil(dayAttractions.length / 2));
+        const afternoonAttr = dayAttractions.slice(Math.ceil(dayAttractions.length / 2));
 
+        morningAttr.forEach((attr, ai) => {
           expDay.stops.push({
             id: `dp${sc++}`, name: attr, type: 'attraction', time: `${10 + ai * 2}:00`,
+            transport: { icon: 'walk', duration: '', distance: '' },
+          });
+        });
+
+        // Always show lunch
+        expDay.stops.push({
+          id: `dp${sc++}`, name: 'Lunch', type: 'attraction', time: '12:30',
+          transport: null, mealType: 'lunch',
+        });
+
+        // Afternoon attractions
+        afternoonAttr.forEach((attr, ai) => {
+          expDay.stops.push({
+            id: `dp${sc++}`, name: attr, type: 'attraction', time: `${14 + ai * 2}:00`,
             transport: { icon: 'walk', duration: '', distance: '' },
           });
         });

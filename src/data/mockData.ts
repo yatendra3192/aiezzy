@@ -62,6 +62,9 @@ export interface Hotel {
   rating: number;
   pricePerNight: number;
   ratingColor: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
 }
 
 // ─── Transit (local, within-city) ────────────────────────────────────────────

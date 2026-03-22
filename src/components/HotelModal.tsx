@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Hotel } from '@/data/mockData';
-import { searchNearbyHotels, NearbyHotel } from '@/lib/googleApi';
+import { searchNearbyHotels, NearbyHotel, searchPlaces, getPlaceDetails, PlacePrediction } from '@/lib/googleApi';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
 
@@ -14,6 +14,7 @@ interface Props {
   nights: number;
   selectedHotel: Hotel | null;
   onSelectHotel: (hotel: Hotel) => void;
+  onUpdateNights?: (nights: number) => void;
   locationQuery?: string;
   checkInDate?: string;
   checkOutDate?: string;
@@ -25,7 +26,7 @@ const AMENITY_FILTERS = [
 ];
 
 export default function HotelModal({
-  isOpen, onClose, cityName, nights, selectedHotel, onSelectHotel, locationQuery, checkInDate, checkOutDate,
+  isOpen, onClose, cityName, nights, selectedHotel, onSelectHotel, onUpdateNights, locationQuery, checkInDate, checkOutDate,
 }: Props) {
   const { currency } = useCurrency();
   const [sortBy, setSortBy] = useState<'price' | 'rating'>('price');
@@ -36,13 +37,146 @@ export default function HotelModal({
   const [maxPriceFilter, setMaxPriceFilter] = useState<number>(0);
   const [amenityFilters, setAmenityFilters] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  // Places autocomplete for custom stay
+  const [customSuggestions, setCustomSuggestions] = useState<PlacePrediction[]>([]);
+  const [customSearching, setCustomSearching] = useState(false);
+  const [customPlaceDetails, setCustomPlaceDetails] = useState<{ address: string; lat: number; lng: number } | null>(null);
+  const [showCustomDropdown, setShowCustomDropdown] = useState(false);
+  const customDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const customInputRef = useRef<HTMLInputElement>(null);
+  // Booking upload
+  const [uploadExtracting, setUploadExtracting] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadFileName, setUploadFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
       setMinRatingFilter(0); setMaxPriceFilter(0); setSearch('');
       setAmenityFilters(new Set()); setGoogleHotels([]);
+      setShowCustomForm(false); setCustomName(''); setCustomPrice('');
+      setCustomSuggestions([]); setCustomPlaceDetails(null); setShowCustomDropdown(false);
+      setUploadExtracting(false); setUploadError(''); setUploadFileName('');
     }
   }, [isOpen, cityName]);
+
+  // Debounced places search for custom stay input
+  const handleCustomNameChange = useCallback((value: string) => {
+    setCustomName(value);
+    setCustomPlaceDetails(null); // Reset resolved place when typing
+    if (customDebounceRef.current) clearTimeout(customDebounceRef.current);
+    if (value.trim().length < 3) {
+      setCustomSuggestions([]);
+      setShowCustomDropdown(false);
+      return;
+    }
+    setCustomSearching(true);
+    customDebounceRef.current = setTimeout(async () => {
+      const results = await searchPlaces(value, 'all');
+      setCustomSuggestions(results);
+      setShowCustomDropdown(results.length > 0);
+      setCustomSearching(false);
+    }, 300);
+  }, []);
+
+  // When user selects a place suggestion
+  const handleSelectCustomPlace = useCallback(async (prediction: PlacePrediction) => {
+    setCustomName(prediction.description);
+    setShowCustomDropdown(false);
+    setCustomSuggestions([]);
+    // Fetch full details (coordinates)
+    const details = await getPlaceDetails(prediction.placeId);
+    if (details) {
+      setCustomPlaceDetails({
+        address: details.formattedAddress,
+        lat: details.lat,
+        lng: details.lng,
+      });
+    }
+  }, []);
+
+  // Handle booking file upload (PDF/image)
+  const handleBookingUpload = useCallback(async (file: File) => {
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      setUploadError('File too large (max 10MB)');
+      return;
+    }
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith('.pdf')) {
+      setUploadError('Please upload an image (JPG/PNG) or PDF');
+      return;
+    }
+
+    setUploadExtracting(true);
+    setUploadError('');
+    setUploadFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/ai/extract-booking', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Failed to extract booking details');
+      const data = await res.json();
+
+      // Fill in the form with extracted data
+      if (data.name) setCustomName(data.address || data.name);
+      if (data.pricePerNight) {
+        setCustomPrice(String(Math.round(data.pricePerNight)));
+      } else if (data.totalPrice && data.nights) {
+        setCustomPrice(String(Math.round(data.totalPrice / data.nights)));
+      }
+
+      // Update nights if extracted from booking
+      if (data.nights && data.nights > 0 && onUpdateNights) {
+        onUpdateNights(data.nights);
+      }
+
+      // Auto-resolve address via Google Places
+      const addressToSearch = data.address || data.name;
+      if (addressToSearch) {
+        const results = await searchPlaces(addressToSearch, 'all');
+        if (results.length > 0) {
+          const details = await getPlaceDetails(results[0].placeId);
+          if (details) {
+            setCustomName(details.formattedAddress);
+            setCustomPlaceDetails({
+              address: details.formattedAddress,
+              lat: details.lat,
+              lng: details.lng,
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to read booking');
+    } finally {
+      setUploadExtracting(false);
+    }
+  }, []);
+
+  const handleCustomStay = () => {
+    if (!customName.trim()) return;
+    const rawPrice = customPrice.replace(/[^\d]/g, '');
+    const price = rawPrice ? parseInt(rawPrice) : 0;
+    if (price < 0) return;
+    onSelectHotel({
+      id: `custom-${Date.now()}`,
+      name: customName.trim(),
+      rating: 0,
+      pricePerNight: price,
+      ratingColor: '#9ca3af',
+      ...(customPlaceDetails && {
+        address: customPlaceDetails.address,
+        lat: customPlaceDetails.lat,
+        lng: customPlaceDetails.lng,
+      }),
+    });
+  };
 
   useEffect(() => {
     if (isOpen && (locationQuery || cityName)) {
@@ -60,6 +194,7 @@ export default function HotelModal({
     rating: gh.rating,
     pricePerNight: gh.livePrice || estimatePrice(gh.priceLevel, gh.name, gh.rating),
     ratingColor: gh.rating >= 4.5 ? '#16a34a' : gh.rating >= 4 ? '#22c55e' : gh.rating >= 3 ? '#eab308' : '#ef4444',
+    ...(gh.address && { address: gh.address }),
   }));
 
   const toggleAmenity = (a: string) => {
@@ -232,6 +367,136 @@ export default function HotelModal({
 
             {/* ═══ Hotel List/Grid ═══ */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              {/* Custom Stay Form */}
+              <div className="mb-4 max-w-3xl">
+                {!showCustomForm ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowCustomForm(true)}
+                      className="flex-1 text-left p-3 rounded-xl border border-dashed border-accent-cyan/40 hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan">
+                          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-display font-bold text-text-primary">Add your own stay</p>
+                        <p className="text-[10px] text-text-muted font-body">Airbnb, friend&apos;s place, or a hotel not in the list</p>
+                      </div>
+                    </button>
+                    <button onClick={() => { setShowCustomForm(true); setTimeout(() => fileInputRef.current?.click(), 100); }}
+                      className="w-36 md:w-44 p-3 rounded-xl border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all flex flex-col items-center justify-center gap-1.5 text-center">
+                      <div className="w-10 h-10 rounded-lg bg-accent-gold/10 flex items-center justify-center">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                      </div>
+                      <p className="text-[10px] font-display font-bold text-text-primary leading-tight">Upload booking</p>
+                      <p className="text-[8px] text-text-muted font-body">PDF or screenshot</p>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl border border-accent-cyan/30 bg-accent-cyan/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-display font-bold text-text-primary">Add custom stay</p>
+                      <button onClick={() => setShowCustomForm(false)} className="text-text-muted hover:text-text-primary text-sm">&times;</button>
+                    </div>
+                    {/* Upload booking file */}
+                    <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleBookingUpload(f); e.target.value = ''; }} />
+                    {uploadExtracting ? (
+                      <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-accent-gold/5 border border-accent-gold/20">
+                        <div className="w-5 h-5 border-2 border-accent-gold/30 border-t-accent-gold rounded-full animate-spin flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-display font-semibold text-text-primary">Reading booking details...</p>
+                          <p className="text-[9px] text-text-muted font-body truncate">{uploadFileName}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all text-left">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold flex-shrink-0">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <div className="min-w-0">
+                          <p className="text-xs font-display font-semibold text-text-primary">Upload booking screenshot or PDF</p>
+                          <p className="text-[9px] text-text-muted font-body">We&apos;ll extract address &amp; price automatically</p>
+                        </div>
+                      </button>
+                    )}
+                    {uploadError && (
+                      <p className="text-[10px] text-red-500 font-body">{uploadError}</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-px bg-border-subtle" />
+                      <span className="text-[9px] text-text-muted font-body">or enter manually</span>
+                      <div className="flex-1 h-px bg-border-subtle" />
+                    </div>
+                    {/* Address input with Google Places autocomplete */}
+                    <div className="relative">
+                      <input
+                        ref={customInputRef}
+                        type="text" placeholder="Search address (e.g., 42 Rue de Rivoli, Paris)"
+                        value={customName} onChange={e => handleCustomNameChange(e.target.value)}
+                        onFocus={() => { if (customSuggestions.length > 0) setShowCustomDropdown(true); }}
+                        onBlur={() => { setTimeout(() => setShowCustomDropdown(false), 200); }}
+                        className={`w-full bg-bg-card border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted font-body outline-none transition-all ${
+                          customPlaceDetails ? 'border-green-400 focus:border-green-500' : 'border-border-subtle focus:border-accent-cyan'
+                        }`}
+                      />
+                      {customSearching && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="w-4 h-4 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                        </div>
+                      )}
+                      {/* Autocomplete dropdown */}
+                      {showCustomDropdown && customSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-bg-card border border-border-subtle rounded-lg shadow-lg overflow-hidden max-h-52 overflow-y-auto">
+                          {customSuggestions.map((pred) => (
+                            <button
+                              key={pred.placeId}
+                              onMouseDown={e => e.preventDefault()}
+                              onClick={() => handleSelectCustomPlace(pred)}
+                              className="w-full text-left px-3 py-2.5 hover:bg-accent-cyan/5 transition-colors border-b border-border-subtle/50 last:border-b-0 flex items-start gap-2.5"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan flex-shrink-0 mt-0.5">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                              </svg>
+                              <div className="min-w-0">
+                                <p className="text-xs font-display font-semibold text-text-primary truncate">{pred.mainText}</p>
+                                <p className="text-[10px] text-text-muted font-body truncate">{pred.secondaryText}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Location confirmed badge */}
+                    {customPlaceDetails && (
+                      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-green-50 border border-green-200">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-600 flex-shrink-0">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        <p className="text-[10px] text-green-700 font-body truncate flex-1">{customPlaceDetails.address}</p>
+                        <button onClick={() => { setCustomPlaceDetails(null); setCustomName(''); }}
+                          className="text-green-500 hover:text-green-700 text-xs flex-shrink-0">&times;</button>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <input
+                        type="number" placeholder="Price per night (e.g., 3000)" min="0"
+                        value={customPrice} onChange={e => setCustomPrice(e.target.value)}
+                        className="flex-1 bg-bg-card border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan"
+                      />
+                      <button onClick={handleCustomStay}
+                        disabled={!customName.trim()}
+                        className="px-4 py-2 bg-accent-cyan text-white font-display font-bold text-sm rounded-lg hover:bg-accent-cyan/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                        Add Stay
+                      </button>
+                    </div>
+                    <p className="text-[9px] text-text-muted font-body">Enter 0 for free stays (friend&apos;s place, etc.)</p>
+                  </div>
+                )}
+              </div>
               {loadingGoogle ? (
                 <div className="flex flex-col items-center justify-center py-20">
                   <div className="w-10 h-10 border-3 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
