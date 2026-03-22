@@ -27,8 +27,12 @@ export async function POST(req: NextRequest) {
   "departure": "HH:MM (24h format)",
   "arrival": "HH:MM (24h format)",
   "duration": "Xh Ym format (e.g., 9h 5m)",
-  "from": "Departure city or station",
-  "to": "Arrival city or station",
+  "fromHub": "Full departure airport or station name (e.g., Chhatrapati Shivaji Maharaj International Airport)",
+  "toHub": "Full arrival airport or station name (e.g., Amsterdam Airport Schiphol)",
+  "fromCode": "3-letter IATA departure airport code (e.g., BOM) or null for trains",
+  "toCode": "3-letter IATA arrival airport code (e.g., AMS) or null for trains",
+  "from": "Departure city name",
+  "to": "Arrival city name",
   "date": "YYYY-MM-DD",
   "passengers": 1,
   "pricePerPerson": 0,
@@ -43,6 +47,9 @@ Rules:
 - Extract the airline/operator name (NOT the airport name)
 - For flights: extract flight number (e.g., 6E-21, AI-101, EY-206)
 - For trains: extract train number/name (e.g., TGV 6213, ECD9500)
+- fromHub: FULL airport name (e.g., "Chhatrapati Shivaji Maharaj International Airport") or station name (e.g., "Paris Gare du Nord")
+- toHub: FULL arrival airport or station name
+- fromCode/toCode: 3-letter IATA codes for flights (e.g., BOM, AMS, CDG). Use null for trains
 - Times must be in 24-hour HH:MM format
 - Calculate duration from departure and arrival if not shown
 - Convert ALL prices to INR (EUR×93, USD×85, GBP×108). If already INR keep as-is

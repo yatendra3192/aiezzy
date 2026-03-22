@@ -1652,16 +1652,18 @@ function RoutePageContent() {
             onSelectFlight={(flight, airportInfo) => {
               if (leg) {
                 trip.selectFlight(leg.id, flight);
-                // Update resolved airports if user picked a different departure airport
+                // Update resolved airports (from custom entry or API selection)
                 if (airportInfo) {
                   const existing = resolvedAirportsRef.current[transportModal.legIndex] || leg.resolvedAirports;
+                  // For custom flights, extract toCode from route (e.g., "BOM-AMS")
+                  const routeParts = flight.route?.split('-') || [];
                   const updated = {
                     fromCode: airportInfo.fromCode,
                     fromCity: airportInfo.fromCity,
                     fromDistance: airportInfo.fromDistance,
                     fromAirport: airportInfo.fromCity,
-                    toCode: existing?.toCode || '',
-                    toCity: existing?.toCity || '',
+                    toCode: routeParts[1]?.trim() || existing?.toCode || '',
+                    toCity: existing?.toCity || toCity?.name || '',
                     toAirport: existing?.toAirport || '',
                     toDistance: existing?.toDistance || 0,
                   };

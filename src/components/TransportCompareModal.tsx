@@ -129,6 +129,11 @@ export default function TransportCompareModal({
   const [customArr, setCustomArr] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customDuration, setCustomDuration] = useState('');
+  const [customFromHub, setCustomFromHub] = useState('');  // airport/station name
+  const [customToHub, setCustomToHub] = useState('');
+  const [customFromCode, setCustomFromCode] = useState(''); // IATA code
+  const [customToCode, setCustomToCode] = useState('');
+  const [customStops, setCustomStops] = useState('Nonstop');
   // Upload booking
   const [uploadExtracting, setUploadExtracting] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -138,11 +143,15 @@ export default function TransportCompareModal({
     setShowCustomForm(false);
     setCustomCarrier(''); setCustomNumber(''); setCustomDep(''); setCustomArr('');
     setCustomPrice(''); setCustomDuration(''); setUploadError('');
+    setCustomFromHub(''); setCustomToHub(''); setCustomFromCode(''); setCustomToCode('');
+    setCustomStops('Nonstop');
   };
 
   const handleCustomFlight = () => {
     if (!customCarrier.trim() || !customDep || !customArr) return;
     const price = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    const depCode = customFromCode.trim().toUpperCase() || fromCode || '?';
+    const arrCode = customToCode.trim().toUpperCase() || toCode || '?';
     const flight: Flight = {
       id: `custom-flight-${Date.now()}`,
       airline: customCarrier.trim(),
@@ -151,12 +160,17 @@ export default function TransportCompareModal({
       departure: customDep,
       arrival: customArr,
       duration: customDuration.trim() || '~',
-      stops: 'Nonstop',
-      route: `${fromCode || '?'}-${toCode || '?'}`,
+      stops: customStops || 'Nonstop',
+      route: `${depCode}-${arrCode}`,
       pricePerAdult: price,
-      color: '#6b7280',
+      color: AIRLINE_COLORS[customCarrier.trim().substring(0, 2).toUpperCase()] || '#6b7280',
     };
-    onSelectFlight(flight);
+    // Pass airport info so resolvedAirports gets updated
+    onSelectFlight(flight, {
+      fromCode: depCode,
+      fromCity: customFromHub.trim() || fromCity,
+      fromDistance: 0,
+    });
   };
 
   const handleCustomTrain = () => {
@@ -170,9 +184,9 @@ export default function TransportCompareModal({
       departure: customDep,
       arrival: customArr,
       duration: customDuration.trim() || '~',
-      stops: 'Direct',
-      fromStation: fromCity,
-      toStation: toCity,
+      stops: customStops === 'Nonstop' ? 'Direct' : customStops || 'Direct',
+      fromStation: customFromHub.trim() || fromCity,
+      toStation: customToHub.trim() || toCity,
       price,
       color: '#6b7280',
     };
@@ -194,6 +208,11 @@ export default function TransportCompareModal({
       if (data.departure) setCustomDep(data.departure);
       if (data.arrival) setCustomArr(data.arrival);
       if (data.duration) setCustomDuration(data.duration);
+      if (data.fromHub) setCustomFromHub(data.fromHub);
+      if (data.toHub) setCustomToHub(data.toHub);
+      if (data.fromCode) setCustomFromCode(data.fromCode);
+      if (data.toCode) setCustomToCode(data.toCode);
+      if (data.stops) setCustomStops(data.stops);
       if (data.pricePerPerson) {
         setCustomPrice(String(Math.round(data.pricePerPerson * (data.passengers || adults))));
       } else if (data.priceTotal) {
@@ -594,16 +613,41 @@ export default function TransportCompareModal({
                         <span className="text-[8px] text-text-muted font-body">or enter manually</span>
                         <div className="flex-1 h-px bg-border-subtle" />
                       </div>
-                      {/* Carrier + number */}
+                      {/* Departure + arrival hubs */}
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">From {tab === 'flight' ? 'airport' : 'station'}</label>
+                          <input type="text" placeholder={tab === 'flight' ? 'e.g., Mumbai Airport (BOM)' : 'e.g., Amsterdam Centraal'}
+                            value={customFromHub} onChange={e => setCustomFromHub(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-body outline-none focus:border-accent-cyan" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">To {tab === 'flight' ? 'airport' : 'station'}</label>
+                          <input type="text" placeholder={tab === 'flight' ? 'e.g., Schiphol Airport (AMS)' : 'e.g., Brugge Station'}
+                            value={customToHub} onChange={e => setCustomToHub(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-body outline-none focus:border-accent-cyan" />
+                        </div>
+                      </div>
+                      {/* Carrier + number + codes */}
                       <div className="flex gap-2">
                         <input type="text" placeholder={tab === 'flight' ? 'Airline (e.g., IndiGo)' : 'Operator (e.g., SNCF)'}
                           value={customCarrier} onChange={e => setCustomCarrier(e.target.value)}
                           className="flex-1 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-body outline-none focus:border-accent-cyan" />
                         <input type="text" placeholder={tab === 'flight' ? 'Flight # (e.g., 6E-21)' : 'Train # (e.g., TGV 123)'}
                           value={customNumber} onChange={e => setCustomNumber(e.target.value)}
-                          className="w-32 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                          className="w-28 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                        {tab === 'flight' && (
+                          <>
+                            <input type="text" placeholder="From code" maxLength={3}
+                              value={customFromCode} onChange={e => setCustomFromCode(e.target.value.toUpperCase())}
+                              className="w-16 bg-bg-card border border-border-subtle rounded-lg px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan text-center uppercase" />
+                            <input type="text" placeholder="To code" maxLength={3}
+                              value={customToCode} onChange={e => setCustomToCode(e.target.value.toUpperCase())}
+                              className="w-16 bg-bg-card border border-border-subtle rounded-lg px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan text-center uppercase" />
+                          </>
+                        )}
                       </div>
-                      {/* Times + duration */}
+                      {/* Times + duration + stops */}
                       <div className="flex gap-2">
                         <div className="flex-1">
                           <label className="text-[8px] text-text-muted font-body block mb-0.5">Departure</label>
@@ -619,6 +663,15 @@ export default function TransportCompareModal({
                           <label className="text-[8px] text-text-muted font-body block mb-0.5">Duration</label>
                           <input type="text" placeholder="e.g., 9h 5m" value={customDuration} onChange={e => setCustomDuration(e.target.value)}
                             className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                        </div>
+                        <div className="w-24">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">Stops</label>
+                          <select value={customStops} onChange={e => setCustomStops(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2 py-1.5 text-xs text-text-primary font-body outline-none focus:border-accent-cyan">
+                            <option value="Nonstop">Direct</option>
+                            <option value="1 stop">1 stop</option>
+                            <option value="2 stops">2 stops</option>
+                          </select>
                         </div>
                       </div>
                       {/* Price + submit */}
