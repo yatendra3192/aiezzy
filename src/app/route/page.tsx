@@ -1752,6 +1752,20 @@ function RoutePageContent() {
             checkOutDate={(() => { const d = new Date(trip.departureDate); d.setDate(d.getDate() + dest.nights); return d.toISOString().split('T')[0]; })()}
             selectedHotel={hotelModal.isAdditional ? null : dest.selectedHotel}
             onUpdateNights={n => trip.updateNights(dest.id, n)}
+            onBookingDocUploaded={async (file, matchCities, docType) => {
+              try {
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('tripId', trip.tripId || 'pending');
+                fd.append('matchCities', matchCities.join(','));
+                const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
+                if (res.ok) {
+                  const doc = await res.json();
+                  doc.docType = docType;
+                  trip.addBookingDoc(doc);
+                }
+              } catch { /* continue */ }
+            }}
             onSelectHotel={hotel => {
               if (hotelModal.isAdditional) {
                 // Calculate remaining nights for additional hotel

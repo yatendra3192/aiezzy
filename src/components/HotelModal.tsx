@@ -15,6 +15,7 @@ interface Props {
   selectedHotel: Hotel | null;
   onSelectHotel: (hotel: Hotel) => void;
   onUpdateNights?: (nights: number) => void;
+  onBookingDocUploaded?: (file: File, matchCities: string[], docType: 'hotel' | 'transport' | 'general') => void;
   locationQuery?: string;
   checkInDate?: string;
   checkOutDate?: string;
@@ -26,7 +27,7 @@ const AMENITY_FILTERS = [
 ];
 
 export default function HotelModal({
-  isOpen, onClose, cityName, nights, selectedHotel, onSelectHotel, onUpdateNights, locationQuery, checkInDate, checkOutDate,
+  isOpen, onClose, cityName, nights, selectedHotel, onSelectHotel, onUpdateNights, onBookingDocUploaded, locationQuery, checkInDate, checkOutDate,
 }: Props) {
   const { currency } = useCurrency();
   const [sortBy, setSortBy] = useState<'price' | 'rating'>('price');
@@ -152,12 +153,17 @@ export default function HotelModal({
           }
         }
       }
+
+      // Store file as a booking doc for viewing later
+      if (onBookingDocUploaded) {
+        onBookingDocUploaded(file, [cityName.toLowerCase()], 'hotel');
+      }
     } catch (err: any) {
       setUploadError(err.message || 'Failed to read booking');
     } finally {
       setUploadExtracting(false);
     }
-  }, []);
+  }, [cityName, onBookingDocUploaded]);
 
   const handleCustomStay = () => {
     if (!customName.trim()) return;
