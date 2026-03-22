@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flight, TrainOption } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
@@ -121,6 +121,95 @@ export default function TransportCompareModal({
   const [selectedArrAirportFilter, setSelectedArrAirportFilter] = useState<string>('');
   const [connectingTrainPrompt, setConnectingTrainPrompt] = useState(false);
   const [userAcceptedConnecting, setUserAcceptedConnecting] = useState(false);
+  // Custom transport entry
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [customCarrier, setCustomCarrier] = useState('');
+  const [customNumber, setCustomNumber] = useState('');
+  const [customDep, setCustomDep] = useState('');
+  const [customArr, setCustomArr] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [customDuration, setCustomDuration] = useState('');
+  // Upload booking
+  const [uploadExtracting, setUploadExtracting] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const transportFileRef = useRef<HTMLInputElement>(null);
+
+  const resetCustomForm = () => {
+    setShowCustomForm(false);
+    setCustomCarrier(''); setCustomNumber(''); setCustomDep(''); setCustomArr('');
+    setCustomPrice(''); setCustomDuration(''); setUploadError('');
+  };
+
+  const handleCustomFlight = () => {
+    if (!customCarrier.trim() || !customDep || !customArr) return;
+    const price = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    const flight: Flight = {
+      id: `custom-flight-${Date.now()}`,
+      airline: customCarrier.trim(),
+      airlineCode: customCarrier.trim().substring(0, 2).toUpperCase(),
+      flightNumber: customNumber.trim(),
+      departure: customDep,
+      arrival: customArr,
+      duration: customDuration.trim() || '~',
+      stops: 'Nonstop',
+      route: `${fromCode || '?'}-${toCode || '?'}`,
+      pricePerAdult: price,
+      color: '#6b7280',
+    };
+    onSelectFlight(flight);
+  };
+
+  const handleCustomTrain = () => {
+    if (!customCarrier.trim() || !customDep || !customArr) return;
+    const price = parseInt(customPrice.replace(/[^\d]/g, '')) || 0;
+    const train: TrainOption = {
+      id: `custom-train-${Date.now()}`,
+      operator: customCarrier.trim(),
+      trainName: customCarrier.trim(),
+      trainNumber: customNumber.trim(),
+      departure: customDep,
+      arrival: customArr,
+      duration: customDuration.trim() || '~',
+      stops: 'Direct',
+      fromStation: fromCity,
+      toStation: toCity,
+      price,
+      color: '#6b7280',
+    };
+    onSelectTrain(train);
+  };
+
+  const handleTransportUpload = useCallback(async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) { setUploadError('File too large (max 10MB)'); return; }
+    setUploadExtracting(true);
+    setUploadError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/ai/extract-booking', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Failed to read booking');
+      const data = await res.json();
+      // Fill form with extracted data
+      if (data.name) setCustomCarrier(data.name);
+      if (data.bookingRef) setCustomNumber(data.bookingRef);
+      // Try to extract time info
+      const segments = data.segments || [];
+      if (segments.length > 0) {
+        const seg = segments[0];
+        if (seg.carrier) setCustomCarrier(seg.carrier);
+        if (seg.flightNumber || seg.trainNumber) setCustomNumber(seg.flightNumber || seg.trainNumber || '');
+        if (seg.departureTime) setCustomDep(seg.departureTime);
+        if (seg.arrivalTime) setCustomArr(seg.arrivalTime);
+      }
+      if (data.priceTotal) setCustomPrice(String(Math.round(data.priceTotal)));
+      else if (data.pricePerNight) setCustomPrice(String(Math.round(data.pricePerNight)));
+      setShowCustomForm(true);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to read booking');
+    } finally {
+      setUploadExtracting(false);
+    }
+  }, []);
 
   // Reset state on open — MUST be before fetch effects so fetches see clean state
   useEffect(() => {
@@ -130,6 +219,7 @@ export default function TransportCompareModal({
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
       setFlightStopsFilter('all'); setFlightPriceFilter('all'); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
+      resetCustomForm();
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
         setFlights(cachedFlights.map((f: any, i: number) => ({
@@ -454,9 +544,107 @@ export default function TransportCompareModal({
             {/* Content */}
             <div className="flex-1 overflow-y-auto">
 
+              {/* ── CUSTOM TRANSPORT (shared across flight/train tabs) ── */}
+              {(tab === 'flight' || tab === 'train') && (
+                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full pb-0">
+                  <input ref={transportFileRef} type="file" accept="image/*,.pdf" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleTransportUpload(f); e.target.value = ''; }} />
+                  {!showCustomForm ? (
+                    <div className="flex gap-2 mb-3">
+                      <button onClick={() => setShowCustomForm(true)}
+                        className="flex-1 text-left p-2.5 rounded-xl border border-dashed border-accent-cyan/40 hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan">
+                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-display font-bold text-text-primary">Add your own {tab === 'flight' ? 'flight' : 'train'}</p>
+                          <p className="text-[9px] text-text-muted font-body">Already booked? Enter details manually</p>
+                        </div>
+                      </button>
+                      <button onClick={() => { setShowCustomForm(true); setTimeout(() => transportFileRef.current?.click(), 100); }}
+                        className="w-32 p-2.5 rounded-xl border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all flex flex-col items-center justify-center gap-1 text-center">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p className="text-[9px] font-display font-bold text-text-primary">Upload booking</p>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl border border-accent-cyan/30 bg-accent-cyan/5 space-y-2.5 mb-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-display font-bold text-text-primary">Add your own {tab === 'flight' ? 'flight' : 'train'}</p>
+                        <button onClick={resetCustomForm} className="text-text-muted hover:text-text-primary text-sm">&times;</button>
+                      </div>
+                      {/* Upload button inside form */}
+                      {uploadExtracting ? (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-accent-gold/5 border border-accent-gold/20">
+                          <div className="w-4 h-4 border-2 border-accent-gold/30 border-t-accent-gold rounded-full animate-spin flex-shrink-0" />
+                          <p className="text-[10px] font-display font-semibold text-text-primary">Reading booking...</p>
+                        </div>
+                      ) : (
+                        <button onClick={() => transportFileRef.current?.click()}
+                          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all text-left">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold flex-shrink-0">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                          </svg>
+                          <p className="text-[10px] font-body text-text-secondary">Upload ticket screenshot or PDF to auto-fill</p>
+                        </button>
+                      )}
+                      {uploadError && <p className="text-[10px] text-red-500 font-body">{uploadError}</p>}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-px bg-border-subtle" />
+                        <span className="text-[8px] text-text-muted font-body">or enter manually</span>
+                        <div className="flex-1 h-px bg-border-subtle" />
+                      </div>
+                      {/* Carrier + number */}
+                      <div className="flex gap-2">
+                        <input type="text" placeholder={tab === 'flight' ? 'Airline (e.g., IndiGo)' : 'Operator (e.g., SNCF)'}
+                          value={customCarrier} onChange={e => setCustomCarrier(e.target.value)}
+                          className="flex-1 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-body outline-none focus:border-accent-cyan" />
+                        <input type="text" placeholder={tab === 'flight' ? 'Flight # (e.g., 6E-21)' : 'Train # (e.g., TGV 123)'}
+                          value={customNumber} onChange={e => setCustomNumber(e.target.value)}
+                          className="w-32 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                      </div>
+                      {/* Times + duration */}
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">Departure</label>
+                          <input type="time" value={customDep} onChange={e => setCustomDep(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary font-mono outline-none focus:border-accent-cyan" />
+                        </div>
+                        <div className="flex-1">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">Arrival</label>
+                          <input type="time" value={customArr} onChange={e => setCustomArr(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary font-mono outline-none focus:border-accent-cyan" />
+                        </div>
+                        <div className="w-24">
+                          <label className="text-[8px] text-text-muted font-body block mb-0.5">Duration</label>
+                          <input type="text" placeholder="e.g., 9h 5m" value={customDuration} onChange={e => setCustomDuration(e.target.value)}
+                            className="w-full bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                        </div>
+                      </div>
+                      {/* Price + submit */}
+                      <div className="flex gap-2">
+                        <input type="number" placeholder="Total price (e.g., 25000)" min="0"
+                          value={customPrice} onChange={e => setCustomPrice(e.target.value)}
+                          className="flex-1 bg-bg-card border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary placeholder:text-text-muted font-mono outline-none focus:border-accent-cyan" />
+                        <button onClick={tab === 'flight' ? handleCustomFlight : handleCustomTrain}
+                          disabled={!customCarrier.trim() || !customDep || !customArr}
+                          className="px-4 py-1.5 bg-accent-cyan text-white font-display font-bold text-xs rounded-lg hover:bg-accent-cyan/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                          Add {tab === 'flight' ? 'Flight' : 'Train'}
+                        </button>
+                      </div>
+                      <p className="text-[8px] text-text-muted font-body">Enter 0 for pre-booked (no extra cost)</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* ── FLIGHTS ── */}
               {tab === 'flight' && (
-                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full">
+                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full pt-0">
                   {/* Nearby airport prompt - skip if user already has a flight selected */}
                   {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-3">
