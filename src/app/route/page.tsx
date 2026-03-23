@@ -298,6 +298,8 @@ function RoutePageContent() {
 
   useEffect(() => {
     if (autoSelectedRef.current) return;
+    // Don't auto-select until trip data is ready (destinations loaded)
+    if (trip.destinations.length === 0 || trip.transportLegs.length === 0) return;
     autoSelectedRef.current = true;
 
     // Ensure return leg exists for round trips
@@ -481,7 +483,7 @@ function RoutePageContent() {
           trackPending(-1);
         }).catch(() => trackPending(-1));
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trip.destinations.length, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Toast notification for flight updates
   const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
