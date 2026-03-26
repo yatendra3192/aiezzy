@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     // For PDFs, use the file input type; for images use image_url
     const contentParts: any[] = [
       {
-        type: 'text',
+        type: 'input_text',
         text: `Extract booking details from this ${isPDF ? 'PDF' : 'image'}. Return ONLY valid JSON (no markdown, no code fences) in this exact format:
 {
   "name": "Property/hotel name",
@@ -53,23 +53,19 @@ Rules:
 
     if (isPDF) {
       contentParts.push({
-        type: 'file',
-        file: {
-          filename: file.name,
-          file_data: `data:${mediaType};base64,${base64}`,
-        },
+        type: 'input_file',
+        filename: file.name,
+        file_data: `data:${mediaType};base64,${base64}`,
       });
     } else {
       contentParts.push({
-        type: 'image_url',
-        image_url: {
-          url: `data:${mediaType};base64,${base64}`,
-          detail: 'high',
-        },
+        type: 'input_image',
+        image_url: `data:${mediaType};base64,${base64}`,
       });
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Use Responses API for PDF support
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -77,13 +73,7 @@ Rules:
       },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
-        messages: [
-          {
-            role: 'user',
-            content: contentParts,
-          },
-        ],
-        max_tokens: 1000,
+        input: [{ role: 'user', content: contentParts }],
         temperature: 0.1,
       }),
     });
@@ -95,7 +85,8 @@ Rules:
     }
 
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
+      || data.output?.[0]?.content?.[0]?.text || '';
 
     // Parse JSON from response (strip markdown fences if present)
     const jsonMatch = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();

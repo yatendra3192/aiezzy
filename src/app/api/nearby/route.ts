@@ -4,6 +4,9 @@ const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
 
+const nearbyCache = new Map<string, { data: any; ts: number }>();
+const NEARBY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
 /**
  * GET /api/nearby - Search hotels near a location
  *
@@ -25,6 +28,13 @@ export async function GET(req: NextRequest) {
 
   if (!location) {
     return NextResponse.json({ places: [], source: 'none' });
+  }
+
+  // Check cache
+  const nearbyCacheKey = `${location}-${checkIn}-${checkOut}`;
+  const cachedNearby = nearbyCache.get(nearbyCacheKey);
+  if (cachedNearby && Date.now() - cachedNearby.ts < NEARBY_CACHE_TTL) {
+    return NextResponse.json(cachedNearby.data);
   }
 
   try {
@@ -70,7 +80,16 @@ export async function GET(req: NextRequest) {
             );
           }
         }
-        return NextResponse.json({ places: liveResult, source: 'live' });
+
+        // Store in cache
+        const responseData = { places: liveResult, source: 'live' };
+        nearbyCache.set(nearbyCacheKey, { data: responseData, ts: Date.now() });
+        if (nearbyCache.size > 500) {
+          const oldest = Array.from(nearbyCache.entries()).sort((a, b) => a[1].ts - b[1].ts)[0];
+          if (oldest) nearbyCache.delete(oldest[0]);
+        }
+
+        return NextResponse.json(responseData);
       }
     }
 

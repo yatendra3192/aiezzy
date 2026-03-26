@@ -228,17 +228,74 @@ export const DEFAULT_TRANSPORT_LEGS: TransportLeg[] = [
 ];
 
 // ─── City-specific attractions for explore days ─────────────────────────────
-export const CITY_ATTRACTIONS: Record<string, string[]> = {
-  Amsterdam: ['Rijksmuseum', 'Vondelpark', 'Anne Frank House', 'Dam Square'],
-  Bruges: ['Markt Square', 'Belfry of Bruges', 'Church of Our Lady', 'Bruges Canals'],
-  Paris: ['Eiffel Tower', 'Louvre Museum', 'Montmartre', 'Notre-Dame Cathedral'],
-  Barcelona: ['La Sagrada Familia', 'Park Guell', 'La Rambla', 'Gothic Quarter'],
-  London: ['Tower of London', 'British Museum', 'Hyde Park', 'Buckingham Palace'],
-  Rome: ['Colosseum', 'Vatican City', 'Trevi Fountain', 'Pantheon'],
-  Berlin: ['Brandenburg Gate', 'Museum Island', 'East Side Gallery', 'Reichstag'],
-  Prague: ['Charles Bridge', 'Old Town Square', 'Prague Castle', 'John Lennon Wall'],
-  Vienna: ['Sch\u00f6nbrunn Palace', 'St. Stephen\'s Cathedral', 'Belvedere Palace', 'Prater Park'],
-  Mumbai: ['Gateway of India', 'Marine Drive', 'Elephanta Caves', 'Colaba Causeway'],
+export interface CityActivity {
+  name: string;
+  category: string;
+  durationMin: number;
+  bestTime: string;
+}
+
+export const CITY_ATTRACTIONS: Record<string, CityActivity[]> = {
+  Amsterdam: [
+    { name: 'Rijksmuseum', category: 'museum', durationMin: 120, bestTime: 'morning' },
+    { name: 'Vondelpark', category: 'park', durationMin: 60, bestTime: 'afternoon' },
+    { name: 'Anne Frank House', category: 'museum', durationMin: 75, bestTime: 'morning' },
+    { name: 'Dam Square', category: 'landmark', durationMin: 45, bestTime: 'anytime' },
+  ],
+  Bruges: [
+    { name: 'Markt Square', category: 'landmark', durationMin: 45, bestTime: 'morning' },
+    { name: 'Belfry of Bruges', category: 'landmark', durationMin: 60, bestTime: 'morning' },
+    { name: 'Church of Our Lady', category: 'religious', durationMin: 45, bestTime: 'morning' },
+    { name: 'Bruges Canals', category: 'experience', durationMin: 30, bestTime: 'afternoon' },
+  ],
+  Paris: [
+    { name: 'Eiffel Tower', category: 'landmark', durationMin: 90, bestTime: 'morning' },
+    { name: 'Louvre Museum', category: 'museum', durationMin: 150, bestTime: 'morning' },
+    { name: 'Montmartre', category: 'neighborhood', durationMin: 90, bestTime: 'afternoon' },
+    { name: 'Notre-Dame Cathedral', category: 'religious', durationMin: 45, bestTime: 'morning' },
+  ],
+  Barcelona: [
+    { name: 'La Sagrada Familia', category: 'religious', durationMin: 90, bestTime: 'morning' },
+    { name: 'Park Guell', category: 'park', durationMin: 75, bestTime: 'afternoon' },
+    { name: 'La Rambla', category: 'neighborhood', durationMin: 60, bestTime: 'afternoon' },
+    { name: 'Gothic Quarter', category: 'neighborhood', durationMin: 90, bestTime: 'morning' },
+  ],
+  London: [
+    { name: 'Tower of London', category: 'landmark', durationMin: 120, bestTime: 'morning' },
+    { name: 'British Museum', category: 'museum', durationMin: 120, bestTime: 'morning' },
+    { name: 'Hyde Park', category: 'park', durationMin: 60, bestTime: 'afternoon' },
+    { name: 'Buckingham Palace', category: 'landmark', durationMin: 45, bestTime: 'morning' },
+  ],
+  Rome: [
+    { name: 'Colosseum', category: 'landmark', durationMin: 90, bestTime: 'morning' },
+    { name: 'Vatican City', category: 'religious', durationMin: 150, bestTime: 'morning' },
+    { name: 'Trevi Fountain', category: 'landmark', durationMin: 30, bestTime: 'evening' },
+    { name: 'Pantheon', category: 'religious', durationMin: 45, bestTime: 'anytime' },
+  ],
+  Berlin: [
+    { name: 'Brandenburg Gate', category: 'landmark', durationMin: 30, bestTime: 'morning' },
+    { name: 'Museum Island', category: 'museum', durationMin: 120, bestTime: 'morning' },
+    { name: 'East Side Gallery', category: 'landmark', durationMin: 60, bestTime: 'afternoon' },
+    { name: 'Reichstag', category: 'landmark', durationMin: 60, bestTime: 'morning' },
+  ],
+  Prague: [
+    { name: 'Charles Bridge', category: 'landmark', durationMin: 45, bestTime: 'morning' },
+    { name: 'Old Town Square', category: 'landmark', durationMin: 60, bestTime: 'anytime' },
+    { name: 'Prague Castle', category: 'landmark', durationMin: 120, bestTime: 'morning' },
+    { name: 'John Lennon Wall', category: 'landmark', durationMin: 20, bestTime: 'anytime' },
+  ],
+  Vienna: [
+    { name: 'Sch\u00f6nbrunn Palace', category: 'landmark', durationMin: 120, bestTime: 'morning' },
+    { name: 'St. Stephen\'s Cathedral', category: 'religious', durationMin: 45, bestTime: 'morning' },
+    { name: 'Belvedere Palace', category: 'museum', durationMin: 90, bestTime: 'afternoon' },
+    { name: 'Prater Park', category: 'park', durationMin: 60, bestTime: 'afternoon' },
+  ],
+  Mumbai: [
+    { name: 'Gateway of India', category: 'landmark', durationMin: 45, bestTime: 'morning' },
+    { name: 'Marine Drive', category: 'neighborhood', durationMin: 60, bestTime: 'evening' },
+    { name: 'Elephanta Caves', category: 'landmark', durationMin: 150, bestTime: 'morning' },
+    { name: 'Colaba Causeway', category: 'market', durationMin: 60, bestTime: 'afternoon' },
+  ],
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

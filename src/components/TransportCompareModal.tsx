@@ -24,8 +24,8 @@ interface Props {
   selectedTrain: TrainOption | null;
   onSelectFlight: (flight: Flight, airportInfo?: { fromCode: string; fromCity: string; fromDistance: number }) => void;
   onSelectTrain: (train: TrainOption) => void;
-  onSelectDrive: () => void;
-  onSelectBus: () => void;
+  onSelectDrive: (info?: { duration: string; distance: string; mode: string }) => void;
+  onSelectBus: (bus: TrainOption) => void;
   children?: number;
   infants?: number;
   onBookingDocUploaded?: (file: File, matchCities: string[], docType: 'hotel' | 'transport' | 'general') => void;
@@ -948,8 +948,14 @@ export default function TransportCompareModal({
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
                               <div className="text-right">
-                                <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price, currency)}</span>
-                                <span className="text-[9px] text-text-muted ml-1">est.</span>
+                                {t.price > 0 ? (
+                                  <>
+                                    <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price, currency)}</span>
+                                    <span className="text-[9px] text-text-muted ml-1">est.</span>
+                                  </>
+                                ) : (
+                                  <span className="font-mono text-text-muted text-sm">Price N/A</span>
+                                )}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 mb-1">
@@ -1003,11 +1009,31 @@ export default function TransportCompareModal({
                           <p className="text-text-muted text-[10px] font-body mb-2">{busRoutes.length} bus routes found</p>
                           <div className="space-y-2">
                             {busRoutes.map((t: any, idx: number) => (
-                              <button key={t.id || idx} onClick={onSelectBus}
+                              <button key={t.id || idx} onClick={() => {
+                                const asBus: TrainOption = {
+                                  id: t.id || `bus-${idx}`,
+                                  operator: t.operator || 'Bus',
+                                  trainName: t.trainName || t.operator || 'Bus',
+                                  trainNumber: t.trainNumber || '',
+                                  departure: t.departure,
+                                  arrival: t.arrival,
+                                  duration: t.duration,
+                                  stops: t.stops || 'Direct',
+                                  fromStation: t.fromStation || fromCity,
+                                  toStation: t.toStation || toCity,
+                                  price: t.price || 0,
+                                  color: t.transitSteps?.[0]?.color || '#6b7280',
+                                };
+                                onSelectBus(asBus);
+                              }}
                                 className="w-full text-left p-4 rounded-xl border transition-all bg-bg-card border-border-subtle hover:border-accent-cyan/30">
                                 <div className="flex items-center justify-between mb-2">
                                   <p className="text-sm font-display font-bold text-text-primary">{t.operator}</p>
-                                  <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price || 0, currency)}<span className="text-[9px] text-text-muted ml-0.5">est.</span></span>
+                                  {t.price > 0 ? (
+                                    <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(t.price, currency)}<span className="text-[9px] text-text-muted ml-0.5">est.</span></span>
+                                  ) : (
+                                    <span className="font-mono text-text-muted text-sm">Price N/A</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-3 mb-1">
                                   <span className="font-mono font-bold text-sm text-text-primary">{padTime(timeStr12(t.departure))}</span>
@@ -1031,10 +1057,10 @@ export default function TransportCompareModal({
                     }
 
                     const configs: Record<string, { emoji: string; label: string; info: { duration: string; distance: string } | null; free: boolean; action: () => void; loading: boolean; notFound: boolean; tooFar: boolean }> = {
-                      bus: { emoji: '🚌', label: 'Bus / Transit', info: null, free: false, action: onSelectBus, loading: busLoading, notFound: busNotFound, tooFar: false },
-                      drive: { emoji: '🚗', label: 'Self Drive', info: driveInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
-                      walk: { emoji: '🚶', label: 'Walking', info: walkInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
-                      cycle: { emoji: '🚲', label: 'Cycling', info: cycleInfo, free: true, action: onSelectDrive, loading: false, notFound: false, tooFar: false },
+                      bus: { emoji: '🚌', label: 'Bus / Transit', info: null, free: false, action: () => {}, loading: busLoading, notFound: busNotFound, tooFar: false },
+                      drive: { emoji: '🚗', label: 'Self Drive', info: driveInfo, free: true, action: () => onSelectDrive(driveInfo ? { ...driveInfo, mode: 'drive' } : undefined), loading: false, notFound: false, tooFar: false },
+                      walk: { emoji: '🚶', label: 'Walking', info: walkInfo, free: true, action: () => onSelectDrive(walkInfo ? { ...walkInfo, mode: 'walk' } : undefined), loading: false, notFound: false, tooFar: false },
+                      cycle: { emoji: '🚲', label: 'Cycling', info: cycleInfo, free: true, action: () => onSelectDrive(cycleInfo ? { ...cycleInfo, mode: 'cycle' } : undefined), loading: false, notFound: false, tooFar: false },
                       boat: { emoji: '⛵', label: 'Boat / Ferry', info: null, free: false, action: () => {}, loading: false, notFound: true, tooFar: false },
                       tram: { emoji: '🚊', label: 'Tram', info: null, free: false, action: () => {}, loading: false, notFound: true, tooFar: false },
                     };
@@ -1070,6 +1096,64 @@ export default function TransportCompareModal({
                       );
                     }
 
+                    // Drive tab: show two options (Self Drive + Hire Cab)
+                    if (tab === 'drive') {
+                      const distKm = driveInfo ? parseFloat(driveInfo.distance.replace(/[^\d.]/g, '')) || 0 : 0;
+                      const fuelEst = Math.round(distKm * 8);  // ~₹8/km avg fuel cost
+                      const cabEst = Math.round(distKm * 18);  // ~₹18/km avg cab/Uber rate
+                      return (
+                        <div className="space-y-3">
+                          {driveInfo ? (
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-text-secondary text-sm font-mono">{driveInfo.duration}</span>
+                              <span className="text-text-muted">&bull;</span>
+                              <span className="text-text-secondary text-sm font-mono">{driveInfo.distance}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="w-4 h-4 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                              <span className="text-text-muted text-xs">Calculating route...</span>
+                            </div>
+                          )}
+                          {/* Self Drive */}
+                          <button onClick={() => onSelectDrive(driveInfo ? { ...driveInfo, mode: 'self-drive' } : undefined)}
+                            className="w-full text-left p-4 rounded-xl border transition-all bg-bg-card border-border-subtle hover:border-accent-cyan/30">
+                            <div className="flex items-center gap-4">
+                              <span className="text-2xl">🚗</span>
+                              <div className="flex-1">
+                                <p className="font-display font-bold text-sm text-text-primary">Self Drive</p>
+                                <p className="text-[10px] text-text-muted font-body mt-0.5">Rent a car or use your own vehicle</p>
+                              </div>
+                              {fuelEst > 0 && (
+                                <div className="text-right">
+                                  <span className="text-accent-cyan text-sm font-mono font-bold">{formatPrice(fuelEst, currency)}</span>
+                                  <p className="text-[9px] text-text-muted">est. fuel</p>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                          {/* Hire Cab */}
+                          <button onClick={() => onSelectDrive(driveInfo ? { ...driveInfo, mode: 'cab' } : undefined)}
+                            className="w-full text-left p-4 rounded-xl border transition-all bg-bg-card border-border-subtle hover:border-accent-cyan/30">
+                            <div className="flex items-center gap-4">
+                              <span className="text-2xl">🚕</span>
+                              <div className="flex-1">
+                                <p className="font-display font-bold text-sm text-text-primary">Hire Cab / Uber</p>
+                                <p className="text-[10px] text-text-muted font-body mt-0.5">Book a taxi or ride-hailing service</p>
+                              </div>
+                              {cabEst > 0 && (
+                                <div className="text-right">
+                                  <span className="text-accent-cyan text-sm font-mono font-bold">{formatPrice(cabEst, currency)}</span>
+                                  <p className="text-[9px] text-text-muted">est. cab</p>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // Walk/Cycle/Boat/Tram: single card
                     return (
                       <button onClick={cfg.action}
                         className={`w-full text-left p-5 rounded-xl border transition-all ${currentType === tab ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'}`}>
@@ -1090,7 +1174,7 @@ export default function TransportCompareModal({
                               </div>
                             )}
                           </div>
-                          {cfg.free && <span className="text-accent-gold text-sm font-display font-bold">Free</span>}
+                          {(tab === 'walk' || tab === 'cycle') && <span className="text-accent-gold text-sm font-display font-bold">Free</span>}
                         </div>
                       </button>
                     );

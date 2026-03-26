@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
     const contentParts: any[] = [
       {
-        type: 'text',
+        type: 'input_text',
         text: `What type of travel document is this? Return ONLY valid JSON (no markdown):
 {"type":"flight or train or hotel","from":"departure city or null","to":"arrival city or null","city":"hotel city or null"}
 
@@ -30,18 +30,18 @@ Rules:
     ];
 
     if (isPDF) {
-      contentParts.push({ type: 'file', file: { filename: file.name, file_data: `data:${mediaType};base64,${base64}` } });
+      contentParts.push({ type: 'input_file', filename: file.name, file_data: `data:${mediaType};base64,${base64}` });
     } else {
-      contentParts.push({ type: 'image_url', image_url: { url: `data:${mediaType};base64,${base64}`, detail: 'low' } });
+      contentParts.push({ type: 'input_image', image_url: `data:${mediaType};base64,${base64}` });
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Use Responses API for PDF support
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
-        messages: [{ role: 'user', content: contentParts }],
-        max_tokens: 100,
+        input: [{ role: 'user', content: contentParts }],
         temperature: 0,
       }),
     });
@@ -49,7 +49,8 @@ Rules:
     if (!response.ok) return NextResponse.json({ type: 'general', from: null, to: null, city: null });
 
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
+      || data.output?.[0]?.content?.[0]?.text || '';
     const parsed = JSON.parse(text.replace(/```json?\n?/g, '').replace(/```/g, '').trim());
     return NextResponse.json(parsed);
   } catch {

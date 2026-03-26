@@ -10,17 +10,19 @@ import { CITIES, City } from '@/data/mockData';
 import { timeStr12 } from '@/lib/timeUtils';
 import { getDirections } from '@/lib/googleApi';
 import { generateICS, downloadICS } from '@/lib/calendarExport';
-import { exportTripPDFFromData } from '@/lib/pdfExport';
+
 import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
 import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
 import { getBookingFilesForCity } from '@/lib/bookingStore';
 import { BookingDoc } from '@/context/TripContext';
-import HotelModal from '@/components/HotelModal';
-import TransportCompareModal from '@/components/TransportCompareModal';
-import ShareTripModal from '@/components/ShareTripModal';
+import dynamic from 'next/dynamic';
 import ActivitySuggestions from '@/components/ActivitySuggestions';
 import WeatherBadge from '@/components/WeatherBadge';
-import PackingListModal from '@/components/PackingListModal';
+
+const HotelModal = dynamic(() => import('@/components/HotelModal'), { ssr: false });
+const TransportCompareModal = dynamic(() => import('@/components/TransportCompareModal'), { ssr: false });
+const ShareTripModal = dynamic(() => import('@/components/ShareTripModal'), { ssr: false });
+const PackingListModal = dynamic(() => import('@/components/PackingListModal'), { ssr: false });
 import { getVisaInfo } from '@/data/visaRequirements';
 
 const transportIcons: Record<string, string> = {
@@ -83,10 +85,15 @@ function RoutePageContent() {
   const selectedCount = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length +
     trip.destinations.filter(d => d.selectedHotel).length;
 
+  const nightsKey = useMemo(() => trip.destinations.map(d => d.nights).join(','), [trip.destinations]);
+  const transportKey = useMemo(() => trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}-${l.selectedFlight?.pricePerAdult || 0}`).join(','), [trip.transportLegs]);
+  const hotelKey = useMemo(() => trip.destinations.map(d => `${d.selectedHotel?.id || ''}-${d.selectedHotel?.pricePerNight || 0}`).join(','), [trip.destinations]);
+
   useEffect(() => {
     // Skip first render and while trip is loading/settling
     if (!mountedRef.current) { mountedRef.current = true; return; }
     if (!tripStableRef.current) return;
+    if (autoSelectLoadingRef.current) return;
     // Only save when there's at least one selection
     if (selectedCount === 0) return;
     setAutoSaveStatus('pending');
@@ -110,7 +117,7 @@ function RoutePageContent() {
       setTimeout(() => setAutoSaveStatus('idle'), 3000);
     }, 5000);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedCount, trip.destinations.map(d => d.nights).join(','), trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType, trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}-${l.selectedFlight?.pricePerAdult || 0}`).join(','), trip.destinations.map(d => `${d.selectedHotel?.id || ''}-${d.selectedHotel?.pricePerNight || 0}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCount, nightsKey, trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType, transportKey, hotelKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Modal state
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
@@ -164,6 +171,7 @@ function RoutePageContent() {
   // Fetch arrival airport → hotel AND hotel → departure airport distances
   // Stored separately: "arr-{di}" for arrival, "dep-{di}" for departure
   useEffect(() => {
+    if (!tripStableRef.current || autoSelectLoadingRef.current) return;
     trip.destinations.forEach((dest, di) => {
       if (!dest.selectedHotel) return;
       // Use precise address/coordinates if available (custom stays with Google Places), fall back to name + city
@@ -182,7 +190,7 @@ function RoutePageContent() {
           arrHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
         }
         if (arrHub) {
-          const key = `arr-${di}-${dest.selectedHotel.name}-${arrInfo?.toCode || ''}`;
+          const key = `arr-${di}-${dest.selectedHotel?.id || dest.selectedHotel.name}-${arrInfo?.toCode || ''}`;
           if (!hubFetchedRef.current.has(key)) {
             hubFetchedRef.current.add(key);
             getDirections(`${arrHub}, ${dest.city.name}`, hotelQuery, 'driving').then(result => {
@@ -205,7 +213,7 @@ function RoutePageContent() {
           depHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
         }
         if (depHub) {
-          const key = `dep-${di}-${dest.selectedHotel.name}-${depInfo?.fromCode || depHub}`;
+          const key = `dep-${di}-${dest.selectedHotel?.id || dest.selectedHotel.name}-${depInfo?.fromCode || depHub}`;
           if (!hubFetchedRef.current.has(key)) {
             hubFetchedRef.current.add(key);
             getDirections(hotelQuery, `${depHub}, ${dest.city.name}`, 'driving').then(result => {
@@ -493,7 +501,6 @@ function RoutePageContent() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const savedDateRef = useRef('');
   const savedNightsRef = useRef('');
-  const nightsKey = trip.destinations.map(d => d.nights).join(',');
 
   useEffect(() => {
     if (!tripStableRef.current) {
@@ -1060,9 +1067,12 @@ function RoutePageContent() {
                           checkOut.setDate(checkOut.getDate() + primaryNights);
                           const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
                           return (
-                            <div className="mt-1.5 bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
+                            <div className="mt-1.5 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-lg p-2.5 space-y-1">
                               <div className="flex items-center justify-between">
-                                <span className="text-xs font-display font-bold text-text-primary">{hotel.name}</span>
+                                <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                  {hotel.name}
+                                </span>
                                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                   <a
                                     href={getHotelBookingUrl(
@@ -1231,16 +1241,33 @@ function RoutePageContent() {
                               }
                             } else if (leg.selectedTrain) {
                               routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
+                            } else {
+                              // No selection: show city names instead of "~"
+                              routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} \u2192 ${toCity?.parentCity || toCity?.name || ''}`;
                             }
 
+                            const noSelection = !leg.selectedFlight && !leg.selectedTrain;
                             return (
-                              <span className="text-xs font-mono">
-                                {duration} {' '}&middot;{' '} {routeDisplay}
+                              <span className={`text-xs font-mono${noSelection ? ' text-text-muted' : ''}`}>
+                                {noSelection ? '' : `${duration} \u00b7 `}{routeDisplay}
                               </span>
                             );
                           })()}
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
                         </button>
+
+                        {/* No transport selected — red warning (skip for drive/walk/cycle with duration) */}
+                        {!leg.selectedFlight && !leg.selectedTrain && !(leg.type === 'drive' && leg.duration && leg.duration !== '~') && (
+                          <button
+                            onClick={() => setTransportModal({ legIndex: i })}
+                            className="flex items-center gap-1.5 mt-1 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-[11px] font-body hover:bg-red-100 transition-colors"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            Please select transport for {fromCity?.parentCity || fromCity?.name || ''} &rarr; {toCity?.parentCity || toCity?.name || ''}
+                          </button>
+                        )}
 
                         {/* Airport distance info in transport section */}
                         {leg.selectedFlight && (() => {
@@ -1271,9 +1298,12 @@ function RoutePageContent() {
 
                         {/* Selected flight details card */}
                         {leg.selectedFlight && (
-                          <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1 mt-1">
+                          <div className="bg-blue-50/50 border border-blue-200/60 border-l-[3px] border-l-blue-500 rounded-lg p-2.5 space-y-1 mt-1">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-display font-bold text-text-primary">{leg.selectedFlight.airline} {leg.selectedFlight.flightNumber}</span>
+                              <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
+                                {leg.selectedFlight.airline} {leg.selectedFlight.flightNumber}
+                              </span>
                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                 <a
                                   href={(() => {
@@ -1354,11 +1384,24 @@ function RoutePageContent() {
                             </p>
                           );
                         })()}
-                        {/* Selected train details card */}
+                        {/* Selected train/bus/drive details card */}
                         {leg.selectedTrain && (
-                          <div className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1 mt-1">
+                          <div className={`rounded-lg p-2.5 space-y-1 mt-1 border-l-[3px] ${
+                            leg.type === 'bus' ? 'bg-orange-50/50 border border-orange-200/60 border-l-orange-500'
+                            : leg.type === 'drive' ? 'bg-slate-50/50 border border-slate-200/60 border-l-slate-500'
+                            : 'bg-amber-50/50 border border-amber-200/60 border-l-amber-500'
+                          }`}>
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-display font-bold text-text-primary">{leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}</span>
+                              <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                {leg.type === 'bus' ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0v2m16-2v2M7 16h.01M17 16h.01"/></svg>
+                                ) : leg.type === 'drive' ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2"/></svg>
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0h16M8 22h8"/></svg>
+                                )}
+                                {leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}
+                              </span>
                               <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                                 {(() => {
                                   // Use city names for matching, fall back to station names
@@ -1389,25 +1432,46 @@ function RoutePageContent() {
                               </div>
                             </div>
                             {(() => {
-                              const depH = parseInt(leg.selectedTrain!.departure?.split(':')[0] || '0');
-                              const arrH = parseInt(leg.selectedTrain!.arrival?.split(':')[0] || '0');
-                              const durMatch = leg.selectedTrain!.duration?.match(/(\d+)h/);
-                              const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                              const isNext = durHrs >= 12 || (arrH < depH && durHrs > 2);
-                              const arrDate = new Date(legDate);
-                              if (isNext) arrDate.setDate(arrDate.getDate() + 1);
-                              const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              const hasTimes = leg.selectedTrain!.departure && leg.selectedTrain!.arrival;
+                              if (hasTimes) {
+                                const depH = parseInt(leg.selectedTrain!.departure?.split(':')[0] || '0');
+                                const arrH = parseInt(leg.selectedTrain!.arrival?.split(':')[0] || '0');
+                                const durMatch = leg.selectedTrain!.duration?.match(/(\d+)h/);
+                                const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                                const isNext = durHrs >= 12 || (arrH < depH && durHrs > 2);
+                                const arrDate = new Date(legDate);
+                                if (isNext) arrDate.setDate(arrDate.getDate() + 1);
+                                const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                                return (
+                                  <div className="flex items-center gap-2 text-[10px]">
+                                    <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain!.color, fontSize: '9px' }}>{leg.selectedTrain!.operator.split(' ')[0].slice(0,3)}</span>
+                                    <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedTrain!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedTrain!.arrival)}</span>
+                                    <span className="text-text-muted font-mono">{leg.selectedTrain!.duration}</span>
+                                  </div>
+                                );
+                              }
+                              // Drive/cab: show duration + distance only (no times)
                               return (
                                 <div className="flex items-center gap-2 text-[10px]">
-                                  <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain!.color, fontSize: '9px' }}>{leg.selectedTrain!.operator.split(' ')[0].slice(0,3)}</span>
-                                  <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedTrain!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedTrain!.arrival)}</span>
-                                  <span className="text-text-muted font-mono">{leg.selectedTrain!.duration}</span>
+                                  <span className="text-text-secondary font-mono">{leg.selectedTrain!.duration}</span>
+                                  {leg.distance && leg.distance !== '~' && (
+                                    <>
+                                      <span className="text-text-muted">&bull;</span>
+                                      <span className="text-text-secondary font-mono">{leg.distance}</span>
+                                    </>
+                                  )}
                                 </div>
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, currency)}</span>
+                              {leg.selectedTrain.price > 0 ? (
+                                <>
+                                  <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults}</span>
+                                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, currency)}</span>
+                                </>
+                              ) : (
+                                <span className="text-text-muted font-body italic">Price N/A</span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -1553,11 +1617,12 @@ function RoutePageContent() {
               </button>
             )}
             <button
-              onClick={() => {
+              onClick={async () => {
                 setPdfLoading(true);
                 try {
+                  const { exportTripPDFFromData } = await import('@/lib/pdfExport');
                   const cityNames = trip.destinations.map(d => d.city.name).join('-');
-                  exportTripPDFFromData({
+                  await exportTripPDFFromData({
                     from: trip.from,
                     fromAddress: trip.fromAddress,
                     destinations: trip.destinations,
@@ -1735,12 +1800,54 @@ function RoutePageContent() {
               if (leg) trip.selectTrain(leg.id, train);
               setTransportModal(null);
             }}
-            onSelectDrive={() => {
-              if (leg) trip.changeTransportType(leg.id, 'drive');
+            onSelectDrive={(info) => {
+              const legId = leg?.id;
+              if (!legId) { setTransportModal(null); return; }
+              const mode = info?.mode || 'drive';
+              const distKm = parseFloat((info?.distance || '0').replace(/[^\d.]/g, '')) || 0;
+              const fuelCostINR = Math.round(distKm * 8);
+              const cabCostINR = Math.round(distKm * 18);
+              // Pick label and price based on mode
+              const isCab = mode === 'cab';
+              const isWalk = mode === 'walk';
+              const isCycle = mode === 'cycle';
+              const label = isCab ? 'Hire Cab' : isWalk ? 'Walking' : isCycle ? 'Cycling' : 'Self Drive';
+              const price = isWalk || isCycle ? 0 : isCab ? cabCostINR : fuelCostINR;
+              trip.updateTransportLeg(legId, {
+                type: 'drive',
+                selectedFlight: null,
+                selectedTrain: {
+                  id: `drive-${Date.now()}`,
+                  operator: label,
+                  trainName: label,
+                  trainNumber: '',
+                  departure: '',
+                  arrival: '',
+                  duration: info?.duration || '~',
+                  stops: 'Direct',
+                  fromStation: fromCity?.parentCity || fromCity?.name || '',
+                  toStation: toCity?.parentCity || toCity?.name || '',
+                  price,
+                  color: isCab ? '#f59e0b' : '#6b7280',
+                },
+                duration: info?.duration || '~',
+                distance: info?.distance || '~',
+                departureTime: null,
+                arrivalTime: null,
+              });
               setTransportModal(null);
             }}
-            onSelectBus={() => {
-              if (leg) trip.changeTransportType(leg.id, 'bus');
+            onSelectBus={(bus) => {
+              if (leg) {
+                trip.updateTransportLeg(leg.id, {
+                  type: 'bus',
+                  selectedFlight: null,
+                  selectedTrain: bus,
+                  departureTime: bus.departure,
+                  arrivalTime: bus.arrival,
+                  duration: bus.duration,
+                });
+              }
               setTransportModal(null);
             }}
           />

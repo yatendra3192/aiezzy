@@ -14,10 +14,24 @@ export interface BookingDoc {
   uploadedAt: string;
 }
 
+export interface CityActivityCached {
+  name: string;
+  category: string;
+  durationMin: number;
+  bestTime: string;
+  note?: string;
+  openingHours?: string;
+  ticketPrice?: string;
+  dayIndex?: number;
+}
+
 export interface DeepPlanData {
   customActivities: Record<number, Array<{ name: string; time: string }>>;
   dayNotes: Record<number, string>;
   dayStartTimes: Record<number, string>;
+  cityActivities?: Record<string, CityActivityCached[]>;
+  /** AI-suggested day themes per city (e.g., ["Historic & Cultural", "Outdoor & Nature"]) */
+  dayThemes?: Record<string, string[]>;
 }
 
 interface TripState {

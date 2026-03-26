@@ -58,14 +58,14 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - Hotel rooms: `Math.ceil((adults + children) / 2)` rooms per hotel
 - `buildFullTrip()` creates entire trip (destinations + transport + hotels) in one atomic `setState` — avoids React batching issues with sequential `addDestination` calls
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
-- `deepPlanData: DeepPlanData` — custom activities, day notes, start times persisted via `_deepPlanData` JSONB embedding
+- `deepPlanData: DeepPlanData` — custom activities, day notes, start times, AI city activities cache, day themes persisted via `_deepPlanData` JSONB embedding
 
 **CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
 
 ### API Routes
 
 - `/api/flights` — **Amadeus (primary) + Google scraper (parallel)**. Both run simultaneously, results merged and deduplicated. Tries top 3 arrival airports when nearest has no flights (e.g., PNY→MAA for Pondicherry). `exact=true` for specific airport. Amadeus returns per-person price (divides `grandTotal` by adults). IATA codes looked up in catalog DB.
-- `/api/trains` — Google Directions transit mode. Filters to rail-only segments.
+- `/api/trains` — Google Directions transit mode. Returns `trains` (rail-only) and `allTransit` (including buses). Bus tab in transport modal filters `allTransit` for BUS vehicle type.
 - `/api/nearby` — Google Hotels scraper + Google Places Photos enrichment. Hotels without scraper images get photos from Places API (up to 10 hotels, 3 photos each). Cleans description field (removes USD prices, deal text). Returns deal badges, amenities, hotel class.
 - `/api/places` — Google Places Autocomplete (New v1) + Details; `scope=cities|all`.
 - `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. Searches "city" appended first to avoid location-biased results (e.g., "Barcelona city" → Spain, not "North Barcelona" apartment in Mumbai). Returns all large airports within 1000km (no cap).
@@ -76,6 +76,7 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - `/api/ai/extract-transport` — GPT-4.1-mini vision extracts flight/train details (carrier, number, times, airports/stations, IATA codes, duration, passengers, total price). Timezone-aware duration.
 - `/api/ai/extract-trip` — Bulk extraction: all uploaded files → complete trip structure (origin, destinations, hotels, transport segments, travelers). Returns `fileDescriptions` for document mapping.
 - `/api/ai/classify-doc` — Lightweight single-file classifier: returns `{type, from, to, city}`. Used to tag uploaded docs with correct cities/type. Each file gets its own AI call (parallel) for reliable mapping.
+- `/api/ai/itinerary-activities` — GPT-4.1-mini generates city activities with durations, categories, opening hours, ticket prices. Multi-day aware: assigns `dayIndex` per activity + `dayThemes` for logical day progression (e.g., "Historic", "Outdoor"). Static fallback for no-API-key scenarios. Response cached in `deepPlanData.cityActivities`.
 - `/api/booking-docs` — Upload/delete/refresh-URLs for booking documents in Supabase Storage.
 - `/api/admin/migrate` — DB migrations.
 
@@ -98,18 +99,26 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 - **Editable trip info:** Date picker, adults/children/infants +/- buttons, trip type toggle inline on route page.
 - **Full-screen modals:** Both transport and hotel modals are full-screen overlays with back arrow navigation.
 - **Hotel modal:** Left sidebar with rating/price/amenity filters, list/grid toggle, Google Places photos, deal badges, Maps + Booking.com links with dates. "Add custom stay" with Google Places autocomplete for address + coordinates. Upload booking PDF/screenshot → GPT extracts address, price, nights.
-- **Transport modal:** Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display. "Add your own flight/train" with manual entry (carrier, number, airports/stations, IATA codes, times, duration, stops, price). Upload ticket → GPT extracts all fields. Price field is TOTAL for all passengers — handlers divide by trip's passenger formula.
+- **Transport modal:** `TransportCompareModal` — tabs for Flights, Trains, Bus, Drive, Walk, Cycle, Boat, Tram. Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display. "Add your own flight/train" with manual entry. Upload ticket → GPT extracts all fields. Price field is TOTAL for all passengers — handlers divide by trip's passenger formula.
+- **Bus selection:** Bus routes come from `/api/trains` `allTransit` filtered for BUS vehicles. Selected via `updateTransportLeg()` storing as `selectedTrain` with `type: 'bus'`. **Critical:** Must use single `updateTransportLeg()` call — NOT `selectTrain()` then `changeTransportType()` sequentially, because `changeTransportType()` clears `selectedTrain` to null.
+- **Price N/A:** When transport price is 0 or unavailable, display "Price N/A" instead of ₹0. Check `price > 0` before rendering price in route page and transport modal.
 - **Booking doc viewer:** Full-screen modal for viewing uploaded PDFs (iframe) and images. "Booking" links on cards matched by `docType` (hotel/transport) and city names. Transport docs require BOTH from AND to cities to match. Train cards fall back to station names when city names don't match (Brussels vs Bruges).
 - **Hub-to-hotel distances:** Separate `arr-{di}` (arrival) and `dep-{di}` (departure) distances because airports can differ.
 - **Hotel room calc:** `Math.ceil((adults + children) / 2)` rooms, displayed as "₹X/night × N × R rooms".
 
 ### Deep Plan Page (`/deep-plan`) — Day-by-Day Itinerary
 
-10 features: Day type badges (Travel/Explore/Departure), daily budget, weather per day, editable activities (add/remove), meal slots (breakfast/lunch/dinner), adjustable start time, Google Maps links, day notes, color-coded timeline, print button.
+Day type badges (Travel/Explore/Departure), daily budget, weather per day, editable activities (add/remove), meal slots (breakfast/lunch/dinner), adjustable start time, Google Maps links, day notes, color-coded timeline, print button, drag-to-reorder activities, AI-generated itineraries.
+
+**Smart itinerary generation:** Explore days use AI-generated activities with real durations instead of hardcoded 2-hour blocks. Activity source priority: user places (90min default) → AI-cached `cityActivities` → static `CITY_ATTRACTIONS` (typed with durations) → generic fallback. Activities scheduled into morning (start→12:30) and afternoon (13:15→18:30) blocks with 30min travel gaps, respecting `bestTime` preference and `durationMin`. Multi-day trips get themed days via `dayIndex` assignment.
+
+**Activity features:** Category icons on timeline dots (museum, park, landmark, etc.). Duration + category labels (e.g., "Museum · 2h"). Opening hours and ticket prices from AI (with Google search links). Pin/save button promotes AI activities to custom activities (survives refreshes). Drag-to-reorder via HTML5 drag-and-drop on explore day attractions.
+
+**Start time adjustment:** Changing start time re-runs the full scheduling algorithm (not a flat offset). Activities are re-sorted and re-fit into morning/afternoon blocks based on new start time.
 
 **Overnight flight handling:** Detects flights >12h or next-day arrivals. Splits into departure day + optional "In Transit" days + arrival day. Each calendar date gets its own day card. No cramming overnight arrivals into departure day.
 
-**Persisted to DB:** Custom activities, day notes, and day start times stored in `deepPlanData` (via `_deepPlanData` JSONB embedding). Previously was sessionStorage-only.
+**Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, and day themes stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
 
 ### Key Patterns
 
@@ -119,8 +128,10 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 - **Price calculation for custom transport:** Total price entered → divided by trip's passenger formula. Flights: `total / (adults + children + infants×0.15)`. Trains: `total / adults`. Route page multiplies back.
 - **PDF export:** `exportTripPDFFromData()` — structured jsPDF (not html2canvas). Text truncation, right-aligned price columns.
 - **TypeScript gotchas:** Don't use `for...of` on `Set` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` instead.
-- **Null safety for new fields:** `bookingDocs` and `deepPlanData` may be undefined on trips saved before these features. Always use `trip.bookingDocs?.length`, `trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} }`.
+- **Null safety for new fields:** `bookingDocs` and `deepPlanData` may be undefined on trips saved before these features. Always use `trip.bookingDocs?.length`, `trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} }`. `cityActivities` and `dayThemes` inside `deepPlanData` are also optional.
 - **Hotel `address`/`lat`/`lng`:** Optional fields on `Hotel` interface. Custom stays and Google hotels store address for accurate distance calculations via Google Directions.
+- **City name display:** Always use `city.parentCity || city.name` for display — never parse `fullName` by commas (e.g., "Jaipur, Rajasthan, India" would give "Rajasthan" not "Jaipur").
+- **Transport type atomicity:** `changeTransportType()` clears both `selectedFlight` and `selectedTrain`. When selecting transport while also changing type (e.g., bus), use `updateTransportLeg()` with all fields in one call.
 
 ### Styling
 

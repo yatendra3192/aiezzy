@@ -76,7 +76,7 @@ export function formatPrice(amountINR: number, currency: CurrencyCode): string {
 /** Fetch live rates from free API. Returns rates object or null on failure. */
 export async function fetchLiveRates(): Promise<Record<string, number> | null> {
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/INR');
+    const res = await fetch('https://open.er-api.com/v6/latest/INR', { signal: AbortSignal.timeout(5000) });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.result === 'success' && data.rates) {

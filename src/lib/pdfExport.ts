@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+
 import { Destination, TransportLeg } from '@/data/mockData';
 
 interface TripPDFData {
@@ -52,7 +52,8 @@ function pdfPrice(formatted: string, currency: string): string {
     || `${ascii}${formatted.replace(/[^\d.,]/g, '')}`;
 }
 
-export function exportTripPDFFromData(data: TripPDFData, filename: string) {
+export async function exportTripPDFFromData(data: TripPDFData, filename: string) {
+  const jsPDF = (await import('jspdf')).default;
   const fp = (amount: number): string => pdfPrice(data.formatPrice(amount), data.currency);
   const pdf = new jsPDF('p', 'mm', 'a4');
   const W = pdf.internal.pageSize.getWidth();
@@ -607,7 +608,10 @@ export function exportTripPDFFromData(data: TripPDFData, filename: string) {
 
 // Keep legacy export for backward compat
 export async function exportTripPDF(elementId: string, filename: string) {
-  const html2canvas = (await import('html2canvas')).default;
+  const [html2canvas, jsPDF] = await Promise.all([
+    import('html2canvas').then(m => m.default),
+    import('jspdf').then(m => m.default),
+  ]);
   const element = document.getElementById(elementId);
   if (!element) return;
 

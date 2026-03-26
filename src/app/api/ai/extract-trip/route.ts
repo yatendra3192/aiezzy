@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     // Build content parts with all uploaded files
     const contentParts: any[] = [
       {
-        type: 'text',
+        type: 'input_text',
         text: `You are analyzing travel booking documents (flight tickets, hotel confirmations, Airbnb bookings, train tickets, etc). Extract ALL trip information and return a single unified trip plan.
 
 Return ONLY valid JSON (no markdown, no code fences) in this exact format:
@@ -132,24 +132,20 @@ Rules:
 
       if (isPDF) {
         contentParts.push({
-          type: 'file',
-          file: {
-            filename: file.name,
-            file_data: `data:${mediaType};base64,${base64}`,
-          },
+          type: 'input_file',
+          filename: file.name,
+          file_data: `data:${mediaType};base64,${base64}`,
         });
       } else {
         contentParts.push({
-          type: 'image_url',
-          image_url: {
-            url: `data:${mediaType};base64,${base64}`,
-            detail: 'high',
-          },
+          type: 'input_image',
+          image_url: `data:${mediaType};base64,${base64}`,
         });
       }
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Use Responses API for PDF support (Chat Completions doesn't accept PDF files)
+    const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -157,8 +153,7 @@ Rules:
       },
       body: JSON.stringify({
         model: 'gpt-4.1-mini',
-        messages: [{ role: 'user', content: contentParts }],
-        max_tokens: 4000,
+        input: [{ role: 'user', content: contentParts }],
         temperature: 0.1,
       }),
     });
@@ -170,7 +165,8 @@ Rules:
     }
 
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
+      || data.output?.[0]?.content?.[0]?.text || '';
     const jsonMatch = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     const parsed = JSON.parse(jsonMatch);
 

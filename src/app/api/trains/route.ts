@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
+const trainCache = new Map<string, { data: any; ts: number }>();
+const TRAIN_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 /**
  * GET /api/trains - Search train routes using Google Directions API (transit mode)
  *
@@ -21,6 +24,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing params: from, to required' }, { status: 400 });
   }
 
+  // Check cache
+  const trainCacheKey = `${from}-${to}-${date}`;
+  const cachedTrain = trainCache.get(trainCacheKey);
+  if (cachedTrain && Date.now() - cachedTrain.ts < TRAIN_CACHE_TTL) {
+    return NextResponse.json(cachedTrain.data);
+  }
+
   try {
     // Build departure_time as Unix timestamp
     let departureTime = '';
@@ -29,12 +39,18 @@ export async function GET(req: NextRequest) {
       departureTime = Math.floor(dt.getTime() / 1000).toString();
     }
 
-    // Try with train-only first, then fall back to all transit
+    // Try all 4 combinations in parallel: (train|rail / all transit) × (with time / without time)
     let data: any = null;
 
-    // Try multiple combinations: train-only with date, all transit with date, then without date
-    for (const transitMode of ['train|rail', '']) {
-      for (const useTime of [true, false]) {
+    const combinations: Array<{ transitMode: string; useTime: boolean }> = [
+      { transitMode: 'train|rail', useTime: true },
+      { transitMode: 'train|rail', useTime: false },
+      { transitMode: '', useTime: true },
+      { transitMode: '', useTime: false },
+    ];
+
+    const results = await Promise.allSettled(
+      combinations.map(({ transitMode, useTime }) => {
         const params = new URLSearchParams({
           origin: from,
           destination: to,
@@ -45,12 +61,17 @@ export async function GET(req: NextRequest) {
         if (transitMode) params.set('transit_mode', transitMode);
         if (useTime && departureTime) params.set('departure_time', departureTime);
 
-        const res = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`);
-        data = await res.json();
+        return fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`)
+          .then(res => res.json());
+      })
+    );
 
-        if (data.status === 'OK' && data.routes?.length) break;
+    // Pick the first successful result that has routes (in priority order)
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value?.status === 'OK' && r.value?.routes?.length) {
+        data = r.value;
+        break;
       }
-      if (data?.status === 'OK' && data?.routes?.length) break;
     }
 
     if (!data || data.status !== 'OK' || !data.routes?.length) {
@@ -170,12 +191,21 @@ export async function GET(req: NextRequest) {
       t.isRail = hasRail;
     });
 
-    return NextResponse.json({
+    const responseData = {
       trains: trainOnly.length > 0 ? trainOnly : [], // Only return actual train routes
       allTransit: trains, // Include all transit for reference
       source: 'google_transit',
       hasTrains: trainOnly.length > 0,
-    });
+    };
+
+    // Store in cache
+    trainCache.set(trainCacheKey, { data: responseData, ts: Date.now() });
+    if (trainCache.size > 500) {
+      const oldest = Array.from(trainCache.entries()).sort((a, b) => a[1].ts - b[1].ts)[0];
+      if (oldest) trainCache.delete(oldest[0]);
+    }
+
+    return NextResponse.json(responseData);
   } catch (e) {
     return NextResponse.json({ trains: [], error: 'Failed to fetch transit routes' }, { status: 500 });
   }

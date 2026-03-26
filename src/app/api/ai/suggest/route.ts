@@ -26,6 +26,10 @@ Request: "${prompt}"
 Return ONLY valid JSON in this format (no other text):
 {
   "title": "Creative trip title",
+  "origin": { "city": "Departure city", "country": "Country" },
+  "departureDate": "YYYY-MM-DD or null if not specified",
+  "travelers": { "adults": 1, "children": 0, "infants": 0 },
+  "tripType": "roundTrip",
   "destinations": [
     { "city": "City Name", "country": "Country", "nights": 2, "reason": "Why visit this place — what makes it special" }
   ],
@@ -36,6 +40,10 @@ Return ONLY valid JSON in this format (no other text):
 }
 
 Rules:
+- Extract origin city from the request (e.g., "from mumbai" → Mumbai, India). Default to "Mumbai" if not specified
+- Extract departure date if mentioned (e.g., "17 oct 2026" → "2026-10-17"). Use null if not specified
+- Extract travelers: "with my wife" = 2 adults. "1 year old" or "baby" = infant. "5 year old kid" = child (2-11). Default 1 adult
+- tripType: "roundTrip" unless user says "one way"
 - Include 2-6 destinations based on trip duration
 - Keep nights realistic (1-4 per city)
 - Match the budget and travel style if specified

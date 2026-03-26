@@ -8,6 +8,9 @@ const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET || '';
 // NOTE: Default is Amadeus test/sandbox. Set AMADEUS_BASE_URL=https://api.amadeus.com for production
 const AMADEUS_BASE_URL = process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com';
 
+const flightCache = new Map<string, { data: any; ts: number }>();
+const FLIGHT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
 /**
  * GET /api/flights - Search flights using live Google Flights scraper
  *
@@ -32,6 +35,15 @@ export async function GET(req: NextRequest) {
 
   if (!from || !to || !date) {
     return NextResponse.json({ error: 'Missing params: from, to, date required' }, { status: 400 });
+  }
+
+  // Check flight cache
+  const flightCacheKey = `${from}-${to}-${date}-${adults}`;
+  const cachedFlight = flightCache.get(flightCacheKey);
+  if (cachedFlight && Date.now() - cachedFlight.ts < FLIGHT_CACHE_TTL) {
+    return NextResponse.json(cachedFlight.data, {
+      headers: { 'Cache-Control': 'private, max-age=1800' },
+    });
   }
 
   try {
@@ -133,7 +145,7 @@ export async function GET(req: NextRequest) {
 
     if (allFlights.length > 0) {
       const resolvedAp = amadeusFlights?.length ? fromAp : scraperAirport;
-      return NextResponse.json({
+      const responseData = {
         status: 'OK',
         from, to, date, adults: parseInt(adults),
         fromResolved: resolvedAp.code,
@@ -147,6 +159,17 @@ export async function GET(req: NextRequest) {
         nearestFrom: nearest.code !== resolvedAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
         flights: allFlights,
         source: amadeusFlights?.length ? (scraperFlights.length ? 'amadeus+live' : 'amadeus') : 'live',
+      };
+
+      // Store in cache
+      flightCache.set(flightCacheKey, { data: responseData, ts: Date.now() });
+      if (flightCache.size > 500) {
+        const oldest = Array.from(flightCache.entries()).sort((a, b) => a[1].ts - b[1].ts)[0];
+        if (oldest) flightCache.delete(oldest[0]);
+      }
+
+      return NextResponse.json(responseData, {
+        headers: { 'Cache-Control': 'private, max-age=1800' },
       });
     }
 

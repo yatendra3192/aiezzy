@@ -74,32 +74,42 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
 
   const handleUsePlan = () => {
     if (!suggestion) return;
-
-    // Preserve user's existing origin before reset
-    const savedFrom = trip.from?.name ? { ...trip.from } : null;
-    const savedFromAddress = trip.fromAddress || null;
+    const s = suggestion as any;
 
     trip.resetTrip();
 
-    // Restore user's origin, or fall back to Mumbai if none was set
-    if (savedFrom) {
-      trip.setFrom(savedFrom);
-      if (savedFromAddress) trip.setFromAddress(savedFromAddress);
-    } else {
-      trip.setFrom({ name: 'Mumbai', country: 'India', fullName: 'Mumbai, Maharashtra, India' });
-      trip.setFromAddress('Mumbai, Maharashtra, India');
-    }
-
-    // Small delay to ensure resetTrip state update has propagated
+    // Delay all setters to run AFTER resetTrip state has committed
     setTimeout(() => {
+      // Set origin from AI response
+      const originCity = s.origin?.city || 'Mumbai';
+      const originCountry = s.origin?.country || 'India';
+      trip.setFrom({ name: originCity, country: originCountry, fullName: `${originCity}, ${originCountry}`, parentCity: originCity });
+      trip.setFromAddress(`${originCity}, ${originCountry}`);
+
+      // Set departure date if AI extracted one
+      if (s.departureDate && s.departureDate !== 'null') {
+        trip.setDepartureDate(s.departureDate);
+      }
+
+      // Set travelers if AI extracted them
+      if (s.travelers) {
+        if (s.travelers.adults > 0) trip.setAdults(s.travelers.adults);
+        if (s.travelers.children > 0) trip.setChildren(s.travelers.children);
+        if (s.travelers.infants > 0) trip.setInfants(s.travelers.infants);
+      }
+
+      // Set trip type
+      if (s.tripType === 'oneWay') trip.setTripType('oneWay');
+
+      // Add destinations
       for (const dest of suggestion.destinations) {
         trip.addDestination(
-          { name: dest.city, country: dest.country, fullName: `${dest.city}, ${dest.country}` },
+          { name: dest.city, country: dest.country, fullName: `${dest.city}, ${dest.country}`, parentCity: dest.city },
           dest.nights
         );
       }
+
       onClose();
-      router.push('/plan');
     }, 50);
   };
 

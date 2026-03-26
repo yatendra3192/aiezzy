@@ -262,6 +262,11 @@ function PlanPageContent() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [editingFrom, setEditingFrom] = useState(!trip.fromAddress);
 
+  // Sync editingFrom when fromAddress is set externally (e.g., AI suggest, trip load)
+  useEffect(() => {
+    if (trip.fromAddress) setEditingFrom(false);
+  }, [trip.fromAddress]);
+
   // Restore trip from URL param, context, or sessionStorage on page reload
   useEffect(() => {
     if (trip.destinations.length > 0 || trip.userPlaces.length > 0) return; // Already have data in context
@@ -619,10 +624,17 @@ function PlanPageContent() {
       destinations: destConfigs, transports,
     });
 
-    // Upload files: classify each file individually via AI, then upload to Supabase
-    if (uploadFiles.length > 0) {
+    // Close modal immediately — don't wait for file uploads
+    setShowUploadModal(false);
+    setUploadResult(null);
+    setEditingFrom(false);
+
+    // Upload files in background: classify each file individually via AI, then upload to Supabase
+    const filesToUpload = [...uploadFiles];
+    setUploadFiles([]);
+    if (filesToUpload.length > 0) {
       // Step 1: Classify each file in parallel (each gets its own AI call)
-      const classifyPromises = uploadFiles.map(async (file) => {
+      const classifyPromises = filesToUpload.map(async (file) => {
         try {
           const fd = new FormData();
           fd.append('file', file);
@@ -635,8 +647,8 @@ function PlanPageContent() {
 
       // Step 2: Upload each file to Supabase with correct tags
       const uploadedDocs: import('@/context/TripContext').BookingDoc[] = [];
-      for (let i = 0; i < uploadFiles.length; i++) {
-        const file = uploadFiles[i];
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const file = filesToUpload[i];
         const cls = classifications[i];
         const matchCities: string[] = [];
         let docType: 'hotel' | 'transport' | 'general' = 'general';
@@ -669,10 +681,6 @@ function PlanPageContent() {
       }
     }
 
-    setShowUploadModal(false);
-    setUploadFiles([]);
-    setUploadResult(null);
-    setEditingFrom(false);
   };
 
   if (isRestoring) {
@@ -967,8 +975,7 @@ function PlanPageContent() {
                     <p className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider mb-2">Current</p>
                     <div className="space-y-1.5">
                       {trip.destinations.map((d, i) => {
-                        const parts = (d.city.fullName || '').split(',').map(s => s.trim());
-                        const city = parts.length >= 3 ? parts[parts.length - 2] : d.city.name;
+                        const city = d.city.parentCity || d.city.name;
                         return (
                           <div key={d.id} className="flex items-center gap-1.5">
                             <span className="w-4 h-4 rounded-full bg-text-muted/20 text-text-muted text-[9px] font-mono flex items-center justify-center">{i + 1}</span>
@@ -984,8 +991,7 @@ function PlanPageContent() {
                     <p className="text-[10px] font-display font-bold text-accent-cyan uppercase tracking-wider mb-2">Optimized</p>
                     <div className="space-y-1.5">
                       {optimizedOrder.map((d, i) => {
-                        const parts = (d.city.fullName || '').split(',').map(s => s.trim());
-                        const city = parts.length >= 3 ? parts[parts.length - 2] : d.city.name;
+                        const city = d.city.parentCity || d.city.name;
                         return (
                           <div key={d.id} className="flex items-center gap-1.5">
                             <span className="w-4 h-4 rounded-full bg-accent-cyan text-white text-[9px] font-mono flex items-center justify-center">{i + 1}</span>
