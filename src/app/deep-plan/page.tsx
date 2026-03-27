@@ -152,6 +152,9 @@ function DeepPlanPageContent() {
   // AI activity loading state (Record<string, boolean> — not Set, avoids downlevelIteration)
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const aiFetchedRef = useRef<Record<string, boolean>>({});
+  // Inter-activity travel times: key = "stopId1→stopId2", value = { duration, distance, mode }
+  const [travelBetween, setTravelBetween] = useState<Record<string, { duration: string; distance: string; mode: string }>>({});
+  const travelFetchedRef = useRef<Record<string, boolean>>({});
   // Drag-reorder: overridden activity order per day (day number → ordered stop IDs)
   const [activityOrder, setActivityOrder] = useState<Record<number, string[]>>({});
   const [dragState, setDragState] = useState<{ dayNum: number; stopId: string } | null>(null);
@@ -1138,6 +1141,49 @@ function DeepPlanPageContent() {
     return { fromCity, toCity };
   };
 
+  // Fetch real travel times between consecutive attractions on explore days
+  useEffect(() => {
+    if (adjustedDays.length === 0) return;
+    for (const day of adjustedDays) {
+      if (day.type !== 'explore') continue;
+      const attractions = day.stops.filter(s => s.type === 'attraction' && !s.mealType);
+      // Also include hotel leave as the starting point
+      const hotelStop = day.stops.find(s => s.type === 'hotel' && s.transport?.icon === 'walk');
+      const allStops = hotelStop ? [hotelStop, ...attractions] : attractions;
+      for (let j = 0; j < allStops.length - 1; j++) {
+        const from = allStops[j];
+        const to = allStops[j + 1];
+        const key = `${from.name}→${to.name}@${day.city}`;
+        if (travelFetchedRef.current[key]) continue;
+        travelFetchedRef.current[key] = true;
+        const fromQ = `${from.name}, ${day.city}`;
+        const toQ = `${to.name}, ${day.city}`;
+        getDirections(fromQ, toQ, 'walking').then(result => {
+          if (result) {
+            setTravelBetween(prev => ({ ...prev, [key]: { duration: result.durationText, distance: result.distanceText, mode: 'walk' } }));
+          }
+        }).catch(() => {});
+      }
+    }
+  }, [adjustedDays.map(d => `${d.day}-${d.stops.length}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Toggle travel mode between stops
+  const toggleTravelMode = (fromName: string, toName: string, city: string) => {
+    const key = `${fromName}→${toName}@${city}`;
+    const current = travelBetween[key]?.mode || 'walk';
+    const nextMode = current === 'walk' ? 'transit' : current === 'transit' ? 'driving' : 'walk';
+    const modeLabel = nextMode === 'walk' ? 'walking' : nextMode === 'transit' ? 'transit' : 'driving';
+    const fromQ = `${fromName}, ${city}`;
+    const toQ = `${toName}, ${city}`;
+    // Fetch new directions for the toggled mode
+    travelFetchedRef.current[key] = false;
+    getDirections(fromQ, toQ, modeLabel as any).then(result => {
+      if (result) {
+        setTravelBetween(prev => ({ ...prev, [key]: { duration: result.durationText, distance: result.distanceText, mode: nextMode } }));
+      }
+    }).catch(() => {});
+  };
+
   const getDefaultActivityTime = (dayNumber: number): string => {
     const existing = customActivities[dayNumber] || [];
     // Use adjustedDays (not base days) so times reflect start time changes
@@ -1646,25 +1692,48 @@ function DeepPlanPageContent() {
 
                           // Default: simple transport line (drive, walk, etc.)
                           const hasDurationInfo = stop.transport.duration && stop.transport.distance;
+                          // Look up real travel time between this stop and next attraction
+                          const nextAttrIdx = day.stops.findIndex((s, idx) => idx > si && s.type === 'attraction' && !s.mealType);
+                          const nextAttr = nextAttrIdx >= 0 ? day.stops[nextAttrIdx] : null;
+                          const travelKey = nextAttr ? `${stop.name}→${nextAttr.name}@${day.city}` : '';
+                          const realTravel = travelKey ? travelBetween[travelKey] : null;
+                          const modeIcon = realTravel?.mode === 'transit' ? 'publicTransit' : realTravel?.mode === 'driving' ? 'drive' : 'walk';
+                          const modeLabel = realTravel?.mode === 'transit' ? 'Transit' : realTravel?.mode === 'driving' ? 'Drive' : 'Walk';
+
                           return (
                             <div className="pl-4 py-1">
                               <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
-                                <button
-                                  onClick={() => {
-                                    if (legIdx !== undefined) setTransportModal({ legIndex: legIdx });
-                                  }}
-                                  className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                    <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
-                                  </svg>
-                                  {hasDurationInfo ? (
-                                    <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
-                                  ) : (
-                                    <span className="text-xs font-body text-text-muted capitalize">{stop.transport.icon === 'walk' ? 'Walk' : stop.transport.icon}</span>
-                                  )}
-                                  {legIdx !== undefined && <span className="text-[10px] text-text-muted font-body print-hide">Change</span>}
-                                </button>
+                                {legIdx !== undefined ? (
+                                  <button
+                                    onClick={() => setTransportModal({ legIndex: legIdx })}
+                                    className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                      <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
+                                    </svg>
+                                    {hasDurationInfo ? (
+                                      <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                    ) : (
+                                      <span className="text-xs font-body text-text-muted capitalize">{stop.transport.icon === 'walk' ? 'Walk' : stop.transport.icon}</span>
+                                    )}
+                                    <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => nextAttr && toggleTravelMode(stop.name, nextAttr.name, day.city)}
+                                    className="print-hide flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                      <path d={TRANSPORT_ICONS[modeIcon] || TRANSPORT_ICONS.walk} />
+                                    </svg>
+                                    {realTravel ? (
+                                      <span className="text-xs font-mono">{realTravel.duration} &middot; {realTravel.distance}</span>
+                                    ) : (
+                                      <span className="text-xs font-body text-text-muted">{modeLabel}</span>
+                                    )}
+                                    <span className="text-[9px] text-text-muted/60 font-body">{realTravel ? modeLabel : ''}</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
