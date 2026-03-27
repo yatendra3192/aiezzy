@@ -152,9 +152,15 @@ function DeepPlanPageContent() {
   // AI activity loading state (Record<string, boolean> — not Set, avoids downlevelIteration)
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const aiFetchedRef = useRef<Record<string, boolean>>({});
-  // Inter-activity travel times: key = "stopId1→stopId2", value = { duration, distance, mode }
-  const [travelBetween, setTravelBetween] = useState<Record<string, { duration: string; distance: string; mode: string }>>({});
+  // Inter-activity travel times: key = "from→to@city"
+  const [travelBetween, setTravelBetween] = useState<Record<string, {
+    selected: string;
+    walk?: { duration: string; distance: string };
+    transit?: { duration: string; distance: string };
+    drive?: { duration: string; distance: string };
+  }>>({});
   const travelFetchedRef = useRef<Record<string, boolean>>({});
+  const [openTravelDropdown, setOpenTravelDropdown] = useState<string | null>(null);
   // Drag-reorder: overridden activity order per day (day number → ordered stop IDs)
   const [activityOrder, setActivityOrder] = useState<Record<number, string[]>>({});
   const [dragState, setDragState] = useState<{ dayNum: number; stopId: string } | null>(null);
@@ -1141,13 +1147,12 @@ function DeepPlanPageContent() {
     return { fromCity, toCity };
   };
 
-  // Fetch real travel times between consecutive attractions on explore days
+  // Fetch real travel times (all 3 modes) between consecutive attractions on explore days
   useEffect(() => {
     if (adjustedDays.length === 0) return;
     for (const day of adjustedDays) {
       if (day.type !== 'explore') continue;
       const attractions = day.stops.filter(s => s.type === 'attraction' && !s.mealType);
-      // Also include hotel leave as the starting point
       const hotelStop = day.stops.find(s => s.type === 'hotel' && s.transport?.icon === 'walk');
       const allStops = hotelStop ? [hotelStop, ...attractions] : attractions;
       for (let j = 0; j < allStops.length - 1; j++) {
@@ -1158,31 +1163,23 @@ function DeepPlanPageContent() {
         travelFetchedRef.current[key] = true;
         const fromQ = `${from.name}, ${day.city}`;
         const toQ = `${to.name}, ${day.city}`;
-        getDirections(fromQ, toQ, 'walking').then(result => {
-          if (result) {
-            setTravelBetween(prev => ({ ...prev, [key]: { duration: result.durationText, distance: result.distanceText, mode: 'walk' } }));
-          }
-        }).catch(() => {});
+        // Fetch all 3 modes in parallel
+        const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
+          getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
+        Promise.all([fetchMode('walking', 'walk'), fetchMode('transit', 'transit'), fetchMode('driving', 'drive')]).then(([walk, transit, drive]) => {
+          setTravelBetween(prev => ({
+            ...prev,
+            [key]: {
+              selected: 'walk',
+              ...(walk && { walk }),
+              ...(transit && { transit }),
+              ...(drive && { drive }),
+            },
+          }));
+        });
       }
     }
   }, [adjustedDays.map(d => `${d.day}-${d.stops.length}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Toggle travel mode between stops
-  const toggleTravelMode = (fromName: string, toName: string, city: string) => {
-    const key = `${fromName}→${toName}@${city}`;
-    const current = travelBetween[key]?.mode || 'walk';
-    const nextMode = current === 'walk' ? 'transit' : current === 'transit' ? 'driving' : 'walk';
-    const modeLabel = nextMode === 'walk' ? 'walking' : nextMode === 'transit' ? 'transit' : 'driving';
-    const fromQ = `${fromName}, ${city}`;
-    const toQ = `${toName}, ${city}`;
-    // Fetch new directions for the toggled mode
-    travelFetchedRef.current[key] = false;
-    getDirections(fromQ, toQ, modeLabel as any).then(result => {
-      if (result) {
-        setTravelBetween(prev => ({ ...prev, [key]: { duration: result.durationText, distance: result.distanceText, mode: nextMode } }));
-      }
-    }).catch(() => {});
-  };
 
   const getDefaultActivityTime = (dayNumber: number): string => {
     const existing = customActivities[dayNumber] || [];
@@ -1692,13 +1689,16 @@ function DeepPlanPageContent() {
 
                           // Default: simple transport line (drive, walk, etc.)
                           const hasDurationInfo = stop.transport.duration && stop.transport.distance;
-                          // Look up real travel time between this stop and next attraction
+                          // Look up real travel times between this stop and next attraction
                           const nextAttrIdx = day.stops.findIndex((s, idx) => idx > si && s.type === 'attraction' && !s.mealType);
                           const nextAttr = nextAttrIdx >= 0 ? day.stops[nextAttrIdx] : null;
                           const travelKey = nextAttr ? `${stop.name}→${nextAttr.name}@${day.city}` : '';
-                          const realTravel = travelKey ? travelBetween[travelKey] : null;
-                          const modeIcon = realTravel?.mode === 'transit' ? 'publicTransit' : realTravel?.mode === 'driving' ? 'drive' : 'walk';
-                          const modeLabel = realTravel?.mode === 'transit' ? 'Transit' : realTravel?.mode === 'driving' ? 'Drive' : 'Walk';
+                          const travelData = travelKey ? travelBetween[travelKey] : null;
+                          const selMode = travelData?.selected || 'walk';
+                          const selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
+                          const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
+                          const isDropdownOpen = openTravelDropdown === travelKey;
+                          const gmapsUrl = nextAttr ? `https://www.google.com/maps/dir/${encodeURIComponent(stop.name + ', ' + day.city)}/${encodeURIComponent(nextAttr.name + ', ' + day.city)}` : '';
 
                           return (
                             <div className="pl-4 py-1">
@@ -1719,20 +1719,43 @@ function DeepPlanPageContent() {
                                     <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
                                   </button>
                                 ) : (
-                                  <button
-                                    onClick={() => nextAttr && toggleTravelMode(stop.name, nextAttr.name, day.city)}
-                                    className="print-hide flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
-                                  >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                      <path d={TRANSPORT_ICONS[modeIcon] || TRANSPORT_ICONS.walk} />
-                                    </svg>
-                                    {realTravel ? (
-                                      <span className="text-xs font-mono">{realTravel.duration} &middot; {realTravel.distance}</span>
-                                    ) : (
-                                      <span className="text-xs font-body text-text-muted">{modeLabel}</span>
+                                  <div className="relative">
+                                    <button
+                                      onClick={() => setOpenTravelDropdown(isDropdownOpen ? null : travelKey)}
+                                      className="print-hide flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                        <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
+                                      </svg>
+                                      {selData ? (
+                                        <span className="text-xs font-mono">{selData.duration} &middot; {selData.distance}</span>
+                                      ) : (
+                                        <span className="text-xs font-body text-text-muted">Walk</span>
+                                      )}
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
+                                    </button>
+                                    {/* Directions dropdown */}
+                                    {isDropdownOpen && travelData && (
+                                      <div className="absolute left-0 top-full mt-1 z-20 bg-bg-surface border border-border-subtle rounded-lg shadow-lg p-2 min-w-[180px] space-y-1">
+                                        {([['walk', '🚶', 'Walk'], ['transit', '🚌', 'Transit'], ['drive', '🚗', 'Drive']] as const).map(([mode, emoji, label]) => {
+                                          const d = travelData[mode];
+                                          return (
+                                            <button key={mode} onClick={() => { setTravelBetween(prev => ({ ...prev, [travelKey]: { ...prev[travelKey], selected: mode } })); setOpenTravelDropdown(null); }}
+                                              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors ${selMode === mode ? 'bg-accent-cyan/10 text-accent-cyan font-bold' : 'hover:bg-bg-card text-text-secondary'}`}>
+                                              <span>{emoji}</span>
+                                              {d ? <span className="font-mono">{d.duration} &middot; {d.distance}</span> : <span className="text-text-muted italic">N/A</span>}
+                                            </button>
+                                          );
+                                        })}
+                                        <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
+                                          className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-text-muted hover:text-accent-cyan hover:bg-bg-card transition-colors"
+                                          onClick={() => setOpenTravelDropdown(null)}>
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                          Directions
+                                        </a>
+                                      </div>
                                     )}
-                                    <span className="text-[9px] text-text-muted/60 font-body">{realTravel ? modeLabel : ''}</span>
-                                  </button>
+                                  </div>
                                 )}
                               </div>
                             </div>
