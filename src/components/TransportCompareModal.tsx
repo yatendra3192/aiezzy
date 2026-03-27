@@ -109,6 +109,7 @@ export default function TransportCompareModal({
   const [busLoading, setBusLoading] = useState(false);
   const [busNotFound, setBusNotFound] = useState(false);
   const [loadingFlights, setLoadingFlights] = useState(false);
+  const sameAirport = !!(fromCode && toCode && fromCode === toCode);
   const [loadingTrains, setLoadingTrains] = useState(false);
   const [nearbyAirportPrompt, setNearbyAirportPrompt] = useState<{ fromNearby: string; toNearby: string; fromCity: string; toCity: string } | null>(null);
   const [userAcceptedNearby, setUserAcceptedNearby] = useState(false);
@@ -278,6 +279,8 @@ export default function TransportCompareModal({
 
   // Fetch flights - check if nearby airport needed first
   const fetchFlights = () => {
+    // Skip if both cities resolve to the same airport (e.g., North Goa ↔ Old Goa both = GOI)
+    if (sameAirport) { setFlights([]); setLoadingFlights(false); return; }
     setLoadingFlights(true);
     setNearbyAirportPrompt(null);
     const searchFrom = fromCode || fromCity;
@@ -796,7 +799,13 @@ export default function TransportCompareModal({
                     </div>
                   )}
 
-                  {nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
+                  {sameAirport ? (
+                    <div className="text-center py-12">
+                      <p className="text-2xl mb-2">🚗</p>
+                      <p className="text-text-primary text-sm font-display font-bold">Same airport region ({fromCode})</p>
+                      <p className="text-text-muted text-xs font-body mt-1">{fromCity} and {toCity} share the same airport — use Drive, Bus, or Train instead</p>
+                    </div>
+                  ) : nearbyAirportPrompt && !userAcceptedNearby && !selectedFlight ? null : loadingFlights ? (
                     <div className="flex items-center justify-center py-12"><div className="w-6 h-6 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" /><span className="text-text-muted text-sm ml-3">Searching flights{selectedAirportFilter ? ` from ${selectedAirportFilter}` : ''}{selectedArrAirportFilter ? ` to ${selectedArrAirportFilter}` : ''}...</span></div>
                   ) : flights.length === 0 ? (
                     <div className="text-center py-12">

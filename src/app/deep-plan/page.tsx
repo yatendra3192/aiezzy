@@ -486,7 +486,7 @@ function DeepPlanPageContent() {
                 const cityAttr2 = dest.places?.length
                   ? dest.places.map(p => p.name)
                   : (trip.deepPlanData?.cityActivities?.[evCityKey2]?.map(a => a.name)
-                    || CITY_ATTRACTIONS[toCity.name]?.map(a => a.name) || []);
+                    || (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
                 if (cityAttr2.length > 0 && freeHrs2 >= 1) {
                   const count2 = freeHrs2 >= 5 ? 3 : freeHrs2 >= 3 ? 2 : 1;
                   arrivalDay.stops.push({
@@ -553,7 +553,7 @@ function DeepPlanPageContent() {
                 const cityAttractions = dest.places && dest.places.length > 0
                   ? dest.places.map(p => p.name)
                   : (trip.deepPlanData?.cityActivities?.[evCityKey]?.map(a => a.name)
-                    || CITY_ATTRACTIONS[toCity.name]?.map(a => a.name) || []);
+                    || (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
 
                 if (cityAttractions.length > 0 && totalFreeHours >= 1) {
                   // Suggest activities: 1 for <3h, 2 for 3-5h, 3 for 5h+
@@ -651,8 +651,8 @@ function DeepPlanPageContent() {
         }
       }
 
-      // Priority 3: static CITY_ATTRACTIONS
-      const staticAttr = CITY_ATTRACTIONS[toCity.name];
+      // Priority 3: static CITY_ATTRACTIONS (check both name and parentCity)
+      const staticAttr = CITY_ATTRACTIONS[cityKey] || CITY_ATTRACTIONS[toCity.name];
       if (staticAttr) {
         for (const a of staticAttr) {
           if (!usedNames.has(a.name.toLowerCase())) {
@@ -849,7 +849,7 @@ function DeepPlanPageContent() {
             if (morningFreeHrs >= 2) {
               const depCityKey = fromCity.parentCity || fromCity.name;
               const fromCityAttrNames = trip.deepPlanData?.cityActivities?.[depCityKey]?.map(a => a.name)
-                || CITY_ATTRACTIONS[fromCity.name]?.map(a => a.name) || [];
+                || (CITY_ATTRACTIONS[depCityKey] || CITY_ATTRACTIONS[fromCity.name])?.map(a => a.name) || [];
               const morningCount = morningFreeHrs >= 4 ? 2 : 1;
               if (fromCityAttrNames.length > 0) {
                 returnDay.stops.push({
@@ -1020,23 +1020,25 @@ function DeepPlanPageContent() {
         orderedForScheduling = [...morningActs, ...anytimeActs, ...afternoonActs];
       }
 
-      // Fill morning block: startMin → lunchTime
+      // Fill morning block: startMin → lunchTime (skip if start is after lunch)
       const morningScheduled: Array<{ stop: DeepStop; time: number }> = [];
       let cursor = startMin;
       const scheduledIds = new Set<string>();
 
-      for (const s of orderedForScheduling) {
-        const dur = s.durationMin || 60;
-        if (cursor + dur > lunchTime) break;
-        morningScheduled.push({ stop: s, time: cursor });
-        scheduledIds.add(s.id);
-        cursor += dur + travelGap;
+      if (startMin < lunchTime) {
+        for (const s of orderedForScheduling) {
+          const dur = s.durationMin || 60;
+          if (cursor + dur > lunchTime) break;
+          morningScheduled.push({ stop: s, time: cursor });
+          scheduledIds.add(s.id);
+          cursor += dur + travelGap;
+        }
       }
 
-      // Fill afternoon block: afterLunch → dinnerTime - 30
+      // Fill afternoon block: afterLunch → dinnerTime - 30 (or startMin if starting after lunch)
       const remainingForAfternoon = orderedForScheduling.filter(s => !scheduledIds.has(s.id));
       const afternoonScheduled: Array<{ stop: DeepStop; time: number }> = [];
-      cursor = afterLunch;
+      cursor = startMin >= lunchTime ? startMin : afterLunch;
       const afternoonEnd = dinnerTime - 30;
 
       for (const s of remainingForAfternoon) {
@@ -1053,8 +1055,9 @@ function DeepPlanPageContent() {
       const lunchStop = day.stops.find(s => s.mealType === 'lunch');
       const dinnerStop = day.stops.find(s => s.mealType === 'dinner');
 
-      // Breakfast
-      if (breakfastStop) newStops.push({ ...breakfastStop, time: formatTime24(startMin - 60) });
+      // Breakfast (clamp: no earlier than 6 AM, no later than start time)
+      const breakfastMin = Math.max(6 * 60, startMin - 60);
+      if (breakfastStop) newStops.push({ ...breakfastStop, time: formatTime24(breakfastMin) });
 
       // Leave hotel
       if (hotelLeave) newStops.push({ ...hotelLeave, time: formatTime24(startMin) });
@@ -1064,8 +1067,8 @@ function DeepPlanPageContent() {
         newStops.push({ ...stop, time: formatTime24(time) });
       }
 
-      // Lunch
-      if (lunchStop) newStops.push({ ...lunchStop, time: formatTime24(lunchTime) });
+      // Lunch (skip if starting after lunch time)
+      if (lunchStop && startMin < lunchTime) newStops.push({ ...lunchStop, time: formatTime24(lunchTime) });
 
       // Afternoon activities
       for (const { stop, time } of afternoonScheduled) {

@@ -396,6 +396,42 @@ function RoutePageContent() {
         // Persist resolved airport info on the transport leg for reload
         trip.updateTransportLeg(leg.id, { resolvedAirports: resolvedInfo });
 
+        // Same airport check: if from/to resolve to the same code, auto-select drive
+        if (resolvedFrom && resolvedTo && resolvedFrom === resolvedTo) {
+          const driveFrom = fromC.fullName || `${fromC.parentCity || fromC.name}, ${fromC.country || 'India'}`;
+          const driveTo = toC.fullName || `${toC.parentCity || toC.name}, ${toC.country || 'India'}`;
+          const legId = leg.id;
+          const fStation = fromC.parentCity || fromC.name || '';
+          const tStation = toC.parentCity || toC.name || '';
+          // Fetch drive directions for this short-distance leg
+          getDirections(driveFrom, driveTo, 'driving').then(driveResult => {
+            if (driveResult) {
+              const distKm = parseFloat(driveResult.distance.replace(/[^\d.]/g, '')) || 0;
+              const cabCost = Math.round(distKm * 18);
+              trip.updateTransportLeg(legId, {
+                type: 'drive',
+                selectedFlight: null,
+                selectedTrain: {
+                  id: `drive-auto-${Date.now()}`, operator: 'Hire Cab', trainName: 'Hire Cab', trainNumber: '',
+                  departure: '', arrival: '', duration: driveResult.duration, stops: 'Direct',
+                  fromStation: fStation, toStation: tStation,
+                  price: cabCost, color: '#f59e0b',
+                },
+                duration: driveResult.duration, distance: driveResult.distance,
+                departureTime: null, arrivalTime: null,
+              });
+            } else {
+              // Directions failed — still set as drive with no details
+              trip.updateTransportLeg(legId, { type: 'drive', selectedFlight: null, selectedTrain: null, duration: '~', distance: '~', departureTime: null, arrivalTime: null });
+            }
+          }).catch(() => {
+            trip.updateTransportLeg(legId, { type: 'drive', selectedFlight: null, selectedTrain: null, duration: '~', distance: '~', departureTime: null, arrivalTime: null });
+          });
+          pendingCountRef.current--;
+          if (pendingCountRef.current <= 0) { autoSelectLoadingRef.current = false; setAutoSelectLoading(false); }
+          return;
+        }
+
         // Cache flights for the modal
         if (flights.length > 0) flightCacheRef.current[i] = flights;
 
@@ -1225,7 +1261,10 @@ function RoutePageContent() {
                             if (leg.selectedFlight && info) {
                               const fCity = info.fromCity || fromCity?.parentCity || fromCity?.name || info.fromCode;
                               const tCity = info.toCity || toCity?.parentCity || toCity?.name || info.toCode;
-                              routeDisplay = `${fCity} (${info.fromCode}) - ${tCity} (${info.toCode})`;
+                              // If same airport (e.g., GOI-GOI), show city names only
+                              routeDisplay = info.fromCode === info.toCode
+                                ? `${fromCity?.parentCity || fromCity?.name || fCity} - ${toCity?.parentCity || toCity?.name || tCity}`
+                                : `${fCity} (${info.fromCode}) - ${tCity} (${info.toCode})`;
                             } else if (leg.selectedFlight) {
                               // Fallback: extract airport codes from saved route (e.g., "BOM-NRT")
                               const route = leg.selectedFlight.route || '';
