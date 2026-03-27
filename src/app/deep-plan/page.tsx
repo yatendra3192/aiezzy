@@ -311,6 +311,17 @@ function DeepPlanPageContent() {
     });
   }, [trip.fromAddress, trip.destinations, trip.transportLegs]);
 
+  // Detect local stay (all destinations in same city as origin)
+  const isLocalStay = useMemo(() => {
+    if (trip.destinations.length === 0) return false;
+    const originNames = [trip.from.parentCity, trip.from.name].filter(Boolean).map(n => n!.toLowerCase());
+    const addrLower = (trip.from.fullName || trip.fromAddress || '').toLowerCase();
+    return trip.destinations.every(d => {
+      const dNames = [d.city.parentCity, d.city.name].filter(Boolean).map(n => n!.toLowerCase());
+      return dNames.some(dn => originNames.some(on => on === dn)) || dNames.some(dn => dn.length >= 3 && addrLower.includes(dn));
+    });
+  }, [trip.from.name, trip.from.parentCity, trip.from.fullName, trip.fromAddress, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Generate day-by-day itinerary from trip state ──────────────────────────
   const days: DayPlan[] = useMemo(() => {
     const result: DayPlan[] = [];
@@ -968,8 +979,16 @@ function DeepPlanPageContent() {
       }
     }
 
+    // For local stays, remove travel and departure days — only keep explore days
+    if (isLocalStay) {
+      const exploreDays = result.filter(d => d.type === 'explore');
+      // Re-number days
+      exploreDays.forEach((d, i) => { d.day = i + 1; });
+      return exploreDays;
+    }
+
     return result;
-  }, [trip, realTimes]);
+  }, [trip, realTimes, isLocalStay]);
 
   // Recalculate explore day times: re-run scheduling algorithm with new start time
   const adjustedDays: DayPlan[] = useMemo(() => {

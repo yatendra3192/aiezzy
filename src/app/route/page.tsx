@@ -304,6 +304,27 @@ function RoutePageContent() {
     }
   };
 
+  // Replace same-city transport legs with local transfers (runs on every trip change)
+  useEffect(() => {
+    if (trip.destinations.length === 0 || trip.transportLegs.length === 0) return;
+    trip.transportLegs.forEach((leg, i) => {
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+      const fNames = [fromC.parentCity, fromC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const tNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const fFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
+      const same = fNames.some(fn => tNames.some(tn => fn === tn)) || tNames.some(tn => tn.length >= 3 && fFull.includes(tn));
+      if (same && leg.selectedTrain?.operator !== 'Local Transfer') {
+        trip.updateTransportLeg(leg.id, {
+          type: 'drive', selectedFlight: null,
+          selectedTrain: { id: `local-${Date.now()}-${i}`, operator: 'Local Transfer', trainName: 'Local Transfer', trainNumber: '', departure: '', arrival: '', duration: '~15 min', stops: 'Direct', fromStation: fromC.parentCity || fromC.name || '', toStation: toC.parentCity || toC.name || '', price: 0, color: '#6b7280' },
+          duration: '~15 min', distance: '~', departureTime: null, arrivalTime: null,
+        });
+      }
+    });
+  }, [trip.transportLegs.map(l => `${l.id}-${l.selectedTrain?.operator || ''}`).join(','), trip.destinations.length, trip.fromAddress, trip.from.name, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (autoSelectedRef.current) return;
     // Don't auto-select until trip data is ready (destinations loaded)
@@ -329,13 +350,41 @@ function RoutePageContent() {
 
     // Auto-select best transport for each leg (flight OR train, whichever is cheaper/better)
     trip.transportLegs.forEach((leg, i) => {
-      if (leg.selectedFlight || leg.selectedTrain) return; // Already selected
-
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
       const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
       if (!fromC || !toC) return;
+
+      // Same city check FIRST: if from and to are the same city, force local transfer
+      // (runs even if already selected — replaces bad same-city flights/trains)
+      // Check multiple name fields since FROM might be a street address, not a city name
+      const fromNames = [fromC.parentCity, fromC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const toNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
+      // Also extract city from fullName or fromAddress (e.g., "42 Rue Jacob, Paris, France" → contains "paris")
+      const fromFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
+      const isSameCity = fromNames.some(fn => toNames.some(tn => fn === tn))
+        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn));
+      if (isSameCity) {
+        // Only replace if currently a flight/train (not already a local transfer)
+        if (leg.selectedTrain?.operator !== 'Local Transfer') {
+          trip.updateTransportLeg(leg.id, {
+            type: 'drive',
+            selectedFlight: null,
+            selectedTrain: {
+              id: `local-${Date.now()}-${i}`, operator: 'Local Transfer', trainName: 'Local Transfer', trainNumber: '',
+              departure: '', arrival: '', duration: '~15 min', stops: 'Direct',
+              fromStation: fromC.parentCity || fromC.name || '', toStation: toC.parentCity || toC.name || '',
+              price: 0, color: '#6b7280',
+            },
+            duration: '~15 min', distance: '~',
+            departureTime: null, arrivalTime: null,
+          });
+        }
+        return;
+      }
+
+      if (leg.selectedFlight || leg.selectedTrain) return; // Already selected
+
       // Use city names (not airport codes) so the API can do parallel nearby-airport search
-      // This finds flights even when the city's own airport has no direct routes
       let fc = fromC.name || fromC.fullName || findAirportCode(fromC);
       let tc = toC.name || toC.fullName || findAirportCode(toC);
 
@@ -343,12 +392,11 @@ function RoutePageContent() {
       // reuse the resolved airport from leg 0 so we get the same airport
       const isReturnLeg = trip.tripType === 'roundTrip' && i === trip.transportLegs.length - 1 && i > 0;
       if (isReturnLeg && resolvedAirportsRef.current[0]) {
-        // Return: swap the outgoing leg's airports (AMS→AMD instead of re-resolving Amsterdam→Mumbai)
-        tc = resolvedAirportsRef.current[0].fromCode; // Origin airport (e.g., AMD)
+        tc = resolvedAirportsRef.current[0].fromCode;
       }
       // For any leg, if previous leg resolved the departure city's airport, reuse it
       if (i > 0 && resolvedAirportsRef.current[i - 1]?.toCode) {
-        fc = resolvedAirportsRef.current[i - 1].toCode; // Previous leg's arrival = this leg's departure
+        fc = resolvedAirportsRef.current[i - 1].toCode;
       }
 
       const fromName = fromC.name || fromC.fullName || fc;
@@ -656,20 +704,42 @@ function RoutePageContent() {
   };
 
   // Build route stops
+  // Detect if all destinations are in the same city as the origin (local stay)
+  const isLocalStay = useMemo(() => {
+    if (trip.destinations.length === 0) return false;
+    const originNames = [trip.from.parentCity, trip.from.name].filter(Boolean).map(n => n!.toLowerCase());
+    const originFull = (trip.from.fullName || trip.fromAddress || '').toLowerCase();
+    const addrLower = (trip.fromAddress || '').toLowerCase();
+    return trip.destinations.every(d => {
+      const dNames = [d.city.parentCity, d.city.name].filter(Boolean).map(n => n!.toLowerCase());
+      // Check 1: origin city names match destination city names
+      if (dNames.some(dn => originNames.some(on => on === dn))) return true;
+      // Check 2: destination city name found in origin's fullName or fromAddress
+      if (dNames.some(dn => dn.length >= 3 && (originFull.includes(dn) || addrLower.includes(dn)))) return true;
+      // Check 3: origin city name found in destination's fullName
+      const dFull = (d.city.fullName || '').toLowerCase();
+      if (originNames.some(on => on.length >= 3 && dFull.includes(on))) return true;
+      return false;
+    });
+  }, [trip.from.name, trip.from.parentCity, trip.from.fullName, trip.fromAddress, trip.destinations.map(d => `${d.city.name}-${d.city.parentCity || ''}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const stops = useMemo(() => {
     const result: Array<{
       number: number; name: string; type: 'home' | 'destination';
       explore?: string; destIndex?: number; nights?: number;
     }> = [];
-    result.push({ number: 1, name: trip.fromAddress, type: 'home' });
+    // For local stays, skip the home stop — just show destinations
+    if (!isLocalStay) {
+      result.push({ number: 1, name: trip.fromAddress, type: 'home' });
+    }
     trip.destinations.forEach((dest, i) => {
-      result.push({ number: i + 2, name: dest.city.name, type: 'destination', explore: dest.city.name, destIndex: i, nights: dest.nights });
+      result.push({ number: result.length + 1, name: dest.city.name, type: 'destination', explore: dest.city.name, destIndex: i, nights: dest.nights });
     });
-    if (trip.tripType === 'roundTrip') {
+    if (trip.tripType === 'roundTrip' && !isLocalStay) {
       result.push({ number: result.length + 1, name: trip.fromAddress, type: 'home' });
     }
     return result;
-  }, [trip.fromAddress, trip.destinations, trip.tripType]);
+  }, [trip.fromAddress, trip.destinations, trip.tripType, isLocalStay]);
 
   // Cost calc
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
@@ -832,11 +902,30 @@ function RoutePageContent() {
             </div>
           </div>
 
+          {/* Local stay banner — prompt to go to Deep Plan */}
+          {isLocalStay && trip.destinations.some(d => d.selectedHotel) && (
+            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-display font-bold text-emerald-800">Local Stay — no transport needed</p>
+                <p className="text-[11px] text-emerald-600 font-body mt-0.5">Your hotel is selected. Plan your day-by-day activities and meals.</p>
+              </div>
+              <button
+                onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
+                className="px-4 py-2 bg-emerald-600 text-white font-display font-bold text-sm rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
+              >
+                Deep Plan →
+              </button>
+            </div>
+          )}
+
           {/* Main content: timeline + sidebar on desktop */}
           <div className="md:grid md:grid-cols-[1fr_260px] md:gap-8">
           {/* Timeline */}
           <div>
             {stops.map((stop, i) => {
+              // Skip home stops and their transport for local stays (same-city trips)
+              if (isLocalStay && stop.type === 'home') return null;
+
               const hasTransport = i < stops.length - 1;
               // For round trips, ensure return leg exists
               let leg = hasTransport && i < trip.transportLegs.length ? trip.transportLegs[i] : null;
@@ -960,9 +1049,10 @@ function RoutePageContent() {
                           <p className="text-[10px] text-amber-600 font-body mt-0.5">{msg}</p>
                         );
                       })()}
-                      {/* Arrival hub → hotel distance (airport or station) */}
-                      {stop.type === 'destination' && (() => {
+                      {/* Arrival hub → hotel distance (airport or station) — skip for local stays/transfers */}
+                      {stop.type === 'destination' && !isLocalStay && (() => {
                         const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
+                        if (prevLeg?.selectedTrain?.operator === 'Local Transfer') return null;
                         const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
                         const destCity = dest?.city;
                         const hotelName = dest?.selectedHotel?.name;
@@ -1238,7 +1328,7 @@ function RoutePageContent() {
                   </div>
 
                   {/* Transport leg */}
-                  {hasTransport && leg && (
+                  {hasTransport && leg && !isLocalStay && (
                     <div className="flex items-start gap-4 ml-0">
                       <div className="flex flex-col items-center w-8">
                         <div className="w-px flex-1 border-l-2 border-dashed border-border-subtle min-h-[48px]" />
@@ -1405,8 +1495,8 @@ function RoutePageContent() {
                             </div>
                           </div>
                         )}
-                        {/* Station distance info in transport section */}
-                        {leg.selectedTrain && (() => {
+                        {/* Station distance info in transport section (skip for local transfers) */}
+                        {leg.selectedTrain && leg.selectedTrain.operator !== 'Local Transfer' && (() => {
                           const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
                           const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
                           const depCity = i === 0 ? trip.from : depDest?.city;

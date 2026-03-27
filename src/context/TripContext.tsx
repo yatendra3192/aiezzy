@@ -534,10 +534,20 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     // Extract _bookingDocs and _deepPlanData from from_city JSONB
     const { _bookingDocs, _deepPlanData, ...fromCity } = data.from || {};
 
+    // If from city name is empty but address exists, extract city name from address
+    let resolvedFrom = fromCity.name ? fromCity : CITIES[0];
+    const loadedFromAddress = data.fromAddress || '';
+    if (!fromCity.name && loadedFromAddress) {
+      const parts = loadedFromAddress.split(',').map((s: string) => s.trim());
+      // Try to find a known city in the address parts, or use second-to-last part as city
+      const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts.length >= 2 ? parts[parts.length - 1] : parts[0];
+      resolvedFrom = { name: cityPart, country: parts[parts.length - 1] || '', fullName: loadedFromAddress, parentCity: cityPart };
+    }
+
     setState({
       tripId: data.tripId,
-      from: fromCity.name ? fromCity : CITIES[0],
-      fromAddress: data.fromAddress || '',
+      from: resolvedFrom,
+      fromAddress: loadedFromAddress,
       destinations: loadedDests,
       userPlaces: reconstructedPlaces,
       transportLegs: (data.transportLegs || []).map((l: any) => {
