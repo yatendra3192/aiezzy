@@ -375,7 +375,7 @@ function DeepPlanPageContent() {
         const isFirstLeg = destIdx === 0;
         // Bug fix #3: Use short city name for home, not full address
         const fromCityName = fromCity.parentCity || fromCity.name;
-        const startName = isFirstLeg ? (fromCityName || trip.fromAddress) : (prevDest?.selectedHotel?.name || `Stay in ${fromCityName}`);
+        const startName = isFirstLeg ? (trip.fromAddress || fromCityName) : (prevDest?.selectedHotel?.name || `Stay in ${fromCityName}`);
         const startType = isFirstLeg ? 'home' as const : 'hotel' as const;
 
         // Travel to terminal: use real Google Directions data if available
@@ -1154,17 +1154,26 @@ function DeepPlanPageContent() {
       // For each stop with walk transport, find the next non-meal stop
       for (let j = 0; j < day.stops.length; j++) {
         const from = day.stops[j];
-        if (!from.transport || from.transport.icon !== 'walk' || from.mealType) continue;
+        if (!from.transport || from.mealType) continue;
+        // Only process walk/drive segments (not flight/train/bus with legIndex)
+        if (from.transport.icon !== 'walk' && from.transport.icon !== 'drive' && from.transport.icon !== 'publicTransit') continue;
         // Skip flight/train legs (they have legIndex)
         if (from.legIndex !== undefined) continue;
         // Find next non-meal stop
         const to = day.stops.slice(j + 1).find(s => !s.mealType);
         if (!to) continue;
-        const key = `${from.name}→${to.name}@${day.city}`;
+        // For travel/departure days, stops may be in different cities
+        // Use departureCity for pre-flight stops, day.city for post-flight stops
+        const fromCity = day.departureCity || day.city;
+        const toCity = day.city;
+        // If stop is an airport/station, use its full name directly (not "Mumbai Airport, Amsterdam")
+        const fromIsHub = from.type === 'airport' || from.type === 'station' || from.type === 'home';
+        const toIsHub = to.type === 'airport' || to.type === 'station' || to.type === 'home';
+        const key = `${from.name}→${to.name}`;
         if (travelFetchedRef.current[key]) continue;
         travelFetchedRef.current[key] = true;
-        const fromQ = `${from.name}, ${day.city}`;
-        const toQ = `${to.name}, ${day.city}`;
+        const fromQ = fromIsHub ? from.name : `${from.name}, ${fromCity}`;
+        const toQ = toIsHub ? to.name : `${to.name}, ${toCity}`;
         // Fetch all 3 modes in parallel
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
           getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
@@ -1696,7 +1705,7 @@ function DeepPlanPageContent() {
                           // Look up real travel times between this stop and next non-meal stop
                           const nextStopIdx = day.stops.findIndex((s, idx) => idx > si && !s.mealType);
                           const nextStop = nextStopIdx >= 0 ? day.stops[nextStopIdx] : null;
-                          const travelKey = nextStop ? `${stop.name}→${nextStop.name}@${day.city}` : '';
+                          const travelKey = nextStop ? `${stop.name}→${nextStop.name}` : '';
                           const travelData = travelKey ? travelBetween[travelKey] : null;
                           const selMode = travelData?.selected || 'walk';
                           const selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];

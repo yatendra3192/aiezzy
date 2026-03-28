@@ -325,6 +325,15 @@ function RoutePageContent() {
     });
   }, [trip.transportLegs.map(l => `${l.id}-${l.selectedTrain?.operator || ''}`).join(','), trip.destinations.length, trip.fromAddress, trip.from.name, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset auto-select when trip changes
+  const prevTripIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (trip.tripId && trip.tripId !== prevTripIdRef.current) {
+      prevTripIdRef.current = trip.tripId;
+      autoSelectedRef.current = false;
+    }
+  }, [trip.tripId]);
+
   useEffect(() => {
     if (autoSelectedRef.current) return;
     // Don't auto-select until trip data is ready (destinations loaded AND from city resolved)
