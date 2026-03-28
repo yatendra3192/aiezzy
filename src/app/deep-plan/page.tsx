@@ -1147,17 +1147,19 @@ function DeepPlanPageContent() {
     return { fromCity, toCity };
   };
 
-  // Fetch real travel times (all 3 modes) between consecutive attractions on explore days
+  // Fetch real travel times (all 3 modes) between stops with walk transport on ALL day types
   useEffect(() => {
     if (adjustedDays.length === 0) return;
     for (const day of adjustedDays) {
-      if (day.type !== 'explore') continue;
-      const attractions = day.stops.filter(s => s.type === 'attraction' && !s.mealType);
-      const hotelStop = day.stops.find(s => s.type === 'hotel' && s.transport?.icon === 'walk');
-      const allStops = hotelStop ? [hotelStop, ...attractions] : attractions;
-      for (let j = 0; j < allStops.length - 1; j++) {
-        const from = allStops[j];
-        const to = allStops[j + 1];
+      // For each stop with walk transport, find the next non-meal stop
+      for (let j = 0; j < day.stops.length; j++) {
+        const from = day.stops[j];
+        if (!from.transport || from.transport.icon !== 'walk' || from.mealType) continue;
+        // Skip flight/train legs (they have legIndex)
+        if (from.legIndex !== undefined) continue;
+        // Find next non-meal stop
+        const to = day.stops.slice(j + 1).find(s => !s.mealType);
+        if (!to) continue;
         const key = `${from.name}→${to.name}@${day.city}`;
         if (travelFetchedRef.current[key]) continue;
         travelFetchedRef.current[key] = true;
@@ -1240,7 +1242,9 @@ function DeepPlanPageContent() {
   };
 
   // Drag-to-reorder handlers for explore day activities
-  const handleDragStart = (dayNum: number, stopId: string) => {
+  const handleDragStart = (e: React.DragEvent, dayNum: number, stopId: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', stopId);
     setDragState({ dayNum, stopId });
   };
   const handleDragOver = (e: React.DragEvent, stopId: string) => {
@@ -1458,7 +1462,7 @@ function DeepPlanPageContent() {
                         key={stop.id}
                         className={`relative${isDraggableActivity ? ' transition-all' : ''}${dragOverId === stop.id ? ' bg-accent-cyan/5 rounded-lg' : ''}`}
                         draggable={isDraggableActivity}
-                        onDragStart={isDraggableActivity ? () => handleDragStart(day.day, stop.id) : undefined}
+                        onDragStart={isDraggableActivity ? (e) => handleDragStart(e, day.day, stop.id) : undefined}
                         onDragOver={isDraggableActivity ? (e) => handleDragOver(e, stop.id) : undefined}
                         onDragLeave={isDraggableActivity ? handleDragLeave : undefined}
                         onDrop={isDraggableActivity ? (e) => handleDrop(e, stop.id, day.day) : undefined}
@@ -1689,16 +1693,17 @@ function DeepPlanPageContent() {
 
                           // Default: simple transport line (drive, walk, etc.)
                           const hasDurationInfo = stop.transport.duration && stop.transport.distance;
-                          // Look up real travel times between this stop and next attraction
-                          const nextAttrIdx = day.stops.findIndex((s, idx) => idx > si && s.type === 'attraction' && !s.mealType);
-                          const nextAttr = nextAttrIdx >= 0 ? day.stops[nextAttrIdx] : null;
-                          const travelKey = nextAttr ? `${stop.name}→${nextAttr.name}@${day.city}` : '';
+                          // Look up real travel times between this stop and next non-meal stop
+                          const nextStopIdx = day.stops.findIndex((s, idx) => idx > si && !s.mealType);
+                          const nextStop = nextStopIdx >= 0 ? day.stops[nextStopIdx] : null;
+                          const travelKey = nextStop ? `${stop.name}→${nextStop.name}@${day.city}` : '';
                           const travelData = travelKey ? travelBetween[travelKey] : null;
                           const selMode = travelData?.selected || 'walk';
                           const selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
                           const isDropdownOpen = openTravelDropdown === travelKey;
-                          const gmapsUrl = nextAttr ? `https://www.google.com/maps/dir/${encodeURIComponent(stop.name + ', ' + day.city)}/${encodeURIComponent(nextAttr.name + ', ' + day.city)}` : '';
+                          const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
+                          const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(stop.name + ', ' + day.city)}/${encodeURIComponent(nextStop.name + ', ' + day.city)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
 
                           return (
                             <div className="pl-4 py-1">
@@ -1720,20 +1725,28 @@ function DeepPlanPageContent() {
                                   </button>
                                 ) : (
                                   <div className="relative">
-                                    <button
-                                      onClick={() => setOpenTravelDropdown(isDropdownOpen ? null : travelKey)}
-                                      className="print-hide flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
-                                    >
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                        <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
-                                      </svg>
-                                      {selData ? (
-                                        <span className="text-xs font-mono">{selData.duration} &middot; {selData.distance}</span>
-                                      ) : (
-                                        <span className="text-xs font-body text-text-muted">Walk</span>
+                                    <div className="print-hide flex items-center gap-2 text-text-secondary">
+                                      <button
+                                        onClick={() => setOpenTravelDropdown(isDropdownOpen ? null : travelKey)}
+                                        className="flex items-center gap-2 hover:text-accent-cyan transition-colors group"
+                                      >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                                          <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
+                                        </svg>
+                                        {selData ? (
+                                          <span className="text-xs font-mono">{selData.duration} &middot; {selData.distance}</span>
+                                        ) : (
+                                          <span className="text-xs font-body text-text-muted">Walk</span>
+                                        )}
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
+                                      </button>
+                                      {gmapsUrl && (
+                                        <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
+                                          className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors">
+                                          Directions
+                                        </a>
                                       )}
-                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
-                                    </button>
+                                    </div>
                                     {/* Directions dropdown */}
                                     {isDropdownOpen && travelData && (
                                       <div className="absolute left-0 top-full mt-1 z-20 bg-bg-surface border border-border-subtle rounded-lg shadow-lg p-2 min-w-[180px] space-y-1">
@@ -1747,12 +1760,6 @@ function DeepPlanPageContent() {
                                             </button>
                                           );
                                         })}
-                                        <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
-                                          className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-text-muted hover:text-accent-cyan hover:bg-bg-card transition-colors"
-                                          onClick={() => setOpenTravelDropdown(null)}>
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                                          Directions
-                                        </a>
                                       </div>
                                     )}
                                   </div>

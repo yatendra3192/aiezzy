@@ -454,18 +454,18 @@ function RoutePageContent() {
           // Fetch drive directions for this short-distance leg
           getDirections(driveFrom, driveTo, 'driving').then(driveResult => {
             if (driveResult) {
-              const distKm = parseFloat(driveResult.distance.replace(/[^\d.]/g, '')) || 0;
+              const distKm = parseFloat(driveResult.distanceText.replace(/[^\d.]/g, '')) || 0;
               const cabCost = Math.round(distKm * 18);
               trip.updateTransportLeg(legId, {
                 type: 'drive',
                 selectedFlight: null,
                 selectedTrain: {
                   id: `drive-auto-${Date.now()}`, operator: 'Hire Cab', trainName: 'Hire Cab', trainNumber: '',
-                  departure: '', arrival: '', duration: driveResult.duration, stops: 'Direct',
+                  departure: '', arrival: '', duration: driveResult.durationText, stops: 'Direct',
                   fromStation: fStation, toStation: tStation,
                   price: cabCost, color: '#f59e0b',
                 },
-                duration: driveResult.duration, distance: driveResult.distance,
+                duration: driveResult.durationText, distance: driveResult.distanceText,
                 departureTime: null, arrivalTime: null,
               });
             } else {
