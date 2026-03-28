@@ -327,8 +327,10 @@ function RoutePageContent() {
 
   useEffect(() => {
     if (autoSelectedRef.current) return;
-    // Don't auto-select until trip data is ready (destinations loaded)
+    // Don't auto-select until trip data is ready (destinations loaded AND from city resolved)
     if (trip.destinations.length === 0 || trip.transportLegs.length === 0) return;
+    // Wait for from city to be loaded (not default empty)
+    if (!trip.from.name && !trip.fromAddress) return;
     autoSelectedRef.current = true;
 
     // Ensure return leg exists for round trips
