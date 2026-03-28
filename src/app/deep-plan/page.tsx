@@ -1002,6 +1002,46 @@ function DeepPlanPageContent() {
   // Recalculate explore day times: re-run scheduling algorithm with new start time
   const adjustedDays: DayPlan[] = useMemo(() => {
     return days.map(day => {
+      // Recalculate leave times on travel/departure days when user changes travel mode
+      if (day.type === 'travel' || day.type === 'departure') {
+        let changed = false;
+        const newStops = day.stops.map((stop, si) => {
+          // Find stops with transport that have travelBetween data
+          if (!stop.transport || stop.mealType) return stop;
+          const nextStop = day.stops.slice(si + 1).find(s => !s.mealType);
+          if (!nextStop) return stop;
+          const key = `${stop.name}→${nextStop.name}`;
+          const td = travelBetween[key];
+          if (!td) return stop;
+          const sel = td[td.selected as 'walk' | 'transit' | 'drive'];
+          if (!sel) return stop;
+          const newDur = sel.duration;
+          const newDist = sel.distance;
+          // Update transport duration/distance
+          if (stop.transport.duration !== newDur || stop.transport.distance !== newDist) {
+            changed = true;
+            // Recalculate leave time: find the next airport/station stop's check-in time
+            let newLeaveTime = stop.time;
+            if (stop.note?.includes('Leave by') && nextStop.time) {
+              const nextMin = parseTime(nextStop.time);
+              const travelMin = parseDurationMinutes(newDur) || 20;
+              newLeaveTime = formatTime24(nextMin - travelMin);
+            }
+            return {
+              ...stop,
+              time: newLeaveTime,
+              transport: { ...stop.transport, duration: newDur, distance: newDist },
+              note: newLeaveTime && stop.note?.includes('Leave by')
+                ? `Leave by ${formatTime12(parseTime(newLeaveTime))} to reach on time`
+                : stop.note,
+            };
+          }
+          return stop;
+        });
+        if (changed) return { ...day, stops: newStops };
+        return day;
+      }
+
       if (day.type !== 'explore') return day;
       const startTime = dayStartTimes[day.day] || '09:00';
       const startMin = parseTime(startTime);
@@ -1132,7 +1172,7 @@ function DeepPlanPageContent() {
 
       return { ...day, stops: newStops };
     });
-  }, [days, dayStartTimes, customActivities, activityOrder]);
+  }, [days, dayStartTimes, customActivities, activityOrder, travelBetween]);
 
   const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
   const summaryTransportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
