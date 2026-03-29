@@ -522,7 +522,7 @@ function DeepPlanPageContent() {
                     arrivalDay.stops.push({
                       id: `dp${sc++}`, name: attr, type: 'attraction',
                       time: formatTime24(freeStart2 + 30 + ei * 90),
-                      transport: null,
+                      transport: ei < count2 - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
                     });
                   });
                 }
@@ -888,7 +888,7 @@ function DeepPlanPageContent() {
                   returnDay.stops.push({
                     id: `dp${sc++}`, name: attr, type: 'attraction',
                     time: formatTime24(9 * 60 + 30 + mi * 90),
-                    transport: null,
+                    transport: mi < morningCount - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
                   });
                 });
               }
