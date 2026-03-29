@@ -71,7 +71,7 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. Searches "city" appended first to avoid location-biased results (e.g., "Barcelona city" → Spain, not "North Barcelona" apartment in Mumbai). Returns all large airports within 1000km (no cap).
 - `/api/trips` — CRUD with JSONB embedding for places/additionalHotels.
 - `/api/weather` — Open-Meteo API (free). 1-hour cache. Only works ≤16 days out.
-- `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). System prompt for travel expertise.
+- `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). Extracts origin city, departure date, travelers (adults/children/infants), and trip type from user prompt. System prompt for travel expertise.
 - `/api/ai/extract-booking` — GPT-4.1-mini vision extracts hotel booking details (name, address, price, nights) from PDF/image.
 - `/api/ai/extract-transport` — GPT-4.1-mini vision extracts flight/train details (carrier, number, times, airports/stations, IATA codes, duration, passengers, total price). Timezone-aware duration.
 - `/api/ai/extract-trip` — Bulk extraction: all uploaded files → complete trip structure (origin, destinations, hotels, transport segments, travelers). Returns `fileDescriptions` for document mapping.
@@ -92,7 +92,9 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 ### Route Page (`/route`) — Key Behaviors
 
-- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster.
+- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster. Waits for `trip.from.name` to load before running (prevents empty city → no results). Resets via `prevTripIdRef` when trip changes. **Same-airport detection:** If from/to resolve to the same airport code (e.g., Goa intra-city = GOI), auto-selects drive/cab instead of flights.
+- **Local stay detection:** `isLocalStay` flag detects when all destinations are in the same city as origin (checks `parentCity`, `name`, `fullName`, `fromAddress`). Hides home stops, transport legs, and arrival info. Shows green "Local Stay — no transport needed" banner with Deep Plan shortcut. Deep plan filters out travel/departure days for local stays (only explore days).
+- **Same-city transport:** Dedicated `useEffect` replaces same-city flight/train selections with "Local Transfer" (~15 min). Runs on every trip change, checks both city names and `fromAddress` contents.
 - **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, flight/train/hotel IDs+prices, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). Must include selection IDs in dependency array — otherwise replacing a flight (same count) won't trigger save.
 - **Reload stability:** `tripStableRef` prevents date/nights effects from re-fetching on initial load. Set after 500ms for ALL arrival paths (plan page, reload, new trip).
 - **Manual refresh:** "Update Flights & Trains" button appears when date/nights change. No auto-refetch — user clicks when ready. Also fetches for empty legs (new return leg after one-way→round-trip toggle).
@@ -101,7 +103,9 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 - **Hotel modal:** Left sidebar with rating/price/amenity filters, list/grid toggle, Google Places photos, deal badges, Maps + Booking.com links with dates. "Add custom stay" with Google Places autocomplete for address + coordinates. Upload booking PDF/screenshot → GPT extracts address, price, nights.
 - **Transport modal:** `TransportCompareModal` — tabs for Flights, Trains, Bus, Drive, Walk, Cycle, Boat, Tram. Dual airport dropdowns (departure + arrival), layover info from Amadeus segments, per-person + total price display. "Add your own flight/train" with manual entry. Upload ticket → GPT extracts all fields. Price field is TOTAL for all passengers — handlers divide by trip's passenger formula.
 - **Bus selection:** Bus routes come from `/api/trains` `allTransit` filtered for BUS vehicles. Selected via `updateTransportLeg()` storing as `selectedTrain` with `type: 'bus'`. **Critical:** Must use single `updateTransportLeg()` call — NOT `selectTrain()` then `changeTransportType()` sequentially, because `changeTransportType()` clears `selectedTrain` to null.
+- **Drive/Cab selection:** Drive tab shows two options: Self Drive (fuel ~₹8/km) + Hire Cab (~₹18/km). Selected via `updateTransportLeg()` storing as `selectedTrain` with `type: 'drive'`. Drive info (duration + distance) passed from modal to route page.
 - **Price N/A:** When transport price is 0 or unavailable, display "Price N/A" instead of ₹0. Check `price > 0` before rendering price in route page and transport modal.
+- **Color-coded cards:** Flight (blue), Train (amber), Bus (orange), Drive/Cab (slate), Hotel (rose) — each has colored left border, tinted background, and matching SVG icon. Same style on both route and deep plan pages.
 - **Booking doc viewer:** Full-screen modal for viewing uploaded PDFs (iframe) and images. "Booking" links on cards matched by `docType` (hotel/transport) and city names. Transport docs require BOTH from AND to cities to match. Train cards fall back to station names when city names don't match (Brussels vs Bruges).
 - **Hub-to-hotel distances:** Separate `arr-{di}` (arrival) and `dep-{di}` (departure) distances because airports can differ.
 - **Hotel room calc:** `Math.ceil((adults + children) / 2)` rooms, displayed as "₹X/night × N × R rooms".
@@ -118,6 +122,8 @@ Day type badges (Travel/Explore/Departure), daily budget, weather per day, edita
 
 **Overnight flight handling:** Detects flights >12h or next-day arrivals. Splits into departure day + optional "In Transit" days + arrival day. Each calendar date gets its own day card. No cramming overnight arrivals into departure day.
 
+**Inter-activity travel times:** Real walk/transit/drive times fetched via Google Directions between consecutive stops on all day types. Dropdown lets user switch modes; "Directions" link opens Google Maps with selected mode. On travel/departure days, changing mode recalculates "Leave by X to reach on time" note.
+
 **Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, and day themes stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
 
 ### Key Patterns
@@ -132,6 +138,8 @@ Day type badges (Travel/Explore/Departure), daily budget, weather per day, edita
 - **Hotel `address`/`lat`/`lng`:** Optional fields on `Hotel` interface. Custom stays and Google hotels store address for accurate distance calculations via Google Directions.
 - **City name display:** Always use `city.parentCity || city.name` for display — never parse `fullName` by commas (e.g., "Jaipur, Rajasthan, India" would give "Rajasthan" not "Jaipur").
 - **Transport type atomicity:** `changeTransportType()` clears both `selectedFlight` and `selectedTrain`. When selecting transport while also changing type (e.g., bus), use `updateTransportLeg()` with all fields in one call.
+- **OpenAI Responses API:** PDF-handling endpoints (`extract-trip`, `extract-booking`, `extract-transport`, `classify-doc`) use `/v1/responses` (not `/v1/chat/completions`). Content types: `input_text`, `input_file`, `input_image`. Response: `data.output[].content[].text`.
+- **From city on reload:** `loadTrip` extracts city name from `fromAddress` when `from_city.name` is empty (e.g., "42 Rue Jacob, Paris, France" → `parentCity: "Paris"`). Uses second-to-last comma-separated part.
 
 ### Styling
 

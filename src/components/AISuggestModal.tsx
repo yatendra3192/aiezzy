@@ -110,6 +110,8 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
       }
 
       onClose();
+      // Clear URL params to prevent old trip ID from persisting
+      router.replace('/plan');
     }, 50);
   };
 

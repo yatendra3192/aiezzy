@@ -487,8 +487,11 @@ function DeepPlanPageContent() {
             const hotelArriveMin2 = hotelArriveTime2 ? parseTime(hotelArriveTime2) : null;
             if (dest.nights > 0) {
               const stdCheckIn2 = 15 * 60;
+              const lateCheckIn2 = 21 * 60;
               const checkInNote2 = hotelArriveMin2 !== null
-                ? (hotelArriveMin2 < stdCheckIn2 ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage' : null)
+                ? (hotelArriveMin2 < stdCheckIn2 ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage'
+                  : hotelArriveMin2 >= lateCheckIn2 ? 'Late arrival — confirm late check-in with hotel and save their contact number'
+                  : null)
                 : null;
               arrivalDay.stops.push({
                 id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
@@ -550,10 +553,13 @@ function DeepPlanPageContent() {
             const hotelArriveTime = arrTime ? addMinutes(arrTime, fromArrTerminalMin) : null;
             const hotelArriveMin = hotelArriveTime ? parseTime(hotelArriveTime) : null;
             if (dest.nights > 0) {
-              // Check-in note
+              // Check-in note: early (<3PM), late (>9PM), or normal
               const stdCheckIn = 15 * 60; // 3:00 PM standard
+              const lateCheckIn = 21 * 60; // 9:00 PM
               const checkInNote = hotelArriveMin !== null
-                ? (hotelArriveMin < stdCheckIn ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage' : null)
+                ? (hotelArriveMin < stdCheckIn ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage'
+                  : hotelArriveMin >= lateCheckIn ? 'Late arrival — confirm late check-in with hotel and save their contact number'
+                  : null)
                 : null;
               travelDay.stops.push({
                 id: `dp${sc++}`, name: dest.selectedHotel?.name || `Stay in ${toCity.name}`, type: 'hotel',
@@ -1005,40 +1011,57 @@ function DeepPlanPageContent() {
       // Recalculate leave times on travel/departure days when user changes travel mode
       if (day.type === 'travel' || day.type === 'departure') {
         let changed = false;
-        const newStops = day.stops.map((stop, si) => {
-          // Find stops with transport that have travelBetween data
-          if (!stop.transport || stop.mealType) return stop;
+        // Build map of updated durations for each stop→next pair
+        const updatedTransport: Record<number, { dur: string; dist: string; travelMin: number }> = {};
+        day.stops.forEach((stop, si) => {
+          if (!stop.transport || stop.mealType) return;
+          if (stop.legIndex !== undefined) return; // skip flight/train legs
           const nextStop = day.stops.slice(si + 1).find(s => !s.mealType);
-          if (!nextStop) return stop;
+          if (!nextStop) return;
           const key = `${stop.name}→${nextStop.name}`;
           const td = travelBetween[key];
-          if (!td) return stop;
+          if (!td) return;
           const sel = td[td.selected as 'walk' | 'transit' | 'drive'];
-          if (!sel) return stop;
-          const newDur = sel.duration;
-          const newDist = sel.distance;
-          // Update transport duration/distance
-          if (stop.transport.duration !== newDur || stop.transport.distance !== newDist) {
+          if (!sel) return;
+          if (stop.transport.duration !== sel.duration || stop.transport.distance !== sel.distance) {
             changed = true;
-            // Recalculate leave time: find the next airport/station stop's check-in time
-            let newLeaveTime = stop.time;
-            if (stop.note?.includes('Leave by') && nextStop.time) {
-              const nextMin = parseTime(nextStop.time);
-              const travelMin = parseDurationMinutes(newDur) || 20;
-              newLeaveTime = formatTime24(nextMin - travelMin);
+            updatedTransport[si] = { dur: sel.duration, dist: sel.distance, travelMin: parseDurationMinutes(sel.duration) || 20 };
+          }
+        });
+
+        if (changed) {
+          const newStops = [...day.stops];
+          // Apply updates in reverse order so index shifts don't matter
+          for (const siStr of Object.keys(updatedTransport).sort((a, b) => Number(b) - Number(a))) {
+            const si = Number(siStr);
+            const { dur, dist, travelMin } = updatedTransport[si];
+            const stop = newStops[si];
+            const nextIdx = newStops.findIndex((s, idx) => idx > si && !s.mealType);
+
+            // Update transport on this stop
+            let newTime = stop.time;
+            if (stop.note?.includes('Leave by') && nextIdx >= 0 && newStops[nextIdx].time) {
+              // Recalculate leave time from next stop's fixed time
+              newTime = formatTime24(parseTime(newStops[nextIdx].time!) - travelMin);
             }
-            return {
+            newStops[si] = {
               ...stop,
-              time: newLeaveTime,
-              transport: { ...stop.transport, duration: newDur, distance: newDist },
-              note: newLeaveTime && stop.note?.includes('Leave by')
-                ? `Leave by ${formatTime12(parseTime(newLeaveTime))} to reach on time`
+              time: newTime,
+              transport: { ...stop.transport!, duration: dur, distance: dist },
+              note: stop.note?.includes('Leave by') && newTime
+                ? `Leave by ${formatTime12(parseTime(newTime))} to reach on time`
                 : stop.note,
             };
+
+            // Update next stop's arrival time (if it doesn't have a "Leave by" note — i.e., it's a destination/hotel)
+            if (nextIdx >= 0 && !newStops[nextIdx].note?.includes('Leave by') && stop.time) {
+              const departMin = parseTime(stop.time);
+              const arrivalMin = departMin + travelMin;
+              newStops[nextIdx] = { ...newStops[nextIdx], time: formatTime24(arrivalMin) };
+            }
           }
-          return stop;
-        });
-        if (changed) return { ...day, stops: newStops };
+          return { ...day, stops: newStops };
+        }
         return day;
       }
 
@@ -1074,7 +1097,15 @@ function DeepPlanPageContent() {
       const lunchTime = 12 * 60 + 30;
       const afterLunch = 13 * 60 + 15;
       const dinnerTime = 19 * 60;
-      const travelGap = 30;
+      const defaultTravelGap = 30;
+      // Get real travel time between two stops (from travelBetween), fallback to 30min
+      const getTravelGap = (fromName: string, toName: string): number => {
+        const key = `${fromName}→${toName}`;
+        const td = travelBetween[key];
+        if (!td) return defaultTravelGap;
+        const sel = td[td.selected as 'walk' | 'transit' | 'drive'];
+        return sel ? (parseDurationMinutes(sel.duration) || defaultTravelGap) : defaultTravelGap;
+      };
 
       // If user has reordered, respect their sequence (no category-based sorting)
       // Otherwise, sort by category preference
@@ -1093,13 +1124,19 @@ function DeepPlanPageContent() {
       let cursor = startMin;
       const scheduledIds = new Set<string>();
 
+      const hotelName = hotelLeave?.name || '';
+      let prevName = hotelName;
       if (startMin < lunchTime) {
         for (const s of orderedForScheduling) {
           const dur = s.durationMin || 60;
-          if (cursor + dur > lunchTime) break;
-          morningScheduled.push({ stop: s, time: cursor });
+          const gap = getTravelGap(prevName, s.name);
+          // First activity starts at cursor (hotel leave time), subsequent add travel gap
+          const actStart = prevName === hotelName ? cursor : cursor;
+          if (actStart + dur > lunchTime) break;
+          morningScheduled.push({ stop: s, time: actStart });
           scheduledIds.add(s.id);
-          cursor += dur + travelGap;
+          prevName = s.name;
+          cursor = actStart + dur + gap;
         }
       }
 
@@ -1108,13 +1145,18 @@ function DeepPlanPageContent() {
       const afternoonScheduled: Array<{ stop: DeepStop; time: number }> = [];
       cursor = startMin >= lunchTime ? startMin : afterLunch;
       const afternoonEnd = dinnerTime - 30;
+      // Reset prevName for afternoon (last morning activity or hotel if no morning)
+      if (morningScheduled.length > 0) prevName = morningScheduled[morningScheduled.length - 1].stop.name;
 
       for (const s of remainingForAfternoon) {
         const dur = s.durationMin || 60;
-        if (cursor + dur > afternoonEnd) continue; // skip too-long, try shorter ones
-        afternoonScheduled.push({ stop: s, time: cursor });
+        const gap = getTravelGap(prevName, s.name);
+        const actStart = cursor;
+        if (actStart + dur > afternoonEnd) continue;
+        afternoonScheduled.push({ stop: s, time: actStart });
         scheduledIds.add(s.id);
-        cursor += dur + travelGap;
+        prevName = s.name;
+        cursor = actStart + dur + gap;
       }
 
       // Rebuild stops array
