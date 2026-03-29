@@ -1057,7 +1057,18 @@ function DeepPlanPageContent() {
             if (nextIdx >= 0 && !newStops[nextIdx].note?.includes('Leave by') && stop.time) {
               const departMin = parseTime(stop.time);
               const arrivalMin = departMin + travelMin;
-              newStops[nextIdx] = { ...newStops[nextIdx], time: formatTime24(arrivalMin) };
+              // Recalculate check-in note based on new arrival time
+              const stdCheckInMin = 15 * 60; // 3 PM
+              const lateCheckInMin = 21 * 60; // 9 PM
+              let updatedNote = newStops[nextIdx].note;
+              if (newStops[nextIdx].type === 'hotel' && newStops[nextIdx].note?.includes('check-in')) {
+                updatedNote = arrivalMin < stdCheckInMin
+                  ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage'
+                  : arrivalMin >= lateCheckInMin
+                    ? 'Late arrival — confirm late check-in with hotel and save their contact number'
+                    : undefined;
+              }
+              newStops[nextIdx] = { ...newStops[nextIdx], time: formatTime24(arrivalMin), note: updatedNote };
             }
           }
           return { ...day, stops: newStops };
@@ -1241,20 +1252,31 @@ function DeepPlanPageContent() {
         if (from.transport.icon !== 'walk' && from.transport.icon !== 'drive' && from.transport.icon !== 'publicTransit') continue;
         // Skip flight/train legs (they have legIndex)
         if (from.legIndex !== undefined) continue;
-        // Find next non-meal stop
-        const to = day.stops.slice(j + 1).find(s => !s.mealType);
+        // Skip Rest/Sleep
+        if (from.name === 'Rest / Sleep') continue;
+        // For "Free time" stops: use the previous real location as origin
+        let actualFrom = from;
+        if (from.name.startsWith('Free time')) {
+          // Find previous real location (hotel, airport, etc.)
+          const prevReal = day.stops.slice(0, j).reverse().find(s => !s.mealType && !s.name.startsWith('Free time') && s.name !== 'Rest / Sleep' && s.type !== 'attraction');
+          if (prevReal) actualFrom = prevReal;
+          else continue;
+        }
+        // Find next non-meal stop that's a real location
+        const to = day.stops.slice(j + 1).find(s => !s.mealType && !s.name.startsWith('Free time') && s.name !== 'Rest / Sleep');
         if (!to) continue;
         // For travel/departure days, stops may be in different cities
         // Use departureCity for pre-flight stops, day.city for post-flight stops
         const fromCity = day.departureCity || day.city;
         const toCity = day.city;
         // If stop is an airport/station, use its full name directly (not "Mumbai Airport, Amsterdam")
-        const fromIsHub = from.type === 'airport' || from.type === 'station' || from.type === 'home';
+        const queryFrom = actualFrom || from; // Use actual location for directions query
+        const fromIsHub = queryFrom.type === 'airport' || queryFrom.type === 'station' || queryFrom.type === 'home';
         const toIsHub = to.type === 'airport' || to.type === 'station' || to.type === 'home';
-        const key = `${from.name}→${to.name}`;
+        const key = `${from.name}→${to.name}`; // Key uses original stop name for render lookup
         if (travelFetchedRef.current[key]) continue;
         travelFetchedRef.current[key] = true;
-        const fromQ = fromIsHub ? from.name : `${from.name}, ${fromCity}`;
+        const fromQ = fromIsHub ? queryFrom.name : `${queryFrom.name}, ${fromCity}`;
         const toQ = toIsHub ? to.name : `${to.name}, ${toCity}`;
         // Fetch all 3 modes in parallel
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
