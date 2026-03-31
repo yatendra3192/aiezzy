@@ -942,19 +942,7 @@ function RoutePageContent() {
               >
                 {trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}
               </button>
-              {/* Update button — appears when date/nights changed */}
-              {needsRefresh && (
-                <button
-                  onClick={refreshTransport}
-                  disabled={isRefreshing}
-                  className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-lg bg-accent-cyan text-white text-[10px] font-display font-bold hover:bg-accent-cyan/90 transition-all disabled:opacity-50 flex-shrink-0 animate-pulse"
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                  </svg>
-                  {isRefreshing ? 'Updating...' : 'Update Flights & Trains'}
-                </button>
-              )}
+              {/* Update button — floating popup at bottom when date/nights changed */}
             </div>
           </div>
 
@@ -1925,6 +1913,28 @@ function RoutePageContent() {
             className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-text-primary text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
             <span className="text-sm font-body">{flightUpdateToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating "Update Flights & Trains" popup */}
+      <AnimatePresence>
+        {needsRefresh && !isRefreshing && (
+          <motion.div
+            initial={{ opacity: 0, y: 60, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 60, scale: 0.9 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+          >
+            <button
+              onClick={refreshTransport}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-accent-cyan text-white font-display font-bold text-sm shadow-lg shadow-accent-cyan/30 hover:bg-accent-cyan/90 transition-all hover:scale-105 active:scale-95"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              Update Flights &amp; Trains
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
