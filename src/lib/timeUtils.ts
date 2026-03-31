@@ -5,7 +5,9 @@
  */
 
 export function parseTime(timeStr: string): number {
+  if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return 0;
   const [h, m] = timeStr.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return 0;
   return h * 60 + m;
 }
 
@@ -30,10 +32,12 @@ export function timeStr12(timeStr: string): string {
 }
 
 export function subtractMinutes(timeStr: string, mins: number): string {
+  if (!timeStr) return '00:00';
   return formatTime24(parseTime(timeStr) - mins);
 }
 
 export function addMinutes(timeStr: string, mins: number): string {
+  if (!timeStr) return '00:00';
   return formatTime24(parseTime(timeStr) + mins);
 }
 
@@ -88,7 +92,9 @@ export function calculateLeaveByTime(
 
 /** Format date from ISO "2026-05-22" plus day offset to "DD-MM-YYYY" */
 export function addDaysToDate(isoDate: string, days: number): string {
+  if (!isoDate) return '01-01-2026';
   const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '01-01-2026';
   d.setDate(d.getDate() + days);
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');

@@ -16,9 +16,15 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
         </div>
         <h2 className="font-display text-lg font-bold text-text-primary">Something went wrong</h2>
         <p className="text-text-muted text-sm font-body">{error.message || 'An unexpected error occurred.'}</p>
-        <button onClick={reset} className="bg-accent-cyan text-white font-display font-bold text-sm py-2.5 px-6 rounded-xl hover:bg-accent-cyan/90 transition-colors">
-          Try again
-        </button>
+        <div className="flex items-center gap-3 justify-center">
+          <button onClick={() => window.history.back()} className="border border-border-subtle text-text-secondary font-display font-bold text-sm py-2.5 px-6 rounded-xl hover:bg-bg-card transition-colors">
+            Go Back
+          </button>
+          <button onClick={reset} className="bg-accent-cyan text-white font-display font-bold text-sm py-2.5 px-6 rounded-xl hover:bg-accent-cyan/90 transition-colors">
+            Try again
+          </button>
+        </div>
+        <a href="/my-trips" className="text-accent-cyan text-xs font-body hover:underline">Go to My Trips</a>
       </div>
     </div>
   );
