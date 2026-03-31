@@ -893,17 +893,17 @@ function PlanPageContent() {
             {/* TRAVELERS */}
             <div>
               <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase mb-3 block">Travelers</label>
-              <div className="flex items-center gap-4 md:gap-6 flex-wrap">
-                <div className="flex items-center gap-2">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex items-center justify-between gap-1">
                   <span className="text-text-secondary text-xs font-body">Adults</span>
                   <Counter value={trip.adults} onChange={trip.setAdults} min={1} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-text-secondary text-xs font-body">Children <span className="text-text-muted text-[10px]">(2-11)</span></span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-text-secondary text-xs font-body leading-tight">Children <span className="text-text-muted text-[9px] block">(2-11)</span></span>
                   <Counter value={trip.children} onChange={trip.setChildren} />
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-text-secondary text-xs font-body">Infants <span className="text-text-muted text-[10px]">(0-2)</span></span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-text-secondary text-xs font-body leading-tight">Infants <span className="text-text-muted text-[9px] block">(0-2)</span></span>
                   <Counter value={trip.infants} onChange={trip.setInfants} />
                 </div>
               </div>
