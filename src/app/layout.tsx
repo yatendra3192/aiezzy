@@ -26,12 +26,17 @@ const spaceMono = Space_Mono({
   display: 'swap',
 });
 
+import type { Viewport } from 'next';
+
+export const viewport: Viewport = {
+  themeColor: '#E8654A',
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://aiezzy.com'),
   title: 'AIEzzy — Smart Travel Planner',
   description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',
   manifest: '/manifest.json',
-  themeColor: '#E8654A',
   openGraph: {
     title: 'AIEzzy — Smart Travel Planner',
     description: 'Plan multi-city trips with intelligent routing, flights, hotels, and detailed itineraries.',

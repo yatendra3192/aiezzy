@@ -1063,7 +1063,7 @@ function RoutePageContent() {
                       {/* Arrival hub → hotel distance (airport or station) — skip for local stays/transfers */}
                       {stop.type === 'destination' && !isLocalStay && (() => {
                         const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
-                        if (prevLeg?.selectedTrain?.operator === 'Local Transfer') return null;
+                        if (prevLeg?.selectedTrain?.operator === 'Local Transfer' || (prevLeg?.selectedTrain as any)?.type === 'drive') return null;
                         const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
                         const destCity = dest?.city;
                         const hotelName = dest?.selectedHotel?.name;
@@ -1093,8 +1093,8 @@ function RoutePageContent() {
                           }
                         }
 
-                        // Train/bus arrival: use station info from city data
-                        if (prevLeg?.selectedTrain && i > 0) {
+                        // Train/bus arrival: use station info from city data (skip drive/cab — no terminal)
+                        if (prevLeg?.selectedTrain && i > 0 && (prevLeg.selectedTrain as any)?.type !== 'drive' && prevLeg.type !== 'drive') {
                           const station = destCity?.trainStation;
                           if (station) {
                             const distLabel = realDist?.distance || station.transitToCenter.distance;
@@ -1128,7 +1128,7 @@ function RoutePageContent() {
                                 </p>
                               );
                             }
-                          } else if (firstLeg?.selectedTrain) {
+                          } else if (firstLeg?.selectedTrain && (firstLeg.selectedTrain as any)?.type !== 'drive' && firstLeg.type !== 'drive') {
                             const station = destCity?.trainStation;
                             if (station) {
                               return (
@@ -1507,7 +1507,7 @@ function RoutePageContent() {
                           </div>
                         )}
                         {/* Station distance info in transport section (skip for local transfers) */}
-                        {leg.selectedTrain && leg.selectedTrain.operator !== 'Local Transfer' && (() => {
+                        {leg.selectedTrain && leg.selectedTrain.operator !== 'Local Transfer' && (leg.selectedTrain as any)?.type !== 'drive' && leg.type !== 'drive' && (() => {
                           const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
                           const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
                           const depCity = i === 0 ? trip.from : depDest?.city;
@@ -1838,7 +1838,16 @@ function RoutePageContent() {
               </div>
             )}
 
-            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {
+              // Validate: at least some transport or hotels selected before proceeding
+              const hasTransport = isLocalStay || trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain);
+              const hasHotels = trip.destinations.some(d => d.selectedHotel);
+              if (!hasTransport && !hasHotels) {
+                alert('Please select transport and hotels before creating your deep plan.');
+                return;
+              }
+              router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan');
+            }}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
             </motion.button>

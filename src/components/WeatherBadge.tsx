@@ -65,8 +65,19 @@ export default function WeatherBadge({ city, date }: WeatherBadgeProps) {
     );
   }
 
-  // Error or no data: don't show anything
-  if (!weather) return null;
+  // Trip too far out — show subtle indicator instead of blank
+  if (!weather) {
+    const dateObj = new Date(date);
+    const diffDays = (dateObj.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays > 15) {
+      return (
+        <span className="text-[10px] font-mono text-text-muted/50 bg-bg-card rounded-full px-2 py-0.5 inline-flex items-center gap-1" title="Weather forecast available within 16 days of trip">
+          {'\u2600\uFE0F'} --&deg;
+        </span>
+      );
+    }
+    return null;
+  }
 
   return (
     <span className="text-[10px] font-mono text-text-muted bg-bg-card rounded-full px-2 py-0.5 inline-flex items-center gap-1">

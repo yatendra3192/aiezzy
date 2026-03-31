@@ -14,6 +14,7 @@ import HotelModal from '@/components/HotelModal';
 import TrainModal from '@/components/TrainModal';
 import TransportModal from '@/components/TransportModal';
 import WeatherBadge from '@/components/WeatherBadge';
+import PlacePhoto from '@/components/PlacePhoto';
 
 interface DeepStop {
   id: string;
@@ -124,6 +125,19 @@ const CATEGORY_LABELS: Record<string, string> = {
   viewpoint: 'Viewpoint',
 };
 
+/** Category-based card styles for activity cards */
+const CATEGORY_CARD_STYLES: Record<string, { bg: string; border: string; pill: string }> = {
+  museum: { bg: 'bg-blue-50/60', border: 'border-blue-200/50', pill: 'bg-blue-100 text-blue-700' },
+  park: { bg: 'bg-emerald-50/60', border: 'border-emerald-200/50', pill: 'bg-emerald-100 text-emerald-700' },
+  landmark: { bg: 'bg-amber-50/60', border: 'border-amber-200/50', pill: 'bg-amber-100 text-amber-700' },
+  market: { bg: 'bg-orange-50/60', border: 'border-orange-200/50', pill: 'bg-orange-100 text-orange-700' },
+  experience: { bg: 'bg-violet-50/60', border: 'border-violet-200/50', pill: 'bg-violet-100 text-violet-700' },
+  religious: { bg: 'bg-rose-50/60', border: 'border-rose-200/50', pill: 'bg-rose-100 text-rose-700' },
+  neighborhood: { bg: 'bg-teal-50/60', border: 'border-teal-200/50', pill: 'bg-teal-100 text-teal-700' },
+  viewpoint: { bg: 'bg-sky-50/60', border: 'border-sky-200/50', pill: 'bg-sky-100 text-sky-700' },
+};
+const DEFAULT_CARD_STYLE = { bg: 'bg-slate-50/40', border: 'border-slate-200/30', pill: 'bg-slate-100 text-slate-600' };
+
 /** Get ISO date from trip departure + day offset (for weather) */
 function getIsoDateFromOffset(departureDate: string, dayOffset: number): string {
   const d = new Date(departureDate);
@@ -149,6 +163,8 @@ function DeepPlanPageContent() {
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
   const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
   const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
+  // Collapsible days: only one expanded at a time (day number), default = 1
+  const [expandedDay, setExpandedDay] = useState<number>(1);
   // AI activity loading state (Record<string, boolean> — not Set, avoids downlevelIteration)
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const aiFetchedRef = useRef<Record<string, boolean>>({});
@@ -162,7 +178,14 @@ function DeepPlanPageContent() {
   const travelFetchedRef = useRef<Record<string, boolean>>({});
   const [openTravelDropdown, setOpenTravelDropdown] = useState<string | null>(null);
   // Drag-reorder: overridden activity order per day (day number → ordered stop IDs)
-  const [activityOrder, setActivityOrder] = useState<Record<number, string[]>>({});
+  const [activityOrder, setActivityOrderLocal] = useState<Record<number, string[]>>(deepPlan.activityOrder || {});
+  const setActivityOrder = (updater: Record<number, string[]> | ((prev: Record<number, string[]>) => Record<number, string[]>)) => {
+    setActivityOrderLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ activityOrder: next });
+      return next;
+    });
+  };
   const [dragState, setDragState] = useState<{ dayNum: number; stopId: string } | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
@@ -199,11 +222,12 @@ function DeepPlanPageContent() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync local state when trip context loads deep plan data
+  // Sync local state when trip context loads deep plan data (always sync, even empty)
   useEffect(() => {
-    if (deepPlan.customActivities && Object.keys(deepPlan.customActivities).length > 0) setCustomActivitiesLocal(deepPlan.customActivities);
-    if (deepPlan.dayNotes && Object.keys(deepPlan.dayNotes).length > 0) setDayNotesLocal(deepPlan.dayNotes);
-    if (deepPlan.dayStartTimes && Object.keys(deepPlan.dayStartTimes).length > 0) setDayStartTimesLocal(deepPlan.dayStartTimes);
+    setCustomActivitiesLocal(deepPlan.customActivities || {});
+    setDayNotesLocal(deepPlan.dayNotes || {});
+    setDayStartTimesLocal(deepPlan.dayStartTimes || {});
+    setActivityOrderLocal((deepPlan as any).activityOrder || {});
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch AI activities for cities not in static CITY_ATTRACTIONS and not already cached
@@ -397,18 +421,26 @@ function DeepPlanPageContent() {
         // Calculate leave-by time
         let leaveTime: string | null = null;
         let arriveAtTerminalTime: string | null = null;
+        let leaveIsPrevDay = false;
         if (depTime) {
           arriveAtTerminalTime = subtractMinutes(depTime, bufferMin);
           leaveTime = subtractMinutes(arriveAtTerminalTime, toTerminalMin);
+          // Detect if leave time wrapped into previous day (e.g., 06:00 - 5h = 01:00 prev day)
+          const depMin = parseTime(depTime);
+          const leaveMin = parseTime(leaveTime);
+          if (leaveMin > depMin) leaveIsPrevDay = true; // wrapped past midnight
         }
 
         if (leg.type === 'flight' || leg.type === 'train' || leg.type === 'bus') {
           // Step 1: Leave starting point
+          const leaveNote = leaveTime && depTime
+            ? `Leave by ${formatTime12(parseTime(leaveTime))}${leaveIsPrevDay ? ' (night before)' : ''} to reach on time`
+            : undefined;
           travelDay.stops.push({
             id: `dp${sc++}`, name: startName, type: startType, time: leaveTime,
             transport: { icon: 'drive', duration: realHomeToHub?.duration || `${toTerminalMin} min`, distance: toTerminalDist },
             destIndex: !isFirstLeg ? destIdx - 1 : undefined,
-            note: leaveTime && depTime ? `Leave by ${formatTime12(parseTime(leaveTime))} to reach on time` : undefined,
+            note: leaveNote,
           });
 
           // Step 2: Departure terminal — use resolvedAirports data when available (bug fix #1)
@@ -510,21 +542,29 @@ function DeepPlanPageContent() {
                   ? dest.places.map(p => p.name)
                   : (trip.deepPlanData?.cityActivities?.[evCityKey2]?.map(a => a.name)
                     || (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
-                if (cityAttr2.length > 0 && freeHrs2 >= 1) {
-                  const count2 = freeHrs2 >= 5 ? 3 : freeHrs2 >= 3 ? 2 : 1;
+                if (cityAttr2.length > 0 && freeHrs2 >= 1.5 && freeStart2 < dinnerTime2 - 60) {
+                  const count2 = Math.min(freeHrs2 >= 5 ? 3 : freeHrs2 >= 3 ? 2 : 1, cityAttr2.length);
+                  const aiActs2 = trip.deepPlanData?.cityActivities?.[evCityKey2] || [];
                   arrivalDay.stops.push({
                     id: `dp${sc++}`, name: `Free time — ${Math.round(freeHrs2)} hours to explore ${toCity.name}`,
                     type: 'attraction', time: formatTime24(freeStart2),
                     transport: { icon: 'walk', duration: '', distance: '' },
                     note: 'Evening exploration (optional)',
                   });
-                  cityAttr2.slice(0, count2).forEach((attr, ei) => {
+                  let evCursor2 = freeStart2 + 30;
+                  for (let ei = 0; ei < count2; ei++) {
+                    if (evCursor2 + 45 > dinnerTime2) break;
+                    const attrName2 = cityAttr2[ei];
+                    const aiD2 = aiActs2.find(a => a.name === attrName2);
+                    const dur2 = aiD2?.durationMin ? Math.min(aiD2.durationMin, 90) : 60;
                     arrivalDay.stops.push({
-                      id: `dp${sc++}`, name: attr, type: 'attraction',
-                      time: formatTime24(freeStart2 + 30 + ei * 90),
+                      id: `dp${sc++}`, name: attrName2, type: 'attraction',
+                      time: formatTime24(evCursor2),
                       transport: ei < count2 - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                      category: aiD2?.category || 'landmark', durationMin: dur2,
                     });
-                  });
+                    evCursor2 += dur2 + 30;
+                  }
                 }
                 arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '19:00', transport: null, mealType: 'dinner' });
                 arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null, note: 'Default sleep time' });
@@ -581,10 +621,11 @@ function DeepPlanPageContent() {
                   : (trip.deepPlanData?.cityActivities?.[evCityKey]?.map(a => a.name)
                     || (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
 
-                if (cityAttractions.length > 0 && totalFreeHours >= 1) {
-                  // Suggest activities: 1 for <3h, 2 for 3-5h, 3 for 5h+
-                  const eveningCount = totalFreeHours >= 5 ? 3 : totalFreeHours >= 3 ? 2 : 1;
-                  const eveningAttractions = cityAttractions.slice(0, eveningCount);
+                if (cityAttractions.length > 0 && totalFreeHours >= 1.5 && freeStartMin < dinnerTime - 60) {
+                  // Suggest activities that fit before dinner, max 90 min each
+                  const maxActivities = Math.min(totalFreeHours >= 5 ? 3 : totalFreeHours >= 3 ? 2 : 1, cityAttractions.length);
+                  // Get AI activity details if available for proper category/duration
+                  const aiActs = trip.deepPlanData?.cityActivities?.[evCityKey] || [];
 
                   travelDay.stops.push({
                     id: `dp${sc++}`, name: `Free time — ${Math.round(totalFreeHours)} hours to explore ${toCity.name}`,
@@ -593,13 +634,21 @@ function DeepPlanPageContent() {
                     note: 'Evening exploration (optional)',
                   });
 
-                  eveningAttractions.forEach((attr, ei) => {
+                  let evCursor = freeStartMin + 30;
+                  for (let ei = 0; ei < maxActivities; ei++) {
+                    if (evCursor + 45 > dinnerTime) break; // Don't schedule past dinner
+                    const attrName = cityAttractions[ei];
+                    const aiDetail = aiActs.find(a => a.name === attrName);
+                    const dur = aiDetail?.durationMin ? Math.min(aiDetail.durationMin, 90) : 60; // cap at 90 min for evening
                     travelDay.stops.push({
-                      id: `dp${sc++}`, name: attr, type: 'attraction',
-                      time: formatTime24(freeStartMin + 30 + ei * 90),
-                      transport: ei < eveningAttractions.length - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                      id: `dp${sc++}`, name: attrName, type: 'attraction',
+                      time: formatTime24(evCursor),
+                      transport: ei < maxActivities - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                      category: aiDetail?.category || 'landmark',
+                      durationMin: dur,
                     });
-                  });
+                    evCursor += dur + 30; // activity + travel gap
+                  }
                 }
 
                 // Dinner
@@ -806,8 +855,8 @@ function DeepPlanPageContent() {
           transport: null, mealType: 'dinner',
         });
 
-        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '20:00', transport: null, destIndex: destIdx });
-        expDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null, note: 'Default sleep time' });
+        expDay.stops.push({ id: `dp${sc++}`, name: 'Return to hotel', type: 'hotel', time: '20:00', transport: null, destIndex: destIdx });
+        expDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null });
         result.push(expDay);
         dayNum++;
       }
@@ -1053,15 +1102,19 @@ function DeepPlanPageContent() {
                 : stop.note,
             };
 
-            // Update next stop's arrival time (if it doesn't have a "Leave by" note — i.e., it's a destination/hotel)
-            if (nextIdx >= 0 && !newStops[nextIdx].note?.includes('Leave by') && stop.time) {
-              const departMin = parseTime(stop.time);
+            // Update next stop's arrival time AND cascade to all subsequent stops
+            // Skip cascade for "Leave by" stops — their time was recalculated backwards
+            // from the next stop's fixed time, so the next stop is already correct
+            if (!stop.note?.includes('Leave by') && nextIdx >= 0 && !newStops[nextIdx].note?.includes('Leave by') && newTime) {
+              const departMin = parseTime(newTime);
               const arrivalMin = departMin + travelMin;
+              const oldNextMin = newStops[nextIdx].time ? parseTime(newStops[nextIdx].time!) : arrivalMin;
+              const delta = arrivalMin - oldNextMin; // how much time shifted
               // Recalculate check-in note based on new arrival time
               const stdCheckInMin = 15 * 60; // 3 PM
               const lateCheckInMin = 21 * 60; // 9 PM
               let updatedNote = newStops[nextIdx].note;
-              if (newStops[nextIdx].type === 'hotel' && newStops[nextIdx].note?.includes('check-in')) {
+              if (newStops[nextIdx].type === 'hotel' && (newStops[nextIdx].note?.includes('check-in') || newStops[nextIdx].note === undefined)) {
                 updatedNote = arrivalMin < stdCheckInMin
                   ? 'Arriving before standard check-in (3 PM) — request early check-in or leave luggage'
                   : arrivalMin >= lateCheckInMin
@@ -1069,6 +1122,16 @@ function DeepPlanPageContent() {
                     : undefined;
               }
               newStops[nextIdx] = { ...newStops[nextIdx], time: formatTime24(arrivalMin), note: updatedNote };
+              // Cascade: shift all subsequent non-fixed stops by the same delta
+              if (delta !== 0) {
+                for (let k = nextIdx + 1; k < newStops.length; k++) {
+                  if (!newStops[k].time) continue;
+                  // Don't shift dinner (7 PM) or sleep (10 PM) — they're fixed
+                  if (newStops[k].mealType === 'dinner' || newStops[k].name === 'Rest / Sleep') continue;
+                  const oldMin = parseTime(newStops[k].time!);
+                  newStops[k] = { ...newStops[k], time: formatTime24(oldMin + delta) };
+                }
+              }
             }
           }
           return { ...day, stops: newStops };
@@ -1188,20 +1251,33 @@ function DeepPlanPageContent() {
         newStops.push({ ...stop, time: formatTime24(time) });
       }
 
-      // Lunch (skip if starting after lunch time)
-      if (lunchStop && startMin < lunchTime) newStops.push({ ...lunchStop, time: formatTime24(lunchTime) });
+      // Smart lunch time: after last morning activity ends + 15 min, clamped to 12:00-14:00
+      const lastMorningEnd = morningScheduled.length > 0
+        ? morningScheduled[morningScheduled.length - 1].time + (morningScheduled[morningScheduled.length - 1].stop.durationMin || 60) + 15
+        : lunchTime;
+      const smartLunchTime = Math.max(12 * 60, Math.min(14 * 60, lastMorningEnd));
+      if (lunchStop && startMin < smartLunchTime) newStops.push({ ...lunchStop, time: formatTime24(smartLunchTime) });
 
-      // Afternoon activities
-      for (const { stop, time } of afternoonScheduled) {
-        newStops.push({ ...stop, time: formatTime24(time) });
+      // Afternoon activities — adjust start if lunch shifted
+      const smartAfternoonStart = smartLunchTime + 45; // 45 min lunch
+      for (let ai = 0; ai < afternoonScheduled.length; ai++) {
+        const { stop, time } = afternoonScheduled[ai];
+        const adjustedTime = ai === 0 ? Math.max(time, smartAfternoonStart) : time + (smartAfternoonStart - afterLunch);
+        newStops.push({ ...stop, time: formatTime24(Math.min(adjustedTime, dinnerTime - 30)) });
       }
 
-      // Dinner
-      if (dinnerStop) newStops.push({ ...dinnerStop, time: formatTime24(dinnerTime) });
+      // Smart dinner time: after last afternoon activity ends + 30 min, clamped to 18:30-20:00
+      const lastAfternoonEnd = afternoonScheduled.length > 0
+        ? (() => { const last = afternoonScheduled[afternoonScheduled.length - 1]; return last.time + (last.stop.durationMin || 60) + 30; })()
+        : dinnerTime;
+      const smartDinnerTime = Math.max(18 * 60 + 30, Math.min(20 * 60, lastAfternoonEnd));
+      if (dinnerStop) newStops.push({ ...dinnerStop, time: formatTime24(smartDinnerTime) });
 
-      // Hotel return + sleep
-      if (hotelReturn) newStops.push({ ...hotelReturn, time: '20:00' });
-      if (sleepStop) newStops.push({ ...sleepStop, time: '22:00' });
+      // Hotel return + sleep — follow dinner time dynamically
+      const hotelReturnTime = smartDinnerTime + 60; // 1 hour after dinner starts
+      const sleepTime = hotelReturnTime + 120; // 2 hours after returning
+      if (hotelReturn) newStops.push({ ...hotelReturn, time: formatTime24(Math.min(hotelReturnTime, 22 * 60)) });
+      if (sleepStop) newStops.push({ ...sleepStop, time: formatTime24(Math.min(sleepTime, 23 * 60 + 30)) });
 
       // Inject custom activities before dinner
       const customs = customActivities[day.day] || [];
@@ -1282,10 +1358,21 @@ function DeepPlanPageContent() {
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
           getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
         Promise.all([fetchMode('walking', 'walk'), fetchMode('transit', 'transit'), fetchMode('driving', 'drive')]).then(([walk, transit, drive]) => {
+          // Smart default: pick best mode based on distance/duration
+          // Walk if ≤ 20 min, transit if available and ≤ 45 min, else drive
+          const walkMin = walk ? parseDurationMinutes(walk.duration) : 999;
+          const transitMin = transit ? parseDurationMinutes(transit.duration) : 999;
+          const driveMin = drive ? parseDurationMinutes(drive.duration) : 999;
+          let bestMode = 'walk';
+          if (walkMin <= 20) bestMode = 'walk';
+          else if (transitMin <= 45 && transit) bestMode = 'transit';
+          else if (drive) bestMode = 'drive';
+          else if (transit) bestMode = 'transit';
+
           setTravelBetween(prev => ({
             ...prev,
             [key]: {
-              selected: 'walk',
+              selected: bestMode,
               ...(walk && { walk }),
               ...(transit && { transit }),
               ...(drive && { drive }),
@@ -1319,7 +1406,11 @@ function DeepPlanPageContent() {
   const handleAddActivity = (dayNumber: number) => {
     const text = activityInputText[dayNumber]?.trim();
     if (!text) return;
-    const time = activityInputTime[dayNumber] || getDefaultActivityTime(dayNumber);
+    let time = activityInputTime[dayNumber] || getDefaultActivityTime(dayNumber);
+    // Clamp custom activity time to reasonable bounds (6 AM - 22 PM)
+    const timeMin = parseTime(time);
+    if (timeMin < 6 * 60) time = '06:00';
+    else if (timeMin > 22 * 60) time = '22:00';
     setCustomActivities(prev => ({
       ...prev,
       [dayNumber]: [...(prev[dayNumber] || []), { name: text, time }],
@@ -1395,6 +1486,52 @@ function DeepPlanPageContent() {
     setDragOverId(null);
   };
 
+  // Generate itinerary for a travel/departure day's free time
+  const [generatingDay, setGeneratingDay] = useState<Record<number, boolean>>({});
+  const handleGenerateItinerary = async (dayNum: number, city: string, freeHours: number) => {
+    setGeneratingDay(prev => ({ ...prev, [dayNum]: true }));
+    try {
+      const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === city || d.city.name === city);
+      const country = dest?.city.country || '';
+      const monthName = trip.departureDate ? new Date(trip.departureDate).toLocaleString('en', { month: 'long' }) : undefined;
+      const res = await fetch('/api/ai/itinerary-activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city, country, days: 1, userPlaces: [], month: monthName }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.activities?.length > 0) {
+          // Pick activities that fit within the free hours
+          const maxMin = freeHours * 60;
+          let totalMin = 0;
+          const dayData = adjustedDays.find(d => d.day === dayNum);
+          // Find the "Free time" stop to get start time
+          const freeStop = dayData?.stops.find(s => s.name.startsWith('Free time'));
+          let cursor = freeStop?.time ? parseTime(freeStop.time) + 30 : 13 * 60; // 30min after free time start
+          const newActivities: Array<{ name: string; time: string }> = [];
+          for (const act of data.activities) {
+            const dur = act.durationMin || 60;
+            if (totalMin + dur + 30 > maxMin) break;
+            newActivities.push({ name: act.name, time: formatTime24(cursor) });
+            cursor += dur + 30;
+            totalMin += dur + 30;
+          }
+          if (newActivities.length > 0) {
+            setCustomActivities(prev => ({
+              ...prev,
+              [dayNum]: [...(prev[dayNum] || []), ...newActivities],
+            }));
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to generate itinerary:', err);
+    } finally {
+      setGeneratingDay(prev => ({ ...prev, [dayNum]: false }));
+    }
+  };
+
   if (isRestoring) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -1446,6 +1583,21 @@ function DeepPlanPageContent() {
             const overnightHotelName = prevLastHotelStop && currFirstHotelStop &&
               prevLastHotelStop.name === currFirstHotelStop.name ? prevLastHotelStop.name : null;
 
+            // City chapter header: show when entering a new city
+            const isNewCity = !!(day.city && day.city !== '' && day.city !== prevDay?.city && day.type !== 'departure');
+            const cityDest = isNewCity ? trip.destinations.find(d => d.city.name === day.city || (d.city.parentCity || d.city.name) === day.city) : null;
+            const cityDisplayName = cityDest ? (cityDest.city.parentCity || cityDest.city.name) : day.city;
+            const cityCountry = cityDest?.city.country;
+            const cityNights = cityDest?.nights || 0;
+            const cityHotel = cityDest?.selectedHotel?.name;
+            let lastCityDayIdx = dayIdx;
+            if (isNewCity) {
+              for (let k = dayIdx + 1; k < adjustedDays.length; k++) {
+                if (adjustedDays[k].city === day.city || adjustedDays[k].city === cityDisplayName) lastCityDayIdx = k;
+                else break;
+              }
+            }
+
             return (
               <div key={day.day} className="mb-10 last:mb-0">
                 {/* Overnight connector between days */}
@@ -1462,16 +1614,63 @@ function DeepPlanPageContent() {
                     <div className="flex-1 border-t border-dashed border-border-subtle" />
                   </div>
                 )}
-                {/* Day header */}
-                <div className={`bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-1`}>
+                {/* City chapter header */}
+                {isNewCity && (
+                  <div className="mb-4 mt-2">
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-50 via-cyan-50 to-sky-50 border border-teal-200/40 px-5 py-4">
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.07]">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" className="text-teal-900"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      </div>
+                      <div className="relative">
+                        {cityCountry && <p className="text-[10px] text-teal-600 font-body font-semibold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
+                        <h2 className="font-display text-xl font-bold text-text-primary tracking-tight">{cityDisplayName}</h2>
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          <span className="flex items-center gap-1.5 text-xs text-text-secondary font-body">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            {formatDateNice(day.date)}{lastCityDayIdx > dayIdx ? ` \u2014 ${formatDateNice(adjustedDays[lastCityDayIdx].date)}` : ''}
+                          </span>
+                          {cityNights > 0 && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100/70 text-teal-700 font-body">
+                              {cityNights} night{cityNights > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        {cityHotel && (
+                          <p className="flex items-center gap-1.5 mt-2 text-[11px] text-text-muted font-body">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                            Staying at {cityHotel}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* Day header — click to expand/collapse */}
+                <div
+                  className={`bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-1 cursor-pointer select-none hover:border-accent-cyan/40 transition-colors`}
+                  onClick={() => setExpandedDay(expandedDay === day.day ? -1 : day.day)}
+                >
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-3">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                        className={`text-text-muted transition-transform flex-shrink-0 ${expandedDay === day.day ? 'rotate-90' : ''}`}>
+                        <path d="M9 18l6-6-6-6" />
+                      </svg>
                       <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {formatDateNice(day.date)}</h2>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-body ${dayStyle.bg} ${dayStyle.text} ${dayStyle.border} border`}>
                         {dayStyle.label}
                       </span>
+                      {/* Weather inline with day title */}
+                      {day.departureCity && day.departureCity !== day.city ? (
+                        <div className="flex items-center gap-1.5">
+                          <WeatherBadge city={day.departureCity} date={isoDate} />
+                          <span className="text-text-muted text-[10px]">&rarr;</span>
+                          <WeatherBadge city={day.city} date={isoDate} />
+                        </div>
+                      ) : (
+                        <WeatherBadge city={day.city} date={isoDate} />
+                      )}
                       {day.type === 'explore' && (() => {
-                        // Try both city name and parentCity for theme lookup (themes cached by parentCity || name)
                         const themes = trip.deepPlanData?.dayThemes?.[day.city]
                           || trip.deepPlanData?.dayThemes?.[trip.destinations.find(d => d.city.name === day.city)?.city.parentCity || ''];
                         const theme = themes && typeof day.exploreDayIndex === 'number' ? themes[day.exploreDayIndex] : null;
@@ -1479,17 +1678,6 @@ function DeepPlanPageContent() {
                           <span className="text-[10px] text-text-muted font-body italic">{theme}</span>
                         ) : null;
                       })()}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {day.departureCity && day.departureCity !== day.city ? (
-                        <>
-                          <WeatherBadge city={day.departureCity} date={isoDate} />
-                          <span className="text-text-muted text-[10px]">&rarr;</span>
-                          <WeatherBadge city={day.city} date={isoDate} />
-                        </>
-                      ) : (
-                        <WeatherBadge city={day.city} date={isoDate} />
-                      )}
                     </div>
                   </div>
 
@@ -1501,6 +1689,9 @@ function DeepPlanPageContent() {
                     </div>
                   )}
                 </div>
+
+                {/* Collapsible day content */}
+                {expandedDay === day.day && (<>
 
                 {/* Start time selector + AI loading for explore days */}
                 {day.type === 'explore' && (
@@ -1546,6 +1737,8 @@ function DeepPlanPageContent() {
                     const isMeal = !!stop.mealType;
                     const isCustom = isCustomDeletable(stop.name);
                     const stopColor = TYPE_COLORS[stop.type] || '#E8654A';
+                    const isAttractionCard = stop.type === 'attraction' && !isMeal && !stop.name.startsWith('Free time') && !stop.name.startsWith('Morning in');
+                    const cardStyle = isAttractionCard ? (CATEGORY_CARD_STYLES[stop.category || ''] || DEFAULT_CARD_STYLE) : null;
 
                     // Meal slot rendering
                     if (isMeal) {
@@ -1606,7 +1799,12 @@ function DeepPlanPageContent() {
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                             </div>
                           )}
-                          <div className="flex-1">
+                          <div className={`flex-1${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-2.5` : ''}`}>
+                            <div className={isAttractionCard ? 'flex gap-3 items-start' : ''}>
+                            {isAttractionCard && (
+                              <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
+                            )}
+                            <div className={isAttractionCard ? 'flex-1 min-w-0' : ''}>
                             <div className="flex items-center gap-2 flex-wrap">
                               {stop.time && (
                                 <span className="text-accent-cyan text-[11px] font-mono font-bold">
@@ -1614,7 +1812,7 @@ function DeepPlanPageContent() {
                                   {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
                                 </span>
                               )}
-                              <h3 className="font-display font-bold text-sm text-text-primary leading-tight">{stop.name}</h3>
+                              <h3 className="font-display font-bold text-sm text-text-primary leading-tight line-clamp-2" title={stop.name}>{stop.name}</h3>
                               {/* Google Maps link for attractions and hotels */}
                               {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
                                 <a
@@ -1668,8 +1866,8 @@ function DeepPlanPageContent() {
                                 {stop.note}
                               </p>
                             )}
-                            {/* Opening hours + ticket price */}
-                            {(stop.openingHours || stop.ticketPrice) && (
+                            {/* Opening hours + ticket price + booking links */}
+                            {(stop.openingHours || stop.ticketPrice || isAttractionCard) && (
                               <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                                 {stop.openingHours && (
                                   <span className="text-[10px] text-text-muted font-body flex items-center gap-1">
@@ -1678,14 +1876,20 @@ function DeepPlanPageContent() {
                                   </span>
                                 )}
                                 {stop.ticketPrice && (
-                                  <a
-                                    href={`https://www.google.com/search?q=${encodeURIComponent(stop.name + ' ' + day.city + ' tickets')}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] text-text-muted hover:text-accent-cyan font-body flex items-center gap-1 transition-colors"
-                                  >
+                                  <span className="text-[10px] text-text-muted font-body flex items-center gap-1">
                                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                                     {stop.ticketPrice}
+                                  </span>
+                                )}
+                                {isAttractionCard && (
+                                  <a
+                                    href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(stop.name + ' ' + day.city)}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="print-hide text-[10px] text-accent-cyan hover:text-accent-cyan/80 font-body font-semibold flex items-center gap-1 transition-colors"
+                                  >
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                    Book
                                   </a>
                                 )}
                               </div>
@@ -1714,12 +1918,22 @@ function DeepPlanPageContent() {
                               );
                             })()}
 
-                            {stop.type === 'attraction' && !isMeal && !isCustom && (
-                              <span className="text-xs text-text-muted font-body">
-                                {stop.category ? (CATEGORY_LABELS[stop.category] || 'Sightseeing') : 'Sightseeing'}
-                                {stop.durationMin ? ` · ${formatDuration(stop.durationMin)}` : ''}
-                              </span>
+                            {stop.type === 'attraction' && !isMeal && !isCustom && (stop.category || stop.durationMin) && (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                {stop.category && (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold font-body ${cardStyle?.pill || 'bg-slate-100 text-slate-600'}`}>
+                                    {CATEGORY_LABELS[stop.category] || 'Sightseeing'}
+                                  </span>
+                                )}
+                                {stop.durationMin ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-mono font-medium bg-gray-100 text-gray-500">
+                                    {formatDuration(stop.durationMin)}
+                                  </span>
+                                ) : null}
+                              </div>
                             )}
+                            </div>{/* close inner content wrapper */}
+                            </div>{/* close photo flex row */}
                           </div>
                         </div>
 
@@ -1838,27 +2052,30 @@ function DeepPlanPageContent() {
                                   </button>
                                 ) : (
                                   <div className="relative">
-                                    <div className="print-hide flex items-center gap-2 text-text-secondary">
-                                      <button
-                                        onClick={() => setOpenTravelDropdown(isDropdownOpen ? null : travelKey)}
-                                        className="flex items-center gap-2 hover:text-accent-cyan transition-colors group"
-                                      >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
-                                          <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
-                                        </svg>
-                                        {selData ? (
-                                          <span className="text-xs font-mono">{selData.duration} &middot; {selData.distance}</span>
-                                        ) : (
-                                          <span className="text-xs font-body text-text-muted">Walk</span>
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex items-center gap-2 bg-gray-50/80 rounded-lg px-2.5 py-1.5 border border-gray-100/60">
+                                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 flex-shrink-0"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+                                        <button
+                                          onClick={() => setOpenTravelDropdown(isDropdownOpen ? null : travelKey)}
+                                          className="print-hide flex items-center gap-2 hover:text-accent-cyan transition-colors group text-text-secondary"
+                                        >
+                                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan flex-shrink-0">
+                                            <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
+                                          </svg>
+                                          {selData ? (
+                                            <span className="text-[11px] font-mono whitespace-nowrap">{selData.duration} &middot; {selData.distance}</span>
+                                          ) : (
+                                            <span className="text-[11px] font-body text-text-muted">Walk</span>
+                                          )}
+                                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
+                                        </button>
+                                        {gmapsUrl && (
+                                          <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
+                                            className="print-hide text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors whitespace-nowrap ml-auto">
+                                            Directions &rarr;
+                                          </a>
                                         )}
-                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
-                                      </button>
-                                      {gmapsUrl && (
-                                        <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
-                                          className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors">
-                                          Directions
-                                        </a>
-                                      )}
+                                      </div>
                                     </div>
                                     {/* Directions dropdown */}
                                     {isDropdownOpen && travelData && (
@@ -1886,13 +2103,41 @@ function DeepPlanPageContent() {
                   })}
                 </div>
 
+                {/* Generate Itinerary button for travel/departure days with free time */}
+                {(day.type === 'travel' || day.type === 'departure') && day.stops.some(s => s.name.startsWith('Free time')) && (() => {
+                  const freeStop = day.stops.find(s => s.name.startsWith('Free time'));
+                  const hoursMatch = freeStop?.name.match(/(\d+)\s*hours?/);
+                  const freeHours = hoursMatch ? parseInt(hoursMatch[1]) : 4;
+                  if (freeHours < 1) return null; // Not enough free time
+                  return (
+                  <div className="print-hide ml-4 pl-4 mt-2">
+                    {generatingDay[day.day] ? (
+                      <span className="flex items-center gap-2 text-xs text-accent-cyan font-body">
+                        <span className="w-3 h-3 border border-accent-cyan border-t-transparent rounded-full animate-spin" />
+                        Generating activities...
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleGenerateItinerary(day.day, day.city, freeHours)}
+                        className="flex items-center gap-1.5 text-xs font-body text-accent-cyan hover:text-accent-cyan/80 transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                        Generate itinerary ({freeHours}h free)
+                      </button>
+                    )}
+                  </div>
+                  );
+                })()}
+
                 {/* Add Activity button (explore days only) */}
                 {day.type === 'explore' && (
                   <div className="print-hide ml-4 pl-4 mt-2">
                     {!showActivityInput[day.day] ? (
                       <button
                         onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: true }))}
-                        className="flex items-center gap-1.5 text-xs font-body text-text-muted hover:text-accent-cyan transition-colors"
+                        className="flex items-center gap-1.5 text-xs font-body font-semibold text-accent-cyan hover:text-accent-cyan/80 border border-accent-cyan/30 hover:border-accent-cyan/50 rounded-lg px-3 py-1.5 transition-colors"
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="12" y1="5" x2="12" y2="19" />
@@ -1954,8 +2199,10 @@ function DeepPlanPageContent() {
                         onChange={e => setDayNotes(prev => ({ ...prev, [day.day]: e.target.value }))}
                         placeholder="Add notes for this day..."
                         rows={3}
+                        maxLength={1000}
                         className="w-full text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-2 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan resize-none"
                       />
+                      <span className="text-[9px] text-text-muted font-mono">{(dayNotes[day.day] || '').length}/1000</span>
                       <button
                         onClick={() => setShowDayNotes(prev => ({ ...prev, [day.day]: false }))}
                         className="text-[10px] text-text-muted font-body hover:text-accent-cyan mt-1"
@@ -1969,6 +2216,8 @@ function DeepPlanPageContent() {
                     <p className="text-[10px] text-text-muted font-body italic mt-0.5 truncate max-w-[300px]">{dayNotes[day.day]}</p>
                   )}
                 </div>
+
+                </>)}{/* end collapsible day content */}
               </div>
             );
           })}
@@ -2006,6 +2255,19 @@ function DeepPlanPageContent() {
                   <span className="text-accent-cyan font-mono font-bold">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
                 </div>
               </div>
+            )}
+            {/* Warning: missing hotels or transport */}
+            {trip.destinations.some(d => d.nights > 0 && !d.selectedHotel) && (
+              <p className="mt-2 text-[10px] text-amber-600 font-body flex items-center gap-1">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Some destinations have no hotel selected — cost estimate is incomplete.
+              </p>
+            )}
+            {trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay && (
+              <p className="mt-1 text-[10px] text-amber-600 font-body flex items-center gap-1">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                Some transport legs have no selection — cost estimate is incomplete.
+              </p>
             )}
           </div>
         </div>
@@ -2099,18 +2361,20 @@ function DeepPlanPageContent() {
           .deep-plan-page .rounded-full {
             box-shadow: none !important;
           }
-          /* Day type badges: remove background color, use border instead */
-          .deep-plan-page .bg-blue-50 {
-            background-color: transparent !important;
-            border: 1px solid #93c5fd !important;
-          }
-          .deep-plan-page .bg-emerald-50 {
-            background-color: transparent !important;
-            border: 1px solid #6ee7b7 !important;
-          }
+          /* Day type badges: keep readable in print */
+          .deep-plan-page .bg-blue-50,
+          .deep-plan-page .bg-emerald-50,
           .deep-plan-page .bg-orange-50 {
-            background-color: transparent !important;
-            border: 1px solid #fdba74 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          /* Show all days expanded in print (override collapse) */
+          .deep-plan-page .mb-10 > *:not(:first-child) {
+            display: block !important;
+          }
+          /* Hide place photos in print (save ink) */
+          .deep-plan-page img[loading="lazy"] {
+            display: none !important;
           }
           /* Compact font size */
           .deep-plan-page h1 {

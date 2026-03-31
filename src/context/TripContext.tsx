@@ -32,6 +32,8 @@ export interface DeepPlanData {
   cityActivities?: Record<string, CityActivityCached[]>;
   /** AI-suggested day themes per city (e.g., ["Historic & Cultural", "Outdoor & Nature"]) */
   dayThemes?: Record<string, string[]>;
+  /** Persisted drag-reorder: day number → ordered stop IDs */
+  activityOrder?: Record<number, string[]>;
 }
 
 interface TripState {
