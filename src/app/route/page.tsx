@@ -295,6 +295,51 @@ function RoutePageContent() {
     });
   }, [trip.transportLegs]);
 
+  // Proactively resolve airport cities for display (even before flights are selected)
+  const airportCityResolvedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    const cities: Array<{ name: string; legIdx: number; field: 'from' | 'to' }> = [];
+    trip.transportLegs.forEach((leg, i) => {
+      if (resolvedAirportsRef.current[i]) return; // Already resolved
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (fromC?.name && !airportCityResolvedRef.current[`from-${i}`]) cities.push({ name: fromC.parentCity || fromC.name, legIdx: i, field: 'from' });
+      if (toC?.name && !airportCityResolvedRef.current[`to-${i}`]) cities.push({ name: toC.parentCity || toC.name, legIdx: i, field: 'to' });
+    });
+    if (cities.length === 0) return;
+    // Resolve each unique city name
+    const uniqueCities = Array.from(new Set(cities.map(c => c.name)));
+    uniqueCities.forEach(async (cityName) => {
+      const key = `city-${cityName}`;
+      if (airportCityResolvedRef.current[key]) return;
+      airportCityResolvedRef.current[key] = true;
+      try {
+        const res = await fetch(`/api/resolve-airport?city=${encodeURIComponent(cityName)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const airport = data.airports?.[0];
+        if (!airport) return;
+        // Update resolvedAirportsRef for all legs that use this city
+        cities.filter(c => c.name === cityName).forEach(c => {
+          airportCityResolvedRef.current[`${c.field}-${c.legIdx}`] = true;
+          if (!resolvedAirportsRef.current[c.legIdx]) {
+            resolvedAirportsRef.current[c.legIdx] = { fromCode: '', toCode: '', fromAirport: '', toAirport: '', fromCity: '', toCity: '', fromDistance: 0, toDistance: 0 };
+          }
+          const ref = resolvedAirportsRef.current[c.legIdx];
+          if (c.field === 'from') {
+            ref.fromCity = airport.city || airport.name || cityName;
+            ref.fromCode = airport.iata || '';
+          } else {
+            ref.toCity = airport.city || airport.name || cityName;
+            ref.toCode = airport.iata || '';
+          }
+        });
+        // Force re-render by updating a trivial state
+        setAutoSelectLoading(prev => prev);
+      } catch {}
+    });
+  }, [trip.transportLegs.length, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const trackPending = (delta: number) => {
     pendingCountRef.current += delta;
     if (pendingCountRef.current <= 0) {
