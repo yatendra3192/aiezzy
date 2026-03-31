@@ -1382,8 +1382,10 @@ function RoutePageContent() {
                             } else if (leg.selectedTrain) {
                               routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
                             } else {
-                              // No selection: show city names instead of "~"
-                              routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} \u2192 ${toCity?.parentCity || toCity?.name || ''}`;
+                              // No selection: use resolved airport city if available (e.g., Thane → Mumbai for nearest airport)
+                              const fName = info?.fromCity || fromCity?.parentCity || fromCity?.name || '';
+                              const tName = info?.toCity || toCity?.parentCity || toCity?.name || '';
+                              routeDisplay = `${fName} \u2192 ${tName}`;
                             }
 
                             const noSelection = !leg.selectedFlight && !leg.selectedTrain;
@@ -1405,7 +1407,7 @@ function RoutePageContent() {
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                             </svg>
-                            Please select transport for {fromCity?.parentCity || fromCity?.name || ''} &rarr; {toCity?.parentCity || toCity?.name || ''}
+                            Please select transport for {(resolvedAirportsRef.current[i] || leg.resolvedAirports)?.fromCity || fromCity?.parentCity || fromCity?.name || ''} &rarr; {(resolvedAirportsRef.current[i] || leg.resolvedAirports)?.toCity || toCity?.parentCity || toCity?.name || ''}
                           </button>
                         )}
 
