@@ -908,7 +908,12 @@ function RoutePageContent() {
               <input
                 type="date"
                 value={trip.departureDate}
-                onChange={e => trip.setDepartureDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (!val || isNaN(new Date(val).getTime())) return; // Block invalid dates
+                  trip.setDepartureDate(val);
+                }}
                 className="bg-transparent border border-border-subtle rounded-md px-1.5 py-0.5 text-text-muted text-xs font-mono outline-none focus:border-accent-cyan transition-colors [color-scheme:light] cursor-pointer"
               />
               <span className="text-text-muted text-xs">&middot;</span>
