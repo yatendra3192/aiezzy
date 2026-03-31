@@ -242,10 +242,10 @@ function PlacesAutocomplete({
 
 function Counter({ value, onChange, min = 0 }: { value: number; onChange: (n: number) => void; min?: number }) {
   return (
-    <div className="flex items-center gap-3">
-      <button onClick={() => onChange(Math.max(min, value - 1))} className="w-8 h-8 rounded-lg bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan hover:text-accent-cyan transition-all flex items-center justify-center text-lg font-mono">-</button>
-      <span className="font-mono text-lg text-text-primary w-6 text-center">{value}</span>
-      <button onClick={() => onChange(value + 1)} className="w-8 h-8 rounded-lg bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan hover:text-accent-cyan transition-all flex items-center justify-center text-lg font-mono">+</button>
+    <div className="flex items-center gap-1.5">
+      <button onClick={() => onChange(Math.max(min, value - 1))} className="w-7 h-7 rounded-lg bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan hover:text-accent-cyan transition-all flex items-center justify-center text-sm font-mono">-</button>
+      <span className="font-mono text-base text-text-primary w-5 text-center">{value}</span>
+      <button onClick={() => onChange(value + 1)} className="w-7 h-7 rounded-lg bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan hover:text-accent-cyan transition-all flex items-center justify-center text-sm font-mono">+</button>
     </div>
   );
 }
@@ -893,17 +893,17 @@ function PlanPageContent() {
             {/* TRAVELERS */}
             <div>
               <label className="text-accent-gold text-xs font-display font-bold tracking-widest uppercase mb-3 block">Travelers</label>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-text-secondary text-xs font-body">Adults</span>
+              <div className="flex items-center gap-4 justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-text-secondary text-[11px] font-body">Adults</span>
                   <Counter value={trip.adults} onChange={trip.setAdults} min={1} />
                 </div>
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-text-secondary text-xs font-body leading-tight">Children <span className="text-text-muted text-[9px] block">(2-11)</span></span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-text-secondary text-[11px] font-body">Children</span>
                   <Counter value={trip.children} onChange={trip.setChildren} />
                 </div>
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-text-secondary text-xs font-body leading-tight">Infants <span className="text-text-muted text-[9px] block">(0-2)</span></span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-text-secondary text-[11px] font-body">Infants</span>
                   <Counter value={trip.infants} onChange={trip.setInfants} />
                 </div>
               </div>
