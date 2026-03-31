@@ -58,7 +58,7 @@ export default function SignUpPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="fixed top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[400px] bg-accent-cyan/5 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed top-1/3 left-1/2 -translate-x-1/2 w-[90vw] max-w-[500px] h-[400px] bg-accent-cyan/5 rounded-full blur-[120px] pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 30 }}

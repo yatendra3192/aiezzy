@@ -2063,7 +2063,7 @@ function DeepPlanPageContent() {
                                             <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
                                           </svg>
                                           {selData ? (
-                                            <span className="text-[11px] font-mono whitespace-nowrap">{selData.duration} &middot; {selData.distance}</span>
+                                            <span className="text-[11px] font-mono">{selData.duration} &middot; {selData.distance}</span>
                                           ) : (
                                             <span className="text-[11px] font-body text-text-muted">Walk</span>
                                           )}
@@ -2071,7 +2071,7 @@ function DeepPlanPageContent() {
                                         </button>
                                         {gmapsUrl && (
                                           <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
-                                            className="print-hide text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors whitespace-nowrap ml-auto">
+                                            className="print-hide text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors ml-auto">
                                             Directions &rarr;
                                           </a>
                                         )}
@@ -2225,7 +2225,7 @@ function DeepPlanPageContent() {
           {/* Trip Summary */}
           <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
             <h3 className="font-display font-bold text-sm text-text-primary mb-3">Trip Summary</h3>
-            <div className="grid grid-cols-3 gap-4 text-center mb-3">
+            <div className="grid grid-cols-3 gap-2 md:gap-4 text-center mb-3">
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{adjustedDays.length}</p><p className="text-text-muted text-[10px] font-body">Days</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{trip.destinations.length}</p><p className="text-text-muted text-[10px] font-body">Cities</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-lg">{totalNights}</p><p className="text-text-muted text-[10px] font-body">Nights</p></div>

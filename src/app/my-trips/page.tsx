@@ -145,7 +145,7 @@ export default function MyTripsPage() {
                 {session?.user?.name ? `Welcome, ${session.user.name}` : 'Your saved trips'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 md:gap-3 flex-wrap">
               <Link href="/settings" className="text-text-muted hover:text-accent-cyan transition-colors" title="Settings">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="3" />

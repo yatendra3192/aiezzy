@@ -234,7 +234,7 @@ export default function SettingsPage() {
               <h2 className="font-display text-base font-bold text-text-primary mb-1">Language</h2>
               <p className="text-text-muted text-xs font-body mb-5">Choose your preferred language</p>
 
-              <div className="flex gap-3">
+              <div className="flex gap-2 md:gap-3 flex-wrap">
                 {LOCALES.map((loc) => (
                   <button
                     key={loc.code}
