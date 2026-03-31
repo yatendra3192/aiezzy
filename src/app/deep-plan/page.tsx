@@ -9,12 +9,11 @@ import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDura
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
 import { getDirections } from '@/lib/googleApi';
-import FlightModal from '@/components/FlightModal';
+import dynamic from 'next/dynamic';
 import HotelModal from '@/components/HotelModal';
-import TrainModal from '@/components/TrainModal';
-import TransportModal from '@/components/TransportModal';
 import WeatherBadge from '@/components/WeatherBadge';
 import PlacePhoto from '@/components/PlacePhoto';
+const TransportCompareModal = dynamic(() => import('@/components/TransportCompareModal'), { ssr: false });
 
 interface DeepStop {
   id: string;
@@ -163,8 +162,18 @@ function DeepPlanPageContent() {
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
   const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
   const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
-  // Collapsible days: only one expanded at a time (day number), default = 1
+  // Collapsible days: -1 = none, positive number = that day, -2 = all (for print)
   const [expandedDay, setExpandedDay] = useState<number>(1);
+  const isDayExpanded = (dayNum: number) => expandedDay === dayNum || expandedDay === -2;
+  // Expand all days before printing, restore after
+  useEffect(() => {
+    const prev = { current: 1 };
+    const handleBeforePrint = () => { prev.current = expandedDay; setExpandedDay(-2); };
+    const handleAfterPrint = () => setExpandedDay(prev.current);
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => { window.removeEventListener('beforeprint', handleBeforePrint); window.removeEventListener('afterprint', handleAfterPrint); };
+  }, [expandedDay]);
   // AI activity loading state (Record<string, boolean> — not Set, avoids downlevelIteration)
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
   const aiFetchedRef = useRef<Record<string, boolean>>({});
@@ -292,8 +301,6 @@ function DeepPlanPageContent() {
     fetchAiActivities(cityName, country, days, userPlaces);
   }, [fetchAiActivities]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [flightModal, setFlightModal] = useState<{ legIndex: number } | null>(null);
-  const [trainModal, setTrainModal] = useState<{ legIndex: number } | null>(null);
   const [hotelModal, setHotelModal] = useState<{ destIndex: number } | null>(null);
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
 
@@ -1307,7 +1314,7 @@ function DeepPlanPageContent() {
   const summaryTransportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
   const summaryRooms = Math.ceil(((trip.adults || 1) + (trip.children || 0)) / 2);
   const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * summaryTransportPax;
-  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * summaryTransportPax;
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * (trip.adults + (trip.children || 0));
   const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights * summaryRooms, 0);
 
   const getLegCities = (legIdx: number) => {
@@ -1544,32 +1551,138 @@ function DeepPlanPageContent() {
   }
 
   return (
-    <div className="min-h-screen flex justify-center p-4 py-8 deep-plan-page">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[900px]">
-        <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
-          {/* Header with breadcrumb and print button */}
-          <div className="print-hide flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
-              <span className="text-text-muted text-xs">/</span>
-              <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Route</button>
-              <span className="text-text-muted text-xs">/</span>
-              <span className="text-text-primary text-xs font-body font-semibold">Deep Plan</span>
+    <div className="min-h-screen flex justify-center p-4 py-6 deep-plan-page">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[960px]">
+        <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-5 md:p-8 relative">
+          {/* ====== [A] TRIP HEADER ====== */}
+          <div className="mb-5">
+            <nav className="print-hide flex items-center gap-1.5 mb-3 text-[11px] font-body">
+              <button onClick={() => router.push('/my-trips')} className="text-text-muted hover:text-accent-cyan transition-colors">My Trips</button>
+              <span className="text-text-muted/50">/</span>
+              <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')} className="text-text-muted hover:text-accent-cyan transition-colors">Route</button>
+              <span className="text-text-muted/50">/</span>
+              <span className="text-text-primary font-semibold">Itinerary</span>
+            </nav>
+            <h1 className="font-display text-[22px] md:text-[26px] font-bold text-text-primary leading-tight tracking-tight">
+              {trip.destinations.length > 0
+                ? trip.destinations.map(d => d.city.parentCity || d.city.name).filter((v, i, a) => a.indexOf(v) === i).join(' & ')
+                : 'Your Itinerary'}
+            </h1>
+            <div className="flex items-center gap-2 mt-2 flex-wrap text-[13px] text-text-secondary font-body">
+              {adjustedDays.length > 0 && (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {formatDateNice(adjustedDays[0].date)} &mdash; {formatDateNice(adjustedDays[adjustedDays.length - 1].date)}
+                  </span>
+                  <span className="w-1 h-1 rounded-full bg-text-muted/30" />
+                </>
+              )}
+              <span>{trip.adults + (trip.children || 0) + (trip.infants || 0)} traveler{(trip.adults + (trip.children || 0) + (trip.infants || 0)) !== 1 ? 's' : ''}</span>
+              <span className="w-1 h-1 rounded-full bg-text-muted/30" />
+              <span>{trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</span>
             </div>
-            <button
-              onClick={() => window.print()}
-              className="print-hide flex items-center gap-1.5 px-3 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-xs font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan transition-colors"
-              aria-label="Print itinerary"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 6 2 18 2 18 9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" />
-              </svg>
-              Print Itinerary
+          </div>
+
+          {/* ====== [B] ACTION ROW ====== */}
+          <div className="print-hide flex items-center gap-2 mb-5 flex-wrap">
+            <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Edit Route
+            </button>
+            <button onClick={() => window.print()}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print
+            </button>
+            <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.clipboard) { navigator.clipboard.writeText(window.location.href); } }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+              Share
             </button>
           </div>
-          <h1 className="font-display text-lg font-bold text-text-primary mb-6">Deep Plan</h1>
+
+          {/* ====== [C] TRIP OVERVIEW CARD ====== */}
+          {adjustedDays.length > 0 && (
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 mb-5 shadow-sm print-hide">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{adjustedDays.length}</p>
+                    <p className="text-[11px] text-text-muted font-body mt-0.5">Days</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{trip.destinations.length}</p>
+                    <p className="text-[11px] text-text-muted font-body mt-0.5">{trip.destinations.length === 1 ? 'City' : 'Cities'}</p>
+                  </div>
+                </div>
+                {(flightCost + trainCost + hotelCost) > 0 && (
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                    </div>
+                    <div>
+                      <p className="text-[16px] font-mono font-bold text-accent-cyan leading-none">{formatPrice(flightCost + trainCost + hotelCost, currency)}</p>
+                      <p className="text-[11px] text-text-muted font-body mt-0.5">Est. Budget</p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  </div>
+                  <div>
+                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{trip.adults + (trip.children || 0) + (trip.infants || 0)}</p>
+                    <p className="text-[11px] text-text-muted font-body mt-0.5">Travelers</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ====== [D] STICKY DAY NAVIGATION ====== */}
+          {adjustedDays.length > 1 && (
+            <div className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-sm py-2.5 mb-5 border-b border-border-subtle/50 print-hide">
+              <div className="relative">
+                <div className="flex gap-1.5 overflow-x-auto pb-1.5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
+                  {adjustedDays.map(d => {
+                    const s = DAY_TYPE_STYLES[d.type];
+                    const cityLabel = d.city ? (trip.destinations.find(dest => dest.city.name === d.city || (dest.city.parentCity || dest.city.name) === d.city)?.city.parentCity || d.city) : '';
+                    return (
+                      <button key={d.day}
+                        onClick={() => { setExpandedDay(d.day); setTimeout(() => { document.getElementById(`day-${d.day}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }}
+                        className={`flex-shrink-0 px-2.5 py-1.5 rounded-full text-[11px] font-body font-semibold border transition-all whitespace-nowrap ${
+                          expandedDay === d.day
+                            ? 'bg-accent-cyan text-white border-accent-cyan shadow-sm'
+                            : `${s.bg} ${s.text} ${s.border} hover:opacity-80`
+                        }`}
+                      >
+                        {d.day}{cityLabel ? ` \u00B7 ${cityLabel.length > 9 ? cityLabel.slice(0, 7) + '\u2026' : cityLabel}` : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Fade hint — only show when many days */}
+                {adjustedDays.length > 7 && (
+                  <div className="absolute right-0 top-0 bottom-1.5 w-8 bg-gradient-to-l from-[#FAF7F2] to-transparent pointer-events-none" />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ====== 2-COLUMN LAYOUT ====== */}
+          <div className="md:flex md:gap-6 md:items-start">
+          {/* Main itinerary column */}
+          <div className="flex-1 min-w-0">
 
           {adjustedDays.map((day, dayIdx) => {
             const dayStyle = DAY_TYPE_STYLES[day.type];
@@ -1599,10 +1712,10 @@ function DeepPlanPageContent() {
             }
 
             return (
-              <div key={day.day} className="mb-10 last:mb-0">
+              <div key={day.day} id={`day-${day.day}`} className="mb-6 last:mb-0 scroll-mt-[60px]">
                 {/* Overnight connector between days */}
                 {overnightHotelName && (
-                  <div className="flex items-center gap-2 py-2 px-4 -mt-8 mb-2">
+                  <div className="flex items-center gap-2 py-1.5 px-4 -mt-4 mb-1">
                     <div className="flex-1 border-t border-dashed border-border-subtle" />
                     <span className="text-[10px] text-text-muted font-body italic flex items-center gap-1">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
@@ -1615,88 +1728,165 @@ function DeepPlanPageContent() {
                   </div>
                 )}
                 {/* City chapter header */}
-                {isNewCity && (
-                  <div className="mb-4 mt-2">
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-50 via-cyan-50 to-sky-50 border border-teal-200/40 px-5 py-4">
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-[0.07]">
-                        <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" className="text-teal-900"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                      </div>
-                      <div className="relative">
-                        {cityCountry && <p className="text-[10px] text-teal-600 font-body font-semibold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
-                        <h2 className="font-display text-xl font-bold text-text-primary tracking-tight">{cityDisplayName}</h2>
-                        <div className="flex items-center gap-3 mt-2 flex-wrap">
-                          <span className="flex items-center gap-1.5 text-xs text-text-secondary font-body">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-teal-500"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                            {formatDateNice(day.date)}{lastCityDayIdx > dayIdx ? ` \u2014 ${formatDateNice(adjustedDays[lastCityDayIdx].date)}` : ''}
-                          </span>
-                          {cityNights > 0 && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100/70 text-teal-700 font-body">
-                              {cityNights} night{cityNights > 1 ? 's' : ''}
+                {isNewCity && (() => {
+                  const cityActivityCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).reduce((n, d) => n + d.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).length, 0);
+                  const cityDayCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).length;
+                  return (
+                  <div className="mb-3">
+                    <div className="bg-bg-surface border border-border-subtle rounded-xl px-4 py-3 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          {cityCountry && <p className="text-[10px] text-accent-gold font-body font-bold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
+                          <h2 className="font-display text-[20px] font-bold text-text-primary tracking-tight leading-tight">{cityDisplayName}</h2>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap text-[12px] text-text-secondary font-body">
+                            <span className="flex items-center gap-1">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                              {formatDateNice(day.date)}{lastCityDayIdx > dayIdx ? ` \u2014 ${formatDateNice(adjustedDays[lastCityDayIdx].date)}` : ''}
                             </span>
+                            {cityNights > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100/70 text-teal-700 font-body">{cityNights}N</span>
+                            )}
+                          </div>
+                          {cityHotel && (
+                            <p className="flex items-center gap-1 mt-1 text-[11px] text-text-muted font-body truncate">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-400 flex-shrink-0"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                              {cityHotel}
+                            </p>
                           )}
                         </div>
-                        {cityHotel && (
-                          <p className="flex items-center gap-1.5 mt-2 text-[11px] text-text-muted font-body">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                            Staying at {cityHotel}
-                          </p>
-                        )}
+                        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 text-[11px] font-body">
+                          <span className="text-accent-gold font-semibold">{cityActivityCount} {cityActivityCount === 1 ? 'place' : 'places'}</span>
+                          <span className="text-text-muted">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
                 {/* Day header — click to expand/collapse */}
                 <div
-                  className={`bg-bg-card border border-border-subtle rounded-xl px-4 py-3 mb-1 cursor-pointer select-none hover:border-accent-cyan/40 transition-colors`}
-                  onClick={() => setExpandedDay(expandedDay === day.day ? -1 : day.day)}
+                  className={`bg-bg-surface border rounded-xl shadow-sm transition-colors overflow-hidden ${isDayExpanded(day.day) ? 'border-accent-cyan/30' : 'border-border-subtle hover:border-accent-cyan/20'}`}
                 >
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-3">
+                  <div className="px-4 py-3 cursor-pointer select-none" onClick={() => setExpandedDay(isDayExpanded(day.day) && expandedDay !== -2 ? -1 : day.day)}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                        className={`text-text-muted transition-transform flex-shrink-0 ${expandedDay === day.day ? 'rotate-90' : ''}`}>
+                        className={`text-text-muted transition-transform flex-shrink-0 ${isDayExpanded(day.day) ? 'rotate-90' : ''}`}>
                         <path d="M9 18l6-6-6-6" />
                       </svg>
-                      <h2 className="font-display font-bold text-sm text-text-primary">Day {day.day} &mdash; {formatDateNice(day.date)}</h2>
+                      <h2 className="font-display font-bold text-[16px] text-text-primary whitespace-nowrap">Day {day.day} &mdash; {formatDateNice(day.date)}</h2>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold font-body ${dayStyle.bg} ${dayStyle.text} ${dayStyle.border} border`}>
                         {dayStyle.label}
                       </span>
                       {/* Weather inline with day title */}
-                      {day.departureCity && day.departureCity !== day.city ? (
-                        <div className="flex items-center gap-1.5">
-                          <WeatherBadge city={day.departureCity} date={isoDate} />
-                          <span className="text-text-muted text-[10px]">&rarr;</span>
-                          <WeatherBadge city={day.city} date={isoDate} />
+                      {day.city && (
+                        <div className="hidden md:flex items-center gap-1.5">
+                          {day.departureCity && day.departureCity !== day.city ? (
+                            <>
+                              <WeatherBadge city={day.departureCity} date={isoDate} />
+                              <span className="text-text-muted text-[10px]">&rarr;</span>
+                              <WeatherBadge city={day.city} date={isoDate} />
+                            </>
+                          ) : (
+                            <WeatherBadge city={day.city} date={isoDate} />
+                          )}
                         </div>
-                      ) : (
-                        <WeatherBadge city={day.city} date={isoDate} />
                       )}
                       {day.type === 'explore' && (() => {
                         const themes = trip.deepPlanData?.dayThemes?.[day.city]
                           || trip.deepPlanData?.dayThemes?.[trip.destinations.find(d => d.city.name === day.city)?.city.parentCity || ''];
                         const theme = themes && typeof day.exploreDayIndex === 'number' ? themes[day.exploreDayIndex] : null;
                         return theme ? (
-                          <span className="text-[10px] text-text-muted font-body italic">{theme}</span>
+                          <span className="hidden md:inline text-[10px] text-text-muted font-body italic">{theme}</span>
                         ) : null;
                       })()}
                     </div>
+                    {/* Right side: budget + actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {day.dayCost > 0 && (
+                        <span className="text-[13px] font-mono font-bold text-accent-cyan whitespace-nowrap">{formatPrice(day.dayCost, currency)}</span>
+                      )}
+                      {/* Add Activity + Refresh — explore days only, visible when expanded */}
+                      {isDayExpanded(day.day) && day.type === 'explore' && (
+                        <div className="print-hide flex items-center gap-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setShowActivityInput(prev => ({ ...prev, [day.day]: true })); }}
+                            className="p-1.5 rounded-lg text-text-muted hover:text-accent-cyan hover:bg-accent-cyan/5 transition-colors"
+                            aria-label="Add activity"
+                            title="Add activity"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          </button>
+                          {!aiLoading[day.city] && (() => {
+                            const cityKey = day.city;
+                            const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityKey || d.city.name === cityKey);
+                            if (!dest) return null;
+                            const exploreDaysCount = Math.max(0, dest.nights - 1);
+                            return (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); refreshAiActivities(cityKey, dest.city.country || '', exploreDaysCount, dest.places?.map(p => p.name) || []); }}
+                                className="p-1.5 rounded-lg text-text-muted hover:text-accent-cyan hover:bg-accent-cyan/5 transition-colors"
+                                aria-label="Get new ideas"
+                                title="Get new ideas"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Daily budget */}
-                  {day.dayCost > 0 && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-[10px] text-text-muted font-body">{day.costLabel}:</span>
-                      <span className="text-xs font-mono font-bold text-accent-cyan">{formatPrice(day.dayCost, currency)}</span>
-                    </div>
-                  )}
-                </div>
+                  {/* Collapsed preview: stats + activity names */}
+                  {!isDayExpanded(day.day) && (() => {
+                    const attractions = day.stops.filter(s => s.type === 'attraction' && !s.mealType);
+                    const transportStops = day.stops.filter(s => s.transport);
+                    const totalTravelMin = transportStops.reduce((sum, s) => {
+                      if (!s.transport?.duration) return sum;
+                      const dur = s.transport.duration;
+                      const hLong = dur.match(/(\d+)\s*hour/);
+                      const hShort = dur.match(/(\d+)\s*h(?:\s|$|[^o])/);
+                      const mLong = dur.match(/(\d+)\s*min/);
+                      const mShort = dur.match(/(\d+)\s*m(?:\s|$|[^i])/);
+                      const hours = hLong ? parseInt(hLong[1]) : hShort ? parseInt(hShort[1]) : 0;
+                      const mins = mLong ? parseInt(mLong[1]) : mShort ? parseInt(mShort[1]) : 0;
+                      return sum + hours * 60 + mins;
+                    }, 0);
+                    const previewNames = attractions.slice(0, 3).map(s => s.name === 'Rest / Sleep' ? 'Overnight' : s.name);
+                    const more = attractions.length > 3 ? ` +${attractions.length - 3} more` : '';
+                    return (
+                      <div className="mt-1.5 pl-7 flex items-center gap-2 flex-wrap">
+                        {attractions.length > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-bg-card rounded-full text-[10px] font-body text-text-muted">
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            {attractions.length} {attractions.length === 1 ? 'stop' : 'stops'}
+                          </span>
+                        )}
+                        {totalTravelMin > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-bg-card rounded-full text-[10px] font-mono text-text-muted">
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            {totalTravelMin >= 60 ? `${Math.floor(totalTravelMin / 60)}h ${totalTravelMin % 60}m` : `${totalTravelMin}m`} travel
+                          </span>
+                        )}
+                        {previewNames.length > 0 && (
+                          <p className="text-[10px] text-text-muted font-body truncate flex-1 min-w-0">
+                            {previewNames.join(' \u2022 ')}{more}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  </div>{/* end clickable header area */}
 
-                {/* Collapsible day content */}
-                {expandedDay === day.day && (<>
+                {/* Collapsible day content — inside the same card */}
+                {isDayExpanded(day.day) && (
+                  <div className="border-t border-border-subtle/50 px-4 pb-4 mt-1">
 
                 {/* Start time selector + AI loading for explore days */}
                 {day.type === 'explore' && (
-                  <div className="print-hide flex items-center gap-2 px-4 py-2 mb-1 flex-wrap">
-                    <label className="text-[10px] text-text-muted font-body">Start time:</label>
+                  <div className="print-hide flex items-center gap-3 py-3 flex-wrap">
+                    <label className="text-[11px] text-text-muted font-body font-medium">Start time</label>
                     <input
                       type="time"
                       value={dayStartTimes[day.day] || '09:00'}
@@ -1709,29 +1899,11 @@ function DeepPlanPageContent() {
                         Generating itinerary...
                       </span>
                     )}
-                    {!aiLoading[day.city] && (() => {
-                      const cityKey = day.city;
-                      const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityKey || d.city.name === cityKey);
-                      if (!dest) return null;
-                      const exploreDaysCount = Math.max(0, dest.nights - 1);
-                      return (
-                        <button
-                          onClick={() => refreshAiActivities(cityKey, dest.city.country || '', exploreDaysCount, dest.places?.map(p => p.name) || [])}
-                          className="text-[10px] text-text-muted hover:text-accent-cyan font-body ml-auto transition-colors flex items-center gap-1"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="23 4 23 10 17 10" />
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                          </svg>
-                          Refresh suggestions
-                        </button>
-                      );
-                    })()}
                   </div>
                 )}
 
-                {/* Timeline */}
-                <div className={`ml-4 border-l-2 ${dayStyle.line} pl-0`}>
+                {/* Timeline — solid line = confirmed plan */}
+                <div className={`ml-4 border-l-2 ${dayStyle.line} pl-0 mt-2`}>
                   {day.stops.map((stop, si) => {
                     const hasTransport = stop.transport !== null;
                     const isMeal = !!stop.mealType;
@@ -1744,15 +1916,15 @@ function DeepPlanPageContent() {
                     if (isMeal) {
                       return (
                         <div key={stop.id} className="relative">
-                          <div className="flex items-center gap-3 py-1.5 pl-4">
+                          <div className="flex items-center gap-3 py-1 pl-4">
                             {/* Timeline dot for meals */}
-                            <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-border-subtle" />
-                            <div className="flex items-center gap-2 flex-1">
+                            <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-orange-200" />
+                            <div className="inline-flex items-center gap-1.5 bg-orange-50/60 border border-orange-100/60 rounded-full px-3 py-0.5">
                               {stop.time && (
-                                <span className="text-text-muted text-[10px] font-mono">{formatTime12(parseTime(stop.time))}</span>
+                                <span className="text-orange-400 text-[10px] font-mono">{formatTime12(parseTime(stop.time))}</span>
                               )}
-                              <span className="text-text-muted text-xs font-body italic flex items-center gap-1">
-                                <span className="text-sm">&#127869;</span> {stop.name}
+                              <span className="text-orange-600 text-[11px] font-body font-medium flex items-center gap-1">
+                                <span className="text-xs">{stop.mealType === 'breakfast' ? '\u2615' : stop.mealType === 'dinner' ? '\uD83C\uDF19' : '\uD83C\uDF7D\uFE0F'}</span> {stop.name}
                               </span>
                             </div>
                           </div>
@@ -1775,7 +1947,7 @@ function DeepPlanPageContent() {
                         onDragEnd={isDraggableActivity ? handleDragEnd : undefined}
                       >
                         {/* Stop */}
-                        <div className="flex items-start gap-3 pl-4 py-2">
+                        <div className="flex items-start gap-3 pl-4 py-1.5">
                           {/* Timeline circle — category icon for attractions, plain dot otherwise */}
                           <div className="absolute -left-[7px] mt-1">
                             {stop.category && CATEGORY_ICONS[stop.category] ? (
@@ -1805,63 +1977,49 @@ function DeepPlanPageContent() {
                               <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
                             )}
                             <div className={isAttractionCard ? 'flex-1 min-w-0' : ''}>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {stop.time && (
-                                <span className="text-accent-cyan text-[11px] font-mono font-bold">
-                                  {formatTime12(parseTime(stop.time))}
-                                  {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
-                                </span>
-                              )}
-                              <h3 className="font-display font-bold text-sm text-text-primary leading-tight line-clamp-2" title={stop.name}>{stop.name}</h3>
-                              {/* Google Maps link for attractions and hotels */}
-                              {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
-                                <a
-                                  href={mapsUrl(stop.name, day.city)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="print-hide text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0"
-                                  aria-label={`View ${stop.name} on Google Maps`}
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                                    <circle cx="12" cy="10" r="3" />
-                                  </svg>
-                                </a>
-                              )}
-                              {/* Delete button for custom activities */}
-                              {isCustom && (
-                                <button
-                                  onClick={() => handleDeleteStop(day.day, stop.name)}
-                                  className="print-hide text-text-muted hover:text-red-500 transition-colors text-xs ml-1"
-                                  aria-label={`Remove ${stop.name}`}
-                                >
-                                  &times;
-                                </button>
-                              )}
-                              {/* Pin/save button for AI-generated activities on explore days */}
-                              {day.type === 'explore' && stop.type === 'attraction' && !isMeal && !isCustom && !stop.isPinned && (
-                                <button
-                                  onClick={() => handlePinActivity(day.day, stop)}
-                                  className="print-hide text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0"
-                                  aria-label={`Save ${stop.name} as custom activity`}
-                                  title="Save — keeps this activity through refreshes"
-                                >
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                                  </svg>
-                                </button>
-                              )}
-                              {/* Pinned indicator */}
-                              {stop.isPinned && (
-                                <span className="text-accent-cyan flex-shrink-0" title="Saved activity">
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1">
-                                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                                  </svg>
-                                </span>
-                              )}
+                            <div className="flex items-start gap-1.5">
+                              {/* Time + Name */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  {stop.time && (
+                                    <span className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0">
+                                      {formatTime12(parseTime(stop.time))}
+                                      {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
+                                    </span>
+                                  )}
+                                  <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : stop.name}</h3>
+                                </div>
+                              </div>
+                              {/* Action icons — always on same row, right-aligned */}
+                              <div className="print-hide flex items-center gap-1 flex-shrink-0 mt-0.5">
+                                {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
+                                  <a href={mapsUrl(stop.name, day.city)} target="_blank" rel="noopener noreferrer"
+                                    className="text-text-muted hover:text-accent-cyan transition-colors p-0.5"
+                                    aria-label={`View ${stop.name} on Google Maps`}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                  </a>
+                                )}
+                                {isCustom && (
+                                  <button onClick={() => handleDeleteStop(day.day, stop.name)}
+                                    className="text-text-muted hover:text-red-500 transition-colors text-xs p-0.5"
+                                    aria-label={`Remove ${stop.name}`}>&times;</button>
+                                )}
+                                {day.type === 'explore' && stop.type === 'attraction' && !isMeal && !isCustom && !stop.isPinned && (
+                                  <button onClick={() => handlePinActivity(day.day, stop)}
+                                    className="text-text-muted hover:text-accent-cyan transition-colors p-0.5"
+                                    aria-label={`Save ${stop.name}`} title="Save — keeps this activity through refreshes">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                                  </button>
+                                )}
+                                {stop.isPinned && (
+                                  <span className="text-accent-cyan p-0.5" title="Saved activity">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             {stop.note && (
-                              <p className="text-[11px] text-amber-600 font-body mt-0.5 flex items-start gap-1">
+                              <p className="text-[11px] text-amber-700 font-body mt-0.5 flex items-start gap-1">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                                 {stop.note}
                               </p>
@@ -1895,24 +2053,38 @@ function DeepPlanPageContent() {
                               </div>
                             )}
 
-                            {/* Bug fix #6: Hotel card with rating, price, dates */}
+                            {/* Hotel card with rating, price, booking status */}
                             {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (() => {
                               const dest = trip.destinations[stop.destIndex!];
                               const hotel = dest?.selectedHotel;
+                              const hasBookingDoc = day.city ? (trip.bookingDocs || []).some((d: any) => d.docType === 'hotel' && (d.city || '').toLowerCase().includes(day.city.toLowerCase())) : false;
                               if (!hotel) return (
-                                <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-xs font-body mt-0.5 hover:underline">
-                                  Select hotel
-                                </button>
+                                <div className="mt-2 bg-amber-50/60 border border-amber-200/50 border-l-[3px] border-l-amber-400 rounded-xl p-3">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-amber-700 font-body flex items-center gap-1.5">
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                      No hotel selected
+                                    </span>
+                                    <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Select hotel</button>
+                                  </div>
+                                </div>
                               );
                               return (
-                                <div className="mt-1.5 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-lg p-2 space-y-0.5">
+                                <div className="mt-2 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-xl p-3 space-y-1">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-1.5">
                                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                                      {hotel.rating > 0 && <span className="px-1 py-0.5 rounded text-white font-mono font-bold text-[8px]" style={{ backgroundColor: hotel.ratingColor }}>{hotel.rating}</span>}
-                                      <span className="text-[10px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}N</span>
+                                      {hotel.rating > 0 && <span className="px-1 py-0.5 rounded text-white font-mono font-bold text-[8px]" style={{ backgroundColor: hotel.ratingColor || '#9ca3af' }}>{hotel.rating}</span>}
+                                      <span className="text-[11px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}N</span>
                                     </div>
-                                    <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                    <div className="flex items-center gap-2">
+                                      {hasBookingDoc ? (
+                                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                      )}
+                                      <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -1949,17 +2121,28 @@ function DeepPlanPageContent() {
                             return (
                               <div className="pl-4 py-1">
                                 <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
-                                  <div className="bg-blue-50/50 border border-blue-200/60 border-l-[3px] border-l-blue-500 rounded-lg p-2.5 space-y-1">
+                                  <div className="bg-blue-50/50 border border-blue-200/60 border-l-[3px] border-l-blue-500 rounded-xl p-3 space-y-1.5">
                                     <div className="flex items-center justify-between">
-                                      <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
+                                      <span className="text-[13px] font-display font-bold text-text-primary flex items-center gap-1.5">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
                                         {flight.airline} {flight.flightNumber}
                                       </span>
                                       <div className="flex items-center gap-2 print-hide">
-                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                        {(() => {
+                                          const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
+                                          const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
+                                          const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
+                                          const hasDoc = fcName && tcName && (trip.bookingDocs || []).some((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName));
+                                          return hasDoc ? (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-blue-100 text-blue-700">Pending</span>
+                                          );
+                                        })()}
+                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
                                       </div>
                                     </div>
-                                    <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                    <div className="flex items-center justify-between text-[11px] text-text-secondary font-mono">
                                       <span>{flight.departure} &rarr; {flight.arrival}</span>
                                       <span>{flight.duration} &middot; {flight.stops}</span>
                                     </div>
@@ -1977,7 +2160,7 @@ function DeepPlanPageContent() {
                           if (train && legIdx !== undefined) {
                             const isBus = leg?.type === 'bus';
                             const isDrive = leg?.type === 'drive';
-                            const cardStyle = isBus ? 'bg-orange-50/50 border border-orange-200/60 border-l-orange-500'
+                            const transportStyle = isBus ? 'bg-orange-50/50 border border-orange-200/60 border-l-orange-500'
                               : isDrive ? 'bg-slate-50/50 border border-slate-200/60 border-l-slate-500'
                               : 'bg-amber-50/50 border border-amber-200/60 border-l-amber-500';
                             const iconColor = isBus ? '#f97316' : isDrive ? '#64748b' : '#f59e0b';
@@ -1988,15 +2171,28 @@ function DeepPlanPageContent() {
                             return (
                               <div className="pl-4 py-1">
                                 <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
-                                  <div className={`${cardStyle} border-l-[3px] rounded-lg p-2.5 space-y-1`}>
+                                  <div className={`${transportStyle} border-l-[3px] rounded-xl p-3 space-y-1.5`}>
                                     <div className="flex items-center justify-between">
                                       <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={iconPath}/></svg>
                                         {train.operator || train.trainName} {train.trainNumber}
                                       </span>
-                                      <button onClick={() => setTransportModal({ legIndex: legIdx })} className="print-hide text-accent-cyan text-[9px] font-body hover:underline">Change</button>
+                                      <div className="flex items-center gap-2 print-hide">
+                                        {(() => {
+                                          const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
+                                          const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
+                                          const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
+                                          const hasDoc = fcName && tcName && (trip.bookingDocs || []).some((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName));
+                                          return hasDoc ? (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                          );
+                                        })()}
+                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
+                                      </div>
                                     </div>
-                                    <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                    <div className="flex items-center justify-between text-[11px] text-text-secondary font-mono">
                                       {hasTimes ? (
                                         <span>{train.departure} &rarr; {train.arrival}</span>
                                       ) : null}
@@ -2071,7 +2267,7 @@ function DeepPlanPageContent() {
                                         </button>
                                         {gmapsUrl && (
                                           <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
-                                            className="print-hide text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors ml-auto">
+                                            className="print-hide text-[11px] text-accent-cyan hover:underline font-body font-semibold transition-colors ml-auto">
                                             Directions &rarr;
                                           </a>
                                         )}
@@ -2103,79 +2299,104 @@ function DeepPlanPageContent() {
                   })}
                 </div>
 
-                {/* Generate Itinerary button for travel/departure days with free time */}
+                {/* Smart empty state / Generate Itinerary for days with free time */}
                 {(day.type === 'travel' || day.type === 'departure') && day.stops.some(s => s.name.startsWith('Free time')) && (() => {
                   const freeStop = day.stops.find(s => s.name.startsWith('Free time'));
                   const hoursMatch = freeStop?.name.match(/(\d+)\s*hours?/);
                   const freeHours = hoursMatch ? parseInt(hoursMatch[1]) : 4;
-                  if (freeHours < 1) return null; // Not enough free time
+                  if (freeHours < 1) return null;
                   return (
-                  <div className="print-hide ml-4 pl-4 mt-2">
-                    {generatingDay[day.day] ? (
-                      <span className="flex items-center gap-2 text-xs text-accent-cyan font-body">
-                        <span className="w-3 h-3 border border-accent-cyan border-t-transparent rounded-full animate-spin" />
-                        Generating activities...
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleGenerateItinerary(day.day, day.city, freeHours)}
-                        className="flex items-center gap-1.5 text-xs font-body text-accent-cyan hover:text-accent-cyan/80 transition-colors"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                        </svg>
-                        Generate itinerary ({freeHours}h free)
-                      </button>
-                    )}
+                  <div className="print-hide ml-4 pl-4 mt-3">
+                    <div className="bg-gradient-to-r from-accent-cyan/5 to-transparent border border-accent-cyan/15 rounded-xl p-3">
+                      <p className="text-[12px] text-text-secondary font-body mb-2">
+                        You have <span className="font-semibold text-text-primary">{freeHours} hours free</span> in {day.city}. Fill them with activities?
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {generatingDay[day.day] ? (
+                          <span className="flex items-center gap-2 text-[12px] text-accent-cyan font-body">
+                            <span className="w-3 h-3 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+                            Generating...
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleGenerateItinerary(day.day, day.city, freeHours)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-cyan text-white text-[12px] font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                            Auto-plan this day
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   );
                 })()}
 
-                {/* Add Activity button (explore days only) */}
-                {day.type === 'explore' && (
-                  <div className="print-hide ml-4 pl-4 mt-2">
-                    {!showActivityInput[day.day] ? (
-                      <button
-                        onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: true }))}
-                        className="flex items-center gap-1.5 text-xs font-body font-semibold text-accent-cyan hover:text-accent-cyan/80 border border-accent-cyan/30 hover:border-accent-cyan/50 rounded-lg px-3 py-1.5 transition-colors"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="12" y1="5" x2="12" y2="19" />
-                          <line x1="5" y1="12" x2="19" y2="12" />
-                        </svg>
-                        Add Activity
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <input
-                          type="text"
-                          placeholder="Activity name..."
-                          value={activityInputText[day.day] || ''}
-                          onChange={e => setActivityInputText(prev => ({ ...prev, [day.day]: e.target.value }))}
-                          onKeyDown={e => { if (e.key === 'Enter') handleAddActivity(day.day); if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
-                          className="flex-1 min-w-[120px] text-xs font-body bg-bg-card border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
-                          autoFocus
-                        />
-                        <input
-                          type="time"
-                          value={activityInputTime[day.day] || getDefaultActivityTime(day.day)}
-                          onChange={e => setActivityInputTime(prev => ({ ...prev, [day.day]: e.target.value }))}
-                          className="text-xs font-mono bg-bg-card border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary focus:outline-none focus:border-accent-cyan w-[90px]"
-                        />
+                {/* Empty state for explore days with no attractions */}
+                {day.type === 'explore' && day.stops.filter(s => s.type === 'attraction' && !s.mealType).length === 0 && !showActivityInput[day.day] && (
+                  <div className="print-hide ml-4 pl-4 mt-3">
+                    <div className="bg-gradient-to-r from-emerald-50/50 to-transparent border border-emerald-200/30 rounded-xl p-3 text-center">
+                      <p className="text-[12px] text-text-secondary font-body mb-2">This day is still open. Add some activities?</p>
+                      <div className="flex items-center justify-center gap-2 flex-wrap">
                         <button
-                          onClick={() => handleAddActivity(day.day)}
-                          className="px-2.5 py-1.5 bg-accent-cyan text-white text-xs font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                          onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: true }))}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-cyan text-white text-[12px] font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
                         >
-                          Add
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          Add places
                         </button>
-                        <button
-                          onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: false }))}
-                          className="text-text-muted hover:text-text-primary text-xs"
-                        >
-                          &times;
-                        </button>
+                        {!aiLoading[day.city] && (() => {
+                          const cityKey = day.city;
+                          const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityKey || d.city.name === cityKey);
+                          if (!dest) return null;
+                          const exploreDaysCount = Math.max(0, dest.nights - 1);
+                          return (
+                            <button
+                              onClick={() => refreshAiActivities(cityKey, dest.city.country || '', exploreDaysCount, dest.places?.map(p => p.name) || [])}
+                              className="flex items-center gap-1.5 px-3 py-1.5 border border-accent-cyan/30 text-accent-cyan text-[12px] font-body font-semibold rounded-lg hover:bg-accent-cyan/5 transition-colors"
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                              Auto-plan
+                            </button>
+                          );
+                        })()}
                       </div>
-                    )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add Activity input form (explore days, shown via header button) */}
+                {day.type === 'explore' && showActivityInput[day.day] && (
+                  <div className="print-hide ml-4 pl-4 mt-2">
+                    <div className="flex items-center gap-2 flex-wrap bg-bg-card border border-accent-cyan/30 rounded-xl p-2.5">
+                      <input
+                        type="text"
+                        placeholder="Activity name..."
+                        value={activityInputText[day.day] || ''}
+                        onChange={e => setActivityInputText(prev => ({ ...prev, [day.day]: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddActivity(day.day); if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
+                        className="flex-1 min-w-[120px] text-xs font-body bg-transparent border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
+                        autoFocus
+                      />
+                      <input
+                        type="time"
+                        value={activityInputTime[day.day] || getDefaultActivityTime(day.day)}
+                        onChange={e => setActivityInputTime(prev => ({ ...prev, [day.day]: e.target.value }))}
+                        className="text-xs font-mono bg-transparent border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary focus:outline-none focus:border-accent-cyan w-[90px]"
+                      />
+                      <button
+                        onClick={() => handleAddActivity(day.day)}
+                        className="px-3 py-1.5 bg-accent-cyan text-white text-xs font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: false }))}
+                        className="text-text-muted hover:text-text-primary text-sm px-1"
+                      >
+                        &times;
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -2217,83 +2438,164 @@ function DeepPlanPageContent() {
                   )}
                 </div>
 
-                </>)}{/* end collapsible day content */}
+                  </div>
+                )}{/* end collapsible day content */}
+                </div>{/* end day card */}
               </div>
             );
           })}
 
-          {/* Trip Summary */}
-          <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
-            <h3 className="font-display font-bold text-sm text-text-primary mb-3">Trip Summary</h3>
-            <div className="grid grid-cols-3 gap-2 md:gap-4 text-center mb-3">
-              <div><p className="text-accent-cyan font-mono font-bold text-lg">{adjustedDays.length}</p><p className="text-text-muted text-[10px] font-body">Days</p></div>
-              <div><p className="text-accent-cyan font-mono font-bold text-lg">{trip.destinations.length}</p><p className="text-text-muted text-[10px] font-body">Cities</p></div>
-              <div><p className="text-accent-cyan font-mono font-bold text-lg">{totalNights}</p><p className="text-text-muted text-[10px] font-body">Nights</p></div>
+          {/* Trip Summary — mobile only (sidebar handles desktop) */}
+          <div className="md:hidden mt-6 bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+            <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Trip Summary</h3>
+            <div className="grid grid-cols-3 gap-3 text-center mb-3">
+              <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{adjustedDays.length}</p><p className="text-text-muted text-[11px] font-body">Days</p></div>
+              <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{trip.destinations.length}</p><p className="text-text-muted text-[11px] font-body">Cities</p></div>
+              <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{totalNights}</p><p className="text-text-muted text-[11px] font-body">Nights</p></div>
             </div>
             {(flightCost + trainCost + hotelCost) > 0 && (
               <div className="pt-3 border-t border-border-subtle space-y-2">
                 {flightCost > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-text-muted font-body">Flights</span>
-                    <span className="text-xs font-mono text-text-secondary">{formatPrice(flightCost, currency)}</span>
+                    <span className="text-[12px] text-text-muted font-body">Flights</span>
+                    <span className="text-[13px] font-mono text-text-secondary">{formatPrice(flightCost, currency)}</span>
                   </div>
                 )}
                 {trainCost > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-text-muted font-body">Trains</span>
-                    <span className="text-xs font-mono text-text-secondary">{formatPrice(trainCost, currency)}</span>
+                    <span className="text-[12px] text-text-muted font-body">Trains</span>
+                    <span className="text-[13px] font-mono text-text-secondary">{formatPrice(trainCost, currency)}</span>
                   </div>
                 )}
                 {hotelCost > 0 && (
                   <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-text-muted font-body">Hotels ({totalNights}N)</span>
-                    <span className="text-xs font-mono text-text-secondary">{formatPrice(hotelCost, currency)}</span>
+                    <span className="text-[12px] text-text-muted font-body">Hotels ({totalNights}N)</span>
+                    <span className="text-[13px] font-mono text-text-secondary">{formatPrice(hotelCost, currency)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
-                  <span className="text-xs text-text-secondary font-body font-semibold">Estimated Total</span>
-                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+                  <span className="text-[13px] text-text-primary font-body font-semibold">Estimated Total</span>
+                  <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
                 </div>
               </div>
             )}
-            {/* Warning: missing hotels or transport */}
             {trip.destinations.some(d => d.nights > 0 && !d.selectedHotel) && (
-              <p className="mt-2 text-[10px] text-amber-600 font-body flex items-center gap-1">
+              <p className="mt-2 text-[11px] text-amber-600 font-body flex items-center gap-1">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                Some destinations have no hotel selected — cost estimate is incomplete.
+                Some destinations have no hotel selected.
               </p>
             )}
             {trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay && (
-              <p className="mt-1 text-[10px] text-amber-600 font-body flex items-center gap-1">
+              <p className="mt-1 text-[11px] text-amber-600 font-body flex items-center gap-1">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                Some transport legs have no selection — cost estimate is incomplete.
+                Some transport legs have no selection.
               </p>
             )}
           </div>
+
+          </div>{/* end main itinerary column */}
+
+          {/* ====== [F] SIDEBAR — Desktop Only ====== */}
+          <aside className="hidden md:block md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide">
+            {/* Trip Progress */}
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+              <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Trip Progress</h3>
+              <div className="space-y-2.5">
+                <div className="flex justify-between text-[12px] font-body">
+                  <span className="text-text-secondary">Days</span>
+                  <span className="font-mono font-semibold text-text-primary">{adjustedDays.length}</span>
+                </div>
+                <div className="flex justify-between text-[12px] font-body">
+                  <span className="text-text-secondary">Cities</span>
+                  <span className="font-mono font-semibold text-text-primary">{trip.destinations.length}</span>
+                </div>
+                <div className="flex justify-between text-[12px] font-body">
+                  <span className="text-text-secondary">Nights</span>
+                  <span className="font-mono font-semibold text-text-primary">{totalNights}</span>
+                </div>
+                <div className="flex justify-between text-[12px] font-body">
+                  <span className="text-text-secondary">Activities</span>
+                  <span className="font-mono font-semibold text-text-primary">{adjustedDays.reduce((n, d) => n + d.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).length, 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Budget Summary */}
+            {(flightCost + trainCost + hotelCost) > 0 && (
+              <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+                <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Budget</h3>
+                <div className="space-y-2.5">
+                  {flightCost > 0 && (
+                    <div className="flex justify-between items-center text-[12px]">
+                      <span className="text-text-secondary font-body flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-400" /> Flights
+                      </span>
+                      <span className="font-mono text-text-primary">{formatPrice(flightCost, currency)}</span>
+                    </div>
+                  )}
+                  {trainCost > 0 && (
+                    <div className="flex justify-between items-center text-[12px]">
+                      <span className="text-text-secondary font-body flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400" /> Trains
+                      </span>
+                      <span className="font-mono text-text-primary">{formatPrice(trainCost, currency)}</span>
+                    </div>
+                  )}
+                  {hotelCost > 0 && (
+                    <div className="flex justify-between items-center text-[12px]">
+                      <span className="text-text-secondary font-body flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-400" /> Hotels ({totalNights}N)
+                      </span>
+                      <span className="font-mono text-text-primary">{formatPrice(hotelCost, currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-2.5 border-t border-border-subtle">
+                    <span className="text-[13px] text-text-primary font-body font-semibold">Total</span>
+                    <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Booking Warnings */}
+            {(trip.destinations.some(d => d.nights > 0 && !d.selectedHotel) || (trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay)) && (
+              <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-4">
+                <h3 className="font-display font-bold text-[13px] text-amber-800 mb-2 flex items-center gap-1.5">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Incomplete
+                </h3>
+                <div className="space-y-1.5 text-[11px] text-amber-700 font-body">
+                  {trip.destinations.some(d => d.nights > 0 && !d.selectedHotel) && (
+                    <p>Missing hotel for some destinations</p>
+                  )}
+                  {trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay && (
+                    <p>Missing transport for some legs</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Links */}
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+              <h3 className="font-display font-bold text-[14px] text-text-primary mb-2">Quick Links</h3>
+              <div className="space-y-2">
+                <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')}
+                  className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                  Back to Route
+                </button>
+                <button onClick={() => window.print()}
+                  className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                  Print Itinerary
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          </div>{/* end 2-column layout */}
         </div>
       </motion.div>
-
-      {/* Flight Modal */}
-      {flightModal !== null && (() => {
-        const { fromCity, toCity } = getLegCities(flightModal.legIndex);
-        const leg = trip.transportLegs[flightModal.legIndex];
-        if (!fromCity || !toCity) return null;
-        return <FlightModal isOpen onClose={() => setFlightModal(null)}
-          fromAirport={fromCity.airport?.name || fromCity.name} toAirport={toCity.airport?.name || toCity.name}
-          fromCode={fromCity.airportCode || 'BOM'} toCode={toCity.airportCode || 'AMS'} date={trip.departureDate}
-          selectedFlight={leg?.selectedFlight || null}
-          onSelectFlight={f => { if (leg) trip.selectFlight(leg.id, f); setFlightModal(null); }} />;
-      })()}
-
-      {/* Train Modal */}
-      {trainModal !== null && (() => {
-        const { fromCity, toCity } = getLegCities(trainModal.legIndex);
-        const leg = trip.transportLegs[trainModal.legIndex];
-        return <TrainModal isOpen onClose={() => setTrainModal(null)}
-          fromCity={fromCity?.name || ''} toCity={toCity?.name || ''}
-          selectedTrain={leg?.selectedTrain || null}
-          onSelectTrain={t => { if (leg) trip.selectTrain(leg.id, t); setTrainModal(null); }} />;
-      })()}
 
       {/* Hotel Modal */}
       {hotelModal !== null && (() => {
@@ -2304,21 +2606,82 @@ function DeepPlanPageContent() {
           onSelectHotel={h => { trip.updateDestinationHotel(dest.id, h); setHotelModal(null); }} />;
       })()}
 
-      {/* Transport Modal */}
+      {/* Transport Compare Modal (full-screen, same as route page) */}
       {transportModal !== null && (() => {
         const { fromCity, toCity } = getLegCities(transportModal.legIndex);
         const leg = trip.transportLegs[transportModal.legIndex];
-        const hasTrains = true;
-        return <TransportModal isOpen onClose={() => setTransportModal(null)} currentType={leg?.type || 'drive'}
-          trainAvailable={hasTrains}
-          onSelectType={type => {
-            if (leg) {
-              trip.changeTransportType(leg.id, type);
+        if (!fromCity || !toCity) return null;
+        return (
+          <TransportCompareModal
+            isOpen
+            onClose={() => setTransportModal(null)}
+            fromCity={fromCity?.name || ''}
+            toCity={toCity?.name || ''}
+            fromCode={leg?.resolvedAirports?.fromCode || (fromCity as any)?.airportCode || ''}
+            toCode={leg?.resolvedAirports?.toCode || (toCity as any)?.airportCode || ''}
+            fromAirport={(fromCity as any)?.airport?.name || fromCity?.name || ''}
+            toAirport={(toCity as any)?.airport?.name || toCity?.name || ''}
+            date={trip.departureDate}
+            adults={trip.adults}
+            children={trip.children}
+            infants={trip.infants}
+            currentType={leg?.type || 'drive'}
+            selectedFlight={leg?.selectedFlight || null}
+            selectedTrain={leg?.selectedTrain || null}
+            cachedFlights={null}
+            onSelectFlight={(flight, airportInfo) => {
+              if (leg) {
+                trip.selectFlight(leg.id, flight);
+                if (airportInfo) {
+                  const routeParts = flight.route?.split('-') || [];
+                  const updated = {
+                    fromCode: airportInfo.fromCode,
+                    fromCity: airportInfo.fromCity,
+                    fromDistance: airportInfo.fromDistance,
+                    fromAirport: airportInfo.fromCity,
+                    toCode: routeParts[1]?.trim() || leg.resolvedAirports?.toCode || '',
+                    toCity: leg.resolvedAirports?.toCity || toCity?.name || '',
+                    toAirport: leg.resolvedAirports?.toAirport || '',
+                    toDistance: leg.resolvedAirports?.toDistance || 0,
+                  };
+                  trip.updateTransportLeg(leg.id, { resolvedAirports: updated });
+                }
+              }
               setTransportModal(null);
-              if (type === 'flight') setFlightModal({ legIndex: transportModal.legIndex });
-              else if (type === 'train') setTrainModal({ legIndex: transportModal.legIndex });
-            }
-          }} />;
+            }}
+            onSelectTrain={train => {
+              if (leg) trip.selectTrain(leg.id, train);
+              setTransportModal(null);
+            }}
+            onSelectBus={bus => {
+              if (leg) trip.updateTransportLeg(leg.id, { type: 'bus', selectedFlight: null, selectedTrain: bus });
+              setTransportModal(null);
+            }}
+            onSelectDrive={(info) => {
+              if (!leg) { setTransportModal(null); return; }
+              const distKm = parseFloat((info?.distance || '0').replace(/[^\d.]/g, '')) || 0;
+              const fuelCostINR = Math.round(distKm * 8);
+              const cabCostINR = Math.round(distKm * 18);
+              const isCab = info?.mode === 'cab';
+              const isWalk = info?.mode === 'walk';
+              const isCycle = info?.mode === 'cycle';
+              const price = isWalk || isCycle ? 0 : isCab ? cabCostINR : fuelCostINR;
+              trip.updateTransportLeg(leg.id, {
+                type: 'drive',
+                selectedFlight: null,
+                selectedTrain: {
+                  id: `drive-${leg.id}`,
+                  operator: isCab ? 'Hire Cab' : isWalk ? 'Walking' : isCycle ? 'Cycling' : 'Self Drive',
+                  trainName: '', trainNumber: '', departure: '', arrival: '',
+                  duration: info?.duration || '', price,
+                  stops: 'Direct', fromStation: '', toStation: '', color: '#64748b',
+                },
+                distance: info?.distance || '',
+              });
+              setTransportModal(null);
+            }}
+          />
+        );
       })()}
 
       {/* Print styles */}
@@ -2329,12 +2692,7 @@ function DeepPlanPageContent() {
             print-color-adjust: exact !important;
             font-size: 90% !important;
           }
-          /* Hide all interactive elements */
-          .print-hide {
-            display: none !important;
-          }
-          /* Hide header navigation / breadcrumb (uses print-hide class) */
-          /* Full width, no max-width constraint */
+          .print-hide { display: none !important; }
           .deep-plan-page {
             padding: 0 !important;
             max-width: 100% !important;
@@ -2342,56 +2700,32 @@ function DeepPlanPageContent() {
           .deep-plan-page > div {
             max-width: 100% !important;
           }
-          .deep-plan-page .card-warm-lg {
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            padding: 16px !important;
-            max-width: 100% !important;
-          }
-          /* Remove card shadows and rounded corners on day cards */
-          .deep-plan-page .rounded-xl {
-            border-radius: 4px !important;
-            box-shadow: none !important;
-          }
-          .deep-plan-page .rounded-lg {
-            border-radius: 2px !important;
-            box-shadow: none !important;
-          }
-          .deep-plan-page .rounded-full {
-            box-shadow: none !important;
-          }
-          /* Day type badges: keep readable in print */
+          /* Force single column in print — hide sidebar */
+          .deep-plan-page aside { display: none !important; }
+          .deep-plan-page .md\\:flex { display: block !important; }
+          .deep-plan-page .md\\:hidden { display: block !important; }
+          /* Remove card shadows */
+          .deep-plan-page .rounded-xl { border-radius: 4px !important; box-shadow: none !important; }
+          .deep-plan-page .rounded-lg { border-radius: 2px !important; box-shadow: none !important; }
+          .deep-plan-page .shadow-sm { box-shadow: none !important; }
+          /* Day type badges: keep readable */
           .deep-plan-page .bg-blue-50,
           .deep-plan-page .bg-emerald-50,
           .deep-plan-page .bg-orange-50 {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          /* Show all days expanded in print (override collapse) */
-          .deep-plan-page .mb-10 > *:not(:first-child) {
-            display: block !important;
-          }
-          /* Hide place photos in print (save ink) */
-          .deep-plan-page img[loading="lazy"] {
-            display: none !important;
-          }
-          /* Compact font size */
-          .deep-plan-page h1 {
-            font-size: 16px !important;
-          }
-          .deep-plan-page h2 {
-            font-size: 12px !important;
-          }
-          .deep-plan-page h3 {
-            font-size: 11px !important;
-          }
-          /* Avoid page breaks inside day cards */
-          .deep-plan-page .mb-10 {
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          /* Force background colors where needed */
+          /* Show all days expanded */
+          .deep-plan-page [id^="day-"] > div > div:not(:first-child) { display: block !important; }
+          /* Hide photos in print */
+          .deep-plan-page img[loading="lazy"] { display: none !important; }
+          /* Compact font sizes */
+          .deep-plan-page h1 { font-size: 16px !important; }
+          .deep-plan-page h2 { font-size: 12px !important; }
+          .deep-plan-page h3 { font-size: 11px !important; }
+          /* Avoid page breaks */
+          .deep-plan-page [id^="day-"] { page-break-inside: avoid; break-inside: avoid; }
+          /* Force backgrounds */
           .deep-plan-page [style*="backgroundColor"] {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
