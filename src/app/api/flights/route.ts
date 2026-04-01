@@ -75,50 +75,64 @@ export async function GET(req: NextRequest) {
       fromCandidates = [{ code: from.toUpperCase(), city: from, name: from, distance: 0 } as any];
     }
 
-    // Try multiple arrival airports (closest 3) in case the nearest has no flights (e.g., PNY for Pondicherry)
-    const toCandidates = exactAirport
+    // Search multiple arrival airports (like Skyscanner "Any airport" mode)
+    // For exact=true (user selected specific airport), only search that one
+    let toCandidates = exactAirport
       ? [toAirports.find(ap => ap.code.toUpperCase() === to.toUpperCase()) || toAirports[0]]
-      : toAirports.slice(0, 3);
-    const toCode = toCandidates[0].code;
+      : toAirports.slice(0, 5); // Top 5 nearby airports
 
-    // Amadeus: try closest departure × multiple arrival airports
     const fromAp = fromCandidates[0];
     const nearest = fromAirports[0];
 
-    let amadeusFlights: any[] | null = null;
-    let resolvedToAp = toCandidates[0]; // Track which arrival airport actually had flights
+    // Search ALL arrival airports in PARALLEL, merge results for best coverage + cheapest price
+    let allFlights: any[] = [];
     if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
-      for (const toAp of toCandidates) {
-        const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
-        if (result && result.length > 0) { amadeusFlights = result; resolvedToAp = toAp; break; }
+      // Fallback: if input was an IATA code (e.g., saved LBG), also resolve nearby airports
+      if (/^[A-Z]{3}$/.test(to) && toAirports.length === 1 && toAirports[0].city && !exactAirport) {
+        const nearbyTo = await resolveToAirports(toAirports[0].city, baseUrl);
+        const existingCodes = new Set(toCandidates.map(c => c.code));
+        const extra = nearbyTo.filter(a => !existingCodes.has(a.code)).slice(0, 4);
+        toCandidates = [...toCandidates, ...extra];
       }
 
-      // Fallback: if input was an IATA code with no results (e.g., LBG — no commercial flights),
-      // resolve nearby airports for that code's city and retry
-      if (!amadeusFlights && /^[A-Z]{3}$/.test(to) && toAirports.length === 1 && toAirports[0].city) {
-        const nearbyTo = await resolveToAirports(toAirports[0].city, baseUrl);
-        const triedCodes = new Set(toCandidates.map(c => c.code));
-        for (const toAp of nearbyTo.filter(a => !triedCodes.has(a.code)).slice(0, 3)) {
-          const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
-          if (result && result.length > 0) { amadeusFlights = result; resolvedToAp = toAp; break; }
+      const results = await Promise.allSettled(
+        toCandidates.map(toAp =>
+          fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null)
+        )
+      );
+
+      // Merge all flights, dedup by flight number + departure time
+      const seen = new Set<string>();
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value && r.value.length > 0) {
+          for (const f of r.value) {
+            const key = `${f.flightNumber}-${f.departure}-${f.arrAirportCode}`;
+            if (!seen.has(key)) { seen.add(key); allFlights.push(f); }
+          }
         }
       }
+
+      // Sort by price (cheapest first)
+      allFlights.sort((a, b) => a.price - b.price);
     }
 
-    if (amadeusFlights && amadeusFlights.length > 0) {
+    if (allFlights.length > 0) {
+      // Use cheapest flight's arrival airport as the "resolved" airport
+      const cheapest = allFlights[0];
+      const cheapestToAp = toCandidates.find(a => a.code === cheapest.arrAirportCode) || toCandidates[0];
       const responseData = {
         status: 'OK',
         from, to, date, adults: parseInt(adults),
         fromResolved: fromAp.code,
-        toResolved: resolvedToAp.code,
+        toResolved: cheapestToAp.code,
         fromAirport: fromAp.name,
         fromCity: fromAp.city,
         fromDistance: fromAp.distance,
-        toCity: resolvedToAp.city || resolvedToAp.name || '',
-        toDistance: resolvedToAp.distance || 0,
-        toAirport: resolvedToAp.name || '',
+        toCity: cheapestToAp.city || cheapestToAp.name || '',
+        toDistance: cheapestToAp.distance || 0,
+        toAirport: cheapestToAp.name || '',
         nearestFrom: nearest.code !== fromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
-        flights: amadeusFlights,
+        flights: allFlights,
         source: 'amadeus' as const,
       };
 
