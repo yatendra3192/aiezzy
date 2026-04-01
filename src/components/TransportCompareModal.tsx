@@ -833,9 +833,9 @@ export default function TransportCompareModal({
                     <div className="flex gap-0">
                       {/* Desktop filter sidebar */}
                       {flights.length >= 3 && filterMeta && (
-                        <div className="hidden md:block w-[240px] flex-shrink-0 border-r border-border-subtle p-4 overflow-y-auto max-h-[calc(100vh-220px)]">
-                          <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-xs font-display font-bold text-text-primary">Filters</h3>
+                        <div className="hidden md:block w-[190px] flex-shrink-0 border-r border-border-subtle pr-3 pl-1 py-2 overflow-y-auto max-h-[calc(100vh-220px)]">
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-[10px] font-display font-bold text-text-primary">Filters</h3>
                             {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0) && (
                               <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); }}
                                 className="text-[9px] text-accent-gold font-body hover:underline">Clear all</button>
@@ -843,8 +843,8 @@ export default function TransportCompareModal({
                           </div>
 
                           {/* Stops */}
-                          <div className="mb-4">
-                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Stops</p>
+                          <div className="mb-3">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Stops</p>
                             <div className="space-y-1">
                               {Array.from(filterMeta.stopsMap.entries()).sort((a, b) => a[0] - b[0]).map(([stops, info]) => (
                                 <label key={stops} className="flex items-center justify-between cursor-pointer group">
@@ -861,8 +861,8 @@ export default function TransportCompareModal({
                           </div>
 
                           {/* Airlines */}
-                          <div className="mb-4">
-                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Airlines</p>
+                          <div className="mb-3">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Airlines</p>
                             <div className="space-y-1 max-h-[120px] overflow-y-auto">
                               {Array.from(filterMeta.airlinesMap.values()).sort((a, b) => a.cheapest - b.cheapest).map(al => (
                                 <label key={al.code} className="flex items-center justify-between cursor-pointer group">
@@ -876,7 +876,7 @@ export default function TransportCompareModal({
                                         setFilterAirlines(ns);
                                       }}
                                       className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
-                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan truncate max-w-[120px]">{al.name}</span>
+                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan truncate max-w-[90px]">{al.name}</span>
                                   </span>
                                   <span className="text-[9px] font-mono text-text-muted">{formatPrice(al.cheapest, currency)}</span>
                                 </label>
@@ -885,8 +885,8 @@ export default function TransportCompareModal({
                           </div>
 
                           {/* Departure time */}
-                          <div className="mb-4">
-                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Departure time</p>
+                          <div className="mb-3">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Departure time</p>
                             <div className="grid grid-cols-2 gap-1.5">
                               {[
                                 { key: 'morning', label: 'Morning', sub: '6am-12pm' },
@@ -933,7 +933,7 @@ export default function TransportCompareModal({
                       )}
 
                       {/* Flight list */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pl-3 md:pl-4">
                         {/* Sort row + mobile filter toggle */}
                         <div className="mb-3 flex items-center gap-2 flex-wrap">
                           <div className="flex rounded-lg overflow-hidden border border-border-subtle flex-shrink-0">
@@ -1044,7 +1044,7 @@ export default function TransportCompareModal({
                                   const airportInfo = selectedAirportFilter ? nearbyAirports.find(a => a.code === selectedAirportFilter) : undefined;
                                   onSelectFlight(f, airportInfo ? { fromCode: airportInfo.code, fromCity: airportInfo.city, fromDistance: airportInfo.distance } : undefined);
                                 }}
-                                  className={`w-full text-left p-4 rounded-xl border transition-all relative ${isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'}`}>
+                                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all relative ${isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'}`}>
                                   {/* Badge */}
                                   {badge && !isSelected && (
                                     <span className={`absolute -top-2 left-3 px-2 py-0.5 text-white text-[9px] font-display font-bold rounded-full ${badge === 'Cheapest' ? 'bg-accent-gold' : badge === 'Fastest' ? 'bg-blue-500' : 'bg-accent-cyan'}`}>{badge}</span>
