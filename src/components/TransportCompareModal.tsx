@@ -617,41 +617,56 @@ export default function TransportCompareModal({
             role="dialog" aria-modal="true" aria-label="Compare transport options"
             className="flex-1 flex flex-col overflow-hidden">
 
-            {/* Header — compact */}
-            <div className="px-4 md:px-6 pt-2 pb-2 border-b border-border-subtle flex-shrink-0">
-              <div className="flex items-center gap-3 mb-2">
-                <button onClick={onClose} className="w-7 h-7 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            {/* Header — single row: title | tabs | add/upload */}
+            <div className="px-3 md:px-5 py-2 border-b border-border-subtle flex-shrink-0">
+              <div className="flex items-center gap-3">
+                {/* Title */}
+                <button onClick={onClose} className="w-6 h-6 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                 </button>
-                <div className="flex-1">
-                  <h2 className="font-display font-bold text-sm text-text-primary">{fromCity} &rarr; {toCity}</h2>
-                  <p className="text-[9px] text-text-muted font-body">{new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} &middot; {adults} pax</p>
+                <div className="flex-shrink-0">
+                  <h2 className="font-display font-bold text-xs text-text-primary leading-tight">{fromCity} &rarr; {toCity}</h2>
+                  <p className="text-[8px] text-text-muted font-body">{new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} &middot; {adults} pax</p>
                 </div>
-              </div>
 
-              {/* Transport tabs — compact row */}
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide -mx-1 px-1" role="tablist" aria-label="Transport type">
-                {[...PRIMARY_TABS, ...SECONDARY_TABS].map(t => {
-                  const avail = availability[t.id];
-                  const isActive = tab === t.id;
-                  const isPrimary = PRIMARY_TABS.some(p => p.id === t.id);
-                  return (
-                    <button key={t.id} onClick={() => avail && setTab(t.id)}
-                      role="tab" aria-selected={isActive}
-                      className={`flex flex-col items-center gap-0 rounded-lg transition-all flex-shrink-0 ${
-                        isPrimary ? 'py-1.5 px-3 min-w-[56px]' : 'py-1 px-2.5 min-w-[48px]'
-                      } ${
-                        isActive
-                          ? 'bg-accent-cyan text-white shadow-sm'
-                          : avail
-                          ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40'
-                          : 'bg-bg-card border border-border-subtle text-text-muted/60 cursor-not-allowed'
-                      }`}>
-                      <span className={`${isPrimary ? 'text-base' : 'text-xs'} ${!avail && !isActive ? 'grayscale opacity-70' : ''}`}>{t.emoji}</span>
-                      <span className={`font-display font-bold ${isPrimary ? 'text-[9px]' : 'text-[8px]'}`}>{t.label}</span>
+                {/* Transport tabs — inline */}
+                <div className="flex gap-1 overflow-x-auto scrollbar-hide flex-1 mx-2" role="tablist" aria-label="Transport type">
+                  {[...PRIMARY_TABS, ...SECONDARY_TABS].map(t => {
+                    const avail = availability[t.id];
+                    const isActive = tab === t.id;
+                    return (
+                      <button key={t.id} onClick={() => avail && setTab(t.id)}
+                        role="tab" aria-selected={isActive}
+                        className={`flex flex-col items-center gap-0 rounded-lg transition-all flex-shrink-0 py-1 px-2 min-w-[42px] ${
+                          isActive
+                            ? 'bg-accent-cyan text-white shadow-sm'
+                            : avail
+                            ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40'
+                            : 'bg-bg-card border border-border-subtle text-text-muted/60 cursor-not-allowed'
+                        }`}>
+                        <span className={`text-sm ${!avail && !isActive ? 'grayscale opacity-70' : ''}`}>{t.emoji}</span>
+                        <span className="font-display font-bold text-[7px]">{t.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Add/Upload — right side */}
+                {(tab === 'flight' || tab === 'train') && !showCustomForm && (
+                  <div className="hidden md:flex items-center gap-2 flex-shrink-0 text-[8px] font-body">
+                    <button onClick={() => setShowCustomForm(true)}
+                      className="flex items-center gap-1 text-accent-cyan hover:underline whitespace-nowrap">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                      Add {tab === 'flight' ? 'flight' : 'train'}
                     </button>
-                  );
-                })}
+                    <span className="text-border-subtle">|</span>
+                    <button onClick={() => { setShowCustomForm(true); setTimeout(() => transportFileRef.current?.click(), 100); }}
+                      className="flex items-center gap-1 text-accent-gold hover:underline whitespace-nowrap">
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      Upload
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -660,21 +675,21 @@ export default function TransportCompareModal({
 
               {/* ── CUSTOM TRANSPORT (shared across flight/train tabs) ── */}
               {(tab === 'flight' || tab === 'train') && (
-                <div className="px-4 md:px-6 pt-1.5 max-w-4xl mx-auto w-full pb-0">
+                <div className="px-4 md:px-6 pt-1 max-w-4xl mx-auto w-full pb-0">
                   <input ref={transportFileRef} type="file" accept="image/*,.pdf" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleTransportUpload(f); e.target.value = ''; }} />
                   {!showCustomForm ? (
-                    <div className="flex items-center gap-3 mb-1.5 text-[9px] font-body">
+                    <div className="flex items-center gap-3 mb-1 text-[9px] font-body md:hidden">
                       <button onClick={() => setShowCustomForm(true)}
                         className="flex items-center gap-1 text-accent-cyan hover:underline">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-                        Add your own {tab === 'flight' ? 'flight' : 'train'}
+                        Add {tab === 'flight' ? 'flight' : 'train'}
                       </button>
                       <span className="text-border-subtle">|</span>
                       <button onClick={() => { setShowCustomForm(true); setTimeout(() => transportFileRef.current?.click(), 100); }}
                         className="flex items-center gap-1 text-accent-gold hover:underline">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        Upload booking
+                        Upload
                       </button>
                     </div>
                   ) : (
