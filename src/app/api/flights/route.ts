@@ -114,10 +114,16 @@ export async function GET(req: NextRequest) {
           : Promise.resolve(null),
       ]);
 
+      // Filter scraper results to only keep flights arriving at the target airport
+      // (Google Flights returns nearby airport suggestions like AMD when searching IDR)
+      const filteredScraper = scraperResult?.filter((f: any) =>
+        f.arrAirportCode === toAp.code || !f.arrAirportCode
+      ) || [];
+
       // Merge and dedup
       const seen = new Set<string>();
       const merged: any[] = [];
-      for (const flights of [amadeusResult, scraperResult]) {
+      for (const flights of [amadeusResult, filteredScraper.length > 0 ? filteredScraper : null]) {
         if (flights && flights.length > 0) {
           for (const f of flights) {
             const key = `${f.flightNumber}-${f.departure}`;
