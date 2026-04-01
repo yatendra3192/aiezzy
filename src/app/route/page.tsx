@@ -1955,8 +1955,8 @@ function RoutePageContent() {
           <TransportCompareModal
             isOpen
             onClose={() => setTransportModal(null)}
-            fromCity={fromCity?.name || ''}
-            toCity={toCity?.name || ''}
+            fromCity={fromCity?.parentCity || fromCity?.name || ''}
+            toCity={toCity?.parentCity || toCity?.name || ''}
             fromCode={resolvedAirportsRef.current[transportModal.legIndex]?.fromCode || leg?.resolvedAirports?.fromCode || findAirportCode(fromCity) || ''}
             toCode={resolvedAirportsRef.current[transportModal.legIndex]?.toCode || leg?.resolvedAirports?.toCode || findAirportCode(toCity) || ''}
             fromAirport={findAirportName(fromCity)}
