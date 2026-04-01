@@ -86,10 +86,11 @@ export async function GET(req: NextRequest) {
     const nearest = fromAirports[0];
 
     let amadeusFlights: any[] | null = null;
+    let resolvedToAp = toCandidates[0]; // Track which arrival airport actually had flights
     if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
       for (const toAp of toCandidates) {
         const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
-        if (result && result.length > 0) { amadeusFlights = result; break; }
+        if (result && result.length > 0) { amadeusFlights = result; resolvedToAp = toAp; break; }
       }
     }
 
@@ -98,13 +99,13 @@ export async function GET(req: NextRequest) {
         status: 'OK',
         from, to, date, adults: parseInt(adults),
         fromResolved: fromAp.code,
-        toResolved: toCode,
+        toResolved: resolvedToAp.code,
         fromAirport: fromAp.name,
         fromCity: fromAp.city,
         fromDistance: fromAp.distance,
-        toCity: toAirports[0]?.city || toAirports[0]?.name || '',
-        toDistance: toAirports[0]?.distance || 0,
-        toAirport: toAirports[0]?.name || '',
+        toCity: resolvedToAp.city || resolvedToAp.name || '',
+        toDistance: resolvedToAp.distance || 0,
+        toAirport: resolvedToAp.name || '',
         nearestFrom: nearest.code !== fromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
         flights: amadeusFlights,
         source: 'amadeus' as const,
