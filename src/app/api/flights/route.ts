@@ -138,10 +138,13 @@ export async function GET(req: NextRequest) {
       allFlights.sort((a, b) => a.price - b.price);
     }
 
-    // For domestic Indian routes, also fetch from Google scraper to get LCC flights (IndiGo, SpiceJet, etc.)
-    if (isDomesticIN && FLIGHTS_API_URL && FLIGHTS_API_KEY) {
-      const primaryFrom = fromSlice[0]?.code || from;
-      const primaryTo = toCandidates[0]?.code || to;
+    // Also fetch from Google scraper for extra coverage (LCCs, different routes)
+    if (FLIGHTS_API_URL && FLIGHTS_API_KEY) {
+      // Use airports that Amadeus found flights for (avoids non-commercial airports like LBG)
+      const bestFrom = allFlights[0]?.depAirportCode || fromSlice[0]?.code || from;
+      const bestTo = allFlights[0]?.arrAirportCode || toCandidates[0]?.code || to;
+      const primaryFrom = /^[A-Z]{3}$/.test(bestFrom) ? bestFrom : (fromSlice[0]?.code || from);
+      const primaryTo = /^[A-Z]{3}$/.test(bestTo) ? bestTo : (toCandidates[0]?.code || to);
       const scraperFlights = await fetchScraperFlights(primaryFrom, primaryTo, date, adults).catch(() => null);
       if (scraperFlights && scraperFlights.length > 0) {
         const seen = new Set(allFlights.map(f => `${f.flightNumber}-${f.departure}`));
