@@ -660,29 +660,21 @@ export default function TransportCompareModal({
 
               {/* ── CUSTOM TRANSPORT (shared across flight/train tabs) ── */}
               {(tab === 'flight' || tab === 'train') && (
-                <div className="px-4 md:px-6 pt-2 max-w-4xl mx-auto w-full pb-0">
+                <div className="px-4 md:px-6 pt-1.5 max-w-4xl mx-auto w-full pb-0">
                   <input ref={transportFileRef} type="file" accept="image/*,.pdf" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleTransportUpload(f); e.target.value = ''; }} />
                   {!showCustomForm ? (
-                    <div className="flex gap-2 mb-2">
+                    <div className="flex items-center gap-3 mb-1.5 text-[9px] font-body">
                       <button onClick={() => setShowCustomForm(true)}
-                        className="flex-1 text-left px-2.5 py-1.5 rounded-lg border border-dashed border-accent-cyan/40 hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-md bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan">
-                            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-display font-bold text-text-primary">Add your own {tab === 'flight' ? 'flight' : 'train'}</p>
-                          <p className="text-[8px] text-text-muted font-body">Already booked? Enter details manually</p>
-                        </div>
+                        className="flex items-center gap-1 text-accent-cyan hover:underline">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        Add your own {tab === 'flight' ? 'flight' : 'train'}
                       </button>
+                      <span className="text-border-subtle">|</span>
                       <button onClick={() => { setShowCustomForm(true); setTimeout(() => transportFileRef.current?.click(), 100); }}
-                        className="w-24 px-2 py-1.5 rounded-lg border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all flex flex-col items-center justify-center gap-0.5 text-center">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                        </svg>
-                        <p className="text-[8px] font-display font-bold text-text-primary">Upload booking</p>
+                        className="flex items-center gap-1 text-accent-gold hover:underline">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Upload booking
                       </button>
                     </div>
                   ) : (
