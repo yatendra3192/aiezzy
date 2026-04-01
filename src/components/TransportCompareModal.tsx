@@ -617,20 +617,20 @@ export default function TransportCompareModal({
             role="dialog" aria-modal="true" aria-label="Compare transport options"
             className="flex-1 flex flex-col overflow-hidden">
 
-            {/* Header */}
-            <div className="px-4 md:px-8 pt-4 pb-3 border-b border-border-subtle flex-shrink-0">
-              <div className="flex items-center gap-4 mb-3">
-                <button onClick={onClose} className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            {/* Header — compact */}
+            <div className="px-4 md:px-6 pt-2 pb-2 border-b border-border-subtle flex-shrink-0">
+              <div className="flex items-center gap-3 mb-2">
+                <button onClick={onClose} className="w-7 h-7 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-accent-cyan transition-colors flex-shrink-0">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
                 </button>
                 <div className="flex-1">
-                  <h2 className="font-display font-bold text-base text-text-primary">{fromCity} &rarr; {toCity}</h2>
-                  <p className="text-[10px] text-text-muted font-body">{new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} &middot; {adults} pax</p>
+                  <h2 className="font-display font-bold text-sm text-text-primary">{fromCity} &rarr; {toCity}</h2>
+                  <p className="text-[9px] text-text-muted font-body">{new Date(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} &middot; {adults} pax</p>
                 </div>
               </div>
 
-              {/* Transport tabs — single scrollable row */}
-              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-1 px-1" role="tablist" aria-label="Transport type">
+              {/* Transport tabs — compact row */}
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide -mx-1 px-1" role="tablist" aria-label="Transport type">
                 {[...PRIMARY_TABS, ...SECONDARY_TABS].map(t => {
                   const avail = availability[t.id];
                   const isActive = tab === t.id;
@@ -638,17 +638,17 @@ export default function TransportCompareModal({
                   return (
                     <button key={t.id} onClick={() => avail && setTab(t.id)}
                       role="tab" aria-selected={isActive}
-                      className={`flex flex-col items-center gap-0.5 rounded-xl transition-all flex-shrink-0 ${
-                        isPrimary ? 'py-2.5 px-4 min-w-[70px]' : 'py-2 px-3 min-w-[58px]'
+                      className={`flex flex-col items-center gap-0 rounded-lg transition-all flex-shrink-0 ${
+                        isPrimary ? 'py-1.5 px-3 min-w-[56px]' : 'py-1 px-2.5 min-w-[48px]'
                       } ${
                         isActive
-                          ? 'bg-accent-cyan text-white shadow-md'
+                          ? 'bg-accent-cyan text-white shadow-sm'
                           : avail
-                          ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40 hover:shadow-sm'
+                          ? 'bg-bg-card border border-border-subtle text-text-primary hover:border-accent-cyan/40'
                           : 'bg-bg-card border border-border-subtle text-text-muted/60 cursor-not-allowed'
                       }`}>
-                      <span className={`${isPrimary ? 'text-lg' : 'text-sm'} ${!avail && !isActive ? 'grayscale opacity-70' : ''}`}>{t.emoji}</span>
-                      <span className={`font-display font-bold ${isPrimary ? 'text-[10px]' : 'text-[9px]'}`}>{t.label}</span>
+                      <span className={`${isPrimary ? 'text-base' : 'text-xs'} ${!avail && !isActive ? 'grayscale opacity-70' : ''}`}>{t.emoji}</span>
+                      <span className={`font-display font-bold ${isPrimary ? 'text-[9px]' : 'text-[8px]'}`}>{t.label}</span>
                     </button>
                   );
                 })}
@@ -660,29 +660,29 @@ export default function TransportCompareModal({
 
               {/* ── CUSTOM TRANSPORT (shared across flight/train tabs) ── */}
               {(tab === 'flight' || tab === 'train') && (
-                <div className="p-4 md:px-8 max-w-4xl mx-auto w-full pb-0">
+                <div className="px-4 md:px-6 pt-2 max-w-4xl mx-auto w-full pb-0">
                   <input ref={transportFileRef} type="file" accept="image/*,.pdf" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleTransportUpload(f); e.target.value = ''; }} />
                   {!showCustomForm ? (
-                    <div className="flex gap-2 mb-3">
+                    <div className="flex gap-2 mb-2">
                       <button onClick={() => setShowCustomForm(true)}
-                        className="flex-1 text-left p-2.5 rounded-xl border border-dashed border-accent-cyan/40 hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan">
+                        className="flex-1 text-left px-2.5 py-1.5 rounded-lg border border-dashed border-accent-cyan/40 hover:border-accent-cyan hover:bg-accent-cyan/5 transition-all flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-cyan">
                             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
                           </svg>
                         </div>
                         <div>
-                          <p className="text-xs font-display font-bold text-text-primary">Add your own {tab === 'flight' ? 'flight' : 'train'}</p>
-                          <p className="text-[9px] text-text-muted font-body">Already booked? Enter details manually</p>
+                          <p className="text-[10px] font-display font-bold text-text-primary">Add your own {tab === 'flight' ? 'flight' : 'train'}</p>
+                          <p className="text-[8px] text-text-muted font-body">Already booked? Enter details manually</p>
                         </div>
                       </button>
                       <button onClick={() => { setShowCustomForm(true); setTimeout(() => transportFileRef.current?.click(), 100); }}
-                        className="w-32 p-2.5 rounded-xl border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all flex flex-col items-center justify-center gap-1 text-center">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
+                        className="w-24 px-2 py-1.5 rounded-lg border border-dashed border-accent-gold/40 hover:border-accent-gold hover:bg-accent-gold/5 transition-all flex flex-col items-center justify-center gap-0.5 text-center">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold">
                           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                         </svg>
-                        <p className="text-[9px] font-display font-bold text-text-primary">Upload booking</p>
+                        <p className="text-[8px] font-display font-bold text-text-primary">Upload booking</p>
                       </button>
                     </div>
                   ) : (
