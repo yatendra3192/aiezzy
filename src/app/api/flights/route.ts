@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GLOBAL_CITY_AIRPORTS } from '@/data/airports';
 
+const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
+const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
 const AMADEUS_API_KEY = process.env.AMADEUS_API_KEY || '';
 const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET || '';
 // NOTE: Default is Amadeus test/sandbox. Set AMADEUS_BASE_URL=https://api.amadeus.com for production
@@ -85,6 +87,11 @@ export async function GET(req: NextRequest) {
     const fromSlice: AirportCandidate[] = exactAirport ? [fromCandidates[0]] : fromCandidates.slice(0, 3);
     const nearest = fromAirports[0];
 
+    // Detect domestic Indian route (both airports in India) — LCCs like IndiGo/SpiceJet not on Amadeus
+    const fromCountry = fromAirports[0]?.countryCode || fromSlice[0]?.countryCode || '';
+    const toCountry = toAirports[0]?.countryCode || toCandidates[0]?.countryCode || '';
+    const isDomesticIN = fromCountry === 'IN' && toCountry === 'IN';
+
     // Search departure × arrival airports in PARALLEL, merge for best coverage
     let allFlights: any[] = [];
     if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
@@ -131,6 +138,21 @@ export async function GET(req: NextRequest) {
       allFlights.sort((a, b) => a.price - b.price);
     }
 
+    // For domestic Indian routes, also fetch from Google scraper to get LCC flights (IndiGo, SpiceJet, etc.)
+    if (isDomesticIN && FLIGHTS_API_URL && FLIGHTS_API_KEY) {
+      const primaryFrom = fromSlice[0]?.code || from;
+      const primaryTo = toCandidates[0]?.code || to;
+      const scraperFlights = await fetchScraperFlights(primaryFrom, primaryTo, date, adults).catch(() => null);
+      if (scraperFlights && scraperFlights.length > 0) {
+        const seen = new Set(allFlights.map(f => `${f.flightNumber}-${f.departure}`));
+        for (const f of scraperFlights) {
+          const key = `${f.flightNumber}-${f.departure}`;
+          if (!seen.has(key)) { seen.add(key); allFlights.push(f); }
+        }
+        allFlights.sort((a, b) => a.price - b.price);
+      }
+    }
+
     if (allFlights.length > 0) {
       // Use cheapest flight's airports as the "resolved" ones
       const cheapest = allFlights[0];
@@ -149,7 +171,7 @@ export async function GET(req: NextRequest) {
         toAirport: cheapestToAp.name || '',
         nearestFrom: nearest.code !== cheapestFromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
         flights: allFlights,
-        source: 'amadeus' as const,
+        source: allFlights.some(f => f.source === 'scraper') ? 'amadeus+scraper' : 'amadeus',
       };
 
       // Store in cache
@@ -184,6 +206,7 @@ interface AirportCandidate {
   name: string;
   city: string; // municipality/city name (e.g., "Ahmedabad")
   distance: number; // km
+  countryCode?: string; // "IN", "FR", etc.
 }
 
 async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
@@ -199,7 +222,7 @@ async function resolveToAirports(input: string, baseUrl: string): Promise<Airpor
         );
         const data = await r.json();
         if (Array.isArray(data) && data.length > 0) {
-          return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0 }];
+          return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0, countryCode: data[0].country_code || '' }];
         }
       }
     } catch {}
@@ -217,6 +240,7 @@ async function resolveToAirports(input: string, baseUrl: string): Promise<Airpor
         name: a.name,
         city: a.municipality || a.name?.split(' ')[0] || '',
         distance: a.distance_km,
+        countryCode: a.country_code || '',
       }));
     }
   } catch {}
@@ -502,6 +526,107 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
         operatingAirlineCode,
         depTerminal,
         arrTerminal,
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+// ─── Google Flights Scraper (for domestic Indian routes — LCCs like IndiGo/SpiceJet not on Amadeus GDS) ──
+
+async function fetchScraperFlights(from: string, to: string, date: string, adults: string): Promise<any[] | null> {
+  if (!FLIGHTS_API_URL || !FLIGHTS_API_KEY) return null;
+  try {
+    const params = new URLSearchParams({
+      departure_id: from, arrival_id: to, outbound_date: date,
+      type: '2', adults, currency: 'INR', gl: 'in', hl: 'en',
+    });
+    const res = await fetch(`${FLIGHTS_API_URL}/search?${params}`, {
+      headers: { 'X-API-Key': FLIGHTS_API_KEY },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = [...(data.best_flights || []), ...(data.other_flights || [])];
+    if (raw.length === 0) return null;
+
+    return raw.map((f: any) => {
+      const segments = f.flights || [];
+      const first = segments[0] || {};
+      const last = segments[segments.length - 1] || {};
+      const dep = first.departure_airport || {};
+      const arr = last.arrival_airport || {};
+      const airline = first.airline || 'Unknown';
+      const layovers = f.layovers || [];
+
+      // Parse "2026-05-22 4:40 AM" → "04:40"
+      const parseTime = (t: string) => {
+        const m = t.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (!m) return '00:00';
+        let h = parseInt(m[1]); const mi = m[2]; const ap = m[3].toUpperCase();
+        if (ap === 'PM' && h !== 12) h += 12;
+        if (ap === 'AM' && h === 12) h = 0;
+        return `${String(h).padStart(2, '0')}:${mi}`;
+      };
+
+      const depTime = parseTime(dep.time || '');
+      const arrTime = parseTime(arr.time || '');
+      const totalMin = f.total_duration || 0;
+      const durHrs = Math.floor(totalMin / 60);
+      const durMins = totalMin % 60;
+      const stops = layovers.length;
+
+      let stopsText = 'Nonstop';
+      if (stops > 0) {
+        const info = layovers.map((l: any) => {
+          const lh = Math.floor((l.duration || 0) / 60);
+          const lm = (l.duration || 0) % 60;
+          return `${lh}h ${lm}m in ${l.name || l.id || ''}`.trim();
+        }).join(', ');
+        stopsText = `${stops} stop${stops > 1 ? 's' : ''} \u00b7 ${info}`;
+      }
+
+      // Guess airline code from logo URL or name
+      const logoMatch = (first.airline_logo || '').match(/\/(\w{2})\.png/);
+      const codeMap: Record<string, string> = {
+        'indigo': '6E', 'air india': 'AI', 'air india express': 'IX',
+        'vistara': 'UK', 'spicejet': 'SG', 'akasa air': 'QP',
+        'alliance air': '9I', 'star air': 'OG',
+      };
+      const airlineCode = logoMatch?.[1] || codeMap[airline.toLowerCase()] || airline.substring(0, 2).toUpperCase();
+
+      const depDate = dep.time?.split(' ')[0] || '';
+      const arrDate = arr.time?.split(' ')[0] || '';
+
+      return {
+        airline,
+        airlineCode,
+        flightNumber: first.flight_number || airlineCode || '',
+        departure: depTime,
+        arrival: arrTime,
+        depAirportCode: dep.id || from,
+        arrAirportCode: arr.id || to,
+        duration: `${durHrs}h ${durMins}m`,
+        durationMin: totalMin,
+        stops: stopsText,
+        stopsCount: stops,
+        layovers: layovers.map((l: any) => ({
+          airport: l.name || '', airportCode: l.id || '',
+          duration: l.duration || 0, overnight: l.overnight || false,
+        })),
+        isNextDay: depDate && arrDate && depDate !== arrDate,
+        price: f.price || 0,
+        currency: 'INR',
+        source: 'scraper' as const,
+        cabinClass: first.travel_class || 'ECONOMY',
+        aircraft: undefined,
+        checkedBaggage: undefined,
+        cabinBaggage: undefined,
+        operatingAirline: undefined,
+        depTerminal: undefined,
+        arrTerminal: undefined,
+        basePrice: undefined,
       };
     });
   } catch {
