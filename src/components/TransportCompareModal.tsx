@@ -891,30 +891,6 @@ export default function TransportCompareModal({
                             </div>
                           </div>
 
-                          {/* Airlines */}
-                          <div className="mb-3">
-                            <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Airlines</p>
-                            <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                              {Array.from(filterMeta.airlinesMap.values()).sort((a, b) => a.cheapest - b.cheapest).map(al => (
-                                <label key={al.code} className="flex items-center justify-between cursor-pointer group">
-                                  <span className="flex items-center gap-1.5">
-                                    <input type="checkbox" checked={filterAirlines.size === 0 || filterAirlines.has(al.code)}
-                                      onChange={() => {
-                                        const ns = new Set(filterAirlines);
-                                        if (ns.size === 0) { Array.from(filterMeta.airlinesMap.keys()).forEach(k => { if (k !== al.code) ns.add(k); }); }
-                                        else if (ns.has(al.code)) { ns.delete(al.code); if (ns.size === 0) { /* all unchecked = show all */ } }
-                                        else ns.add(al.code);
-                                        setFilterAirlines(ns);
-                                      }}
-                                      className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
-                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan truncate max-w-[90px]">{al.name}</span>
-                                  </span>
-                                  <span className="text-[9px] font-mono text-text-muted">{formatPrice(al.cheapest, currency)}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-
                           {/* Departure time */}
                           <div className="mb-3">
                             <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Departure time</p>
@@ -1007,6 +983,30 @@ export default function TransportCompareModal({
                               </select>
                             </div>
                           )}
+
+                          {/* Airlines */}
+                          <div className="mb-3">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-1">Airlines</p>
+                            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                              {Array.from(filterMeta.airlinesMap.values()).sort((a, b) => a.cheapest - b.cheapest).map(al => (
+                                <label key={al.code} className="flex items-center justify-between cursor-pointer group">
+                                  <span className="flex items-center gap-1.5">
+                                    <input type="checkbox" checked={filterAirlines.size === 0 || filterAirlines.has(al.code)}
+                                      onChange={() => {
+                                        const ns = new Set(filterAirlines);
+                                        if (ns.size === 0) { Array.from(filterMeta.airlinesMap.keys()).forEach(k => { if (k !== al.code) ns.add(k); }); }
+                                        else if (ns.has(al.code)) { ns.delete(al.code); if (ns.size === 0) { /* all unchecked = show all */ } }
+                                        else ns.add(al.code);
+                                        setFilterAirlines(ns);
+                                      }}
+                                      className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
+                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan truncate max-w-[90px]">{al.name}</span>
+                                  </span>
+                                  <span className="text-[9px] font-mono text-text-muted">{formatPrice(al.cheapest, currency)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
 
