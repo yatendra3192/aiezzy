@@ -78,13 +78,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Search multiple departure + arrival airports in parallel (Skyscanner "Any airport" mode)
-    // For exact=true (user selected specific airport), only search that one
+    // Cap at 200km radius to avoid absurdly distant airports (e.g., Indore→AMD at 333km)
+    // Always include the closest airport even if >200km (for cities without their own airport)
+    const NEARBY_RADIUS_KM = 200;
     let toCandidates = exactAirport
       ? [toAirports.find(ap => ap.code.toUpperCase() === to.toUpperCase()) || toAirports[0]]
-      : toAirports.slice(0, 5);
+      : toAirports.filter((ap, i) => i === 0 || ap.distance <= NEARBY_RADIUS_KM).slice(0, 5);
 
-    // Use top 3 departure airports (handles non-commercial airports like LBG)
-    const fromSlice: AirportCandidate[] = exactAirport ? [fromCandidates[0]] : fromCandidates.slice(0, 3);
+    // Use top 3 departure airports within radius
+    const fromSlice: AirportCandidate[] = exactAirport
+      ? [fromCandidates[0]]
+      : fromCandidates.filter((ap, i) => i === 0 || ap.distance <= NEARBY_RADIUS_KM).slice(0, 3);
     const nearest = fromAirports[0];
 
     // Detect domestic Indian route (both airports in India) — LCCs like IndiGo/SpiceJet not on Amadeus
