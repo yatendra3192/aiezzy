@@ -92,6 +92,17 @@ export async function GET(req: NextRequest) {
         const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
         if (result && result.length > 0) { amadeusFlights = result; resolvedToAp = toAp; break; }
       }
+
+      // Fallback: if input was an IATA code with no results (e.g., LBG — no commercial flights),
+      // resolve nearby airports for that code's city and retry
+      if (!amadeusFlights && /^[A-Z]{3}$/.test(to) && toAirports.length === 1 && toAirports[0].city) {
+        const nearbyTo = await resolveToAirports(toAirports[0].city, baseUrl);
+        const triedCodes = new Set(toCandidates.map(c => c.code));
+        for (const toAp of nearbyTo.filter(a => !triedCodes.has(a.code)).slice(0, 3)) {
+          const result = await fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null);
+          if (result && result.length > 0) { amadeusFlights = result; resolvedToAp = toAp; break; }
+        }
+      }
     }
 
     if (amadeusFlights && amadeusFlights.length > 0) {
