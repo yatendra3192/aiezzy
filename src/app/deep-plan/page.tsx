@@ -125,6 +125,17 @@ const CATEGORY_LABELS: Record<string, string> = {
   viewpoint: 'Viewpoint',
 };
 
+/** Get timezone abbreviation for a city based on its country */
+function getCityTimezone(country?: string): string {
+  if (!country) return '';
+  const info = LOCAL_INFO[country];
+  if (info) {
+    // Extract abbreviation (e.g., "CET +1" → "CET", "IST +5:30" → "IST")
+    return info.timezone.split(' ')[0] || '';
+  }
+  return '';
+}
+
 /** Local info for destination countries */
 const LOCAL_INFO: Record<string, { currency: string; timezone: string; emergency: string; language: string }> = {
   'Netherlands': { currency: 'EUR (\u20AC)', timezone: 'CET +1', emergency: '112', language: 'Dutch' },
@@ -2338,8 +2349,15 @@ function DeepPlanPageContent() {
 
                           // Rich flight card (blue themed) — vertical route stepper
                           if (flight && legIdx !== undefined) {
-                            const { toCity: legToCity } = getLegCities(legIdx);
+                            const { fromCity: legFromCity, toCity: legToCity } = getLegCities(legIdx);
                             const flightToName = legToCity?.parentCity || legToCity?.name || '';
+                            const depTz = getCityTimezone((legFromCity as any)?.country || trip.from?.country || '');
+                            const arrTz = getCityTimezone((legToCity as any)?.country || '');
+                            // Calculate arrival date: if overnight (arrH < depH or duration > 12h), show +1
+                            const depHour = parseInt((flight.departure || '').split(':')[0] || '0');
+                            const arrHour = parseInt((flight.arrival || '').split(':')[0] || '0');
+                            const durH = parseInt(((flight.duration || '').match(/(\d+)h/) || ['', '0'])[1]);
+                            const isNextDayArr = (arrHour < depHour && durH > 2) || durH >= 24;
                             return (
                               <div className="pl-4 py-1">
                                 <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
@@ -2373,8 +2391,12 @@ function DeepPlanPageContent() {
                                       <div className="flex items-start gap-3 relative pb-3">
                                         <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white flex-shrink-0 mt-0.5 relative z-10" />
                                         <div className="flex-1 min-w-0">
-                                          <span className="text-[10px] text-blue-500 font-body font-bold uppercase tracking-wider">DEP</span>
-                                          <span className="text-[13px] font-mono font-bold text-text-primary ml-2">{flight.departure || '--:--'}</span>
+                                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                                            <span className="text-[10px] text-blue-500 font-body font-bold uppercase tracking-wider">DEP</span>
+                                            <span className="text-[13px] font-mono font-bold text-text-primary">{flight.departure || '--:--'}</span>
+                                            {depTz && <span className="text-[9px] text-text-muted font-body uppercase">{depTz}</span>}
+                                            <span className="text-[9px] text-text-muted font-body">{formatDateNice(day.date).split(',').slice(1).join(',').trim()}</span>
+                                          </div>
                                           <p className="text-[11px] text-text-muted font-body truncate mt-0.5">{stop.name || 'Departure Airport'}</p>
                                         </div>
                                       </div>
@@ -2394,8 +2416,13 @@ function DeepPlanPageContent() {
                                       <div className="flex items-start gap-3 relative">
                                         <div className="w-3 h-3 rounded-full bg-blue-500 border-2 border-white flex-shrink-0 mt-0.5 relative z-10" />
                                         <div className="flex-1 min-w-0">
-                                          <span className="text-[10px] text-blue-500 font-body font-bold uppercase tracking-wider">ARR</span>
-                                          <span className="text-[13px] font-mono font-bold text-text-primary ml-2">{flight.arrival || '--:--'}</span>
+                                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                                            <span className="text-[10px] text-blue-500 font-body font-bold uppercase tracking-wider">ARR</span>
+                                            <span className="text-[13px] font-mono font-bold text-text-primary">{flight.arrival || '--:--'}</span>
+                                            {arrTz && <span className="text-[9px] text-text-muted font-body uppercase">{arrTz}</span>}
+                                            {isNextDayArr && <span className="text-[9px] text-accent-cyan font-mono font-bold">+1</span>}
+                                            <span className="text-[9px] text-text-muted font-body">{isNextDayArr ? formatDateNice(addDaysToDate(toIsoDate(day.date), 1)).split(',').slice(1).join(',').trim() : formatDateNice(day.date).split(',').slice(1).join(',').trim()}</span>
+                                          </div>
                                           <p className="text-[11px] text-text-muted font-body truncate mt-0.5">{day.stops[si + 1]?.name || flightToName + ' Airport'}</p>
                                         </div>
                                       </div>
@@ -2577,7 +2604,13 @@ function DeepPlanPageContent() {
                                               className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[12px] transition-colors ${selMode === mode ? 'bg-accent-cyan/10 text-accent-cyan font-bold' : 'hover:bg-bg-card text-text-secondary'}`}>
                                               <span className="text-base">{emoji}</span>
                                               <span className="flex-1 font-body">{label}</span>
-                                              {d ? <span className="font-mono text-[11px] text-text-muted">{d.duration} &middot; {d.distance}</span> : <span className="text-[11px] text-text-muted/50 italic font-body">Loading...</span>}
+                                              {d ? (
+                                                <span className="font-mono text-[11px] text-text-muted">{d.duration} &middot; {d.distance}</span>
+                                              ) : travelData?.walk || travelData?.transit || travelData?.drive ? (
+                                                <span className="text-[11px] text-text-muted/40 italic font-body">N/A</span>
+                                              ) : (
+                                                <span className="text-[11px] text-text-muted/50 italic font-body">Loading...</span>
+                                              )}
                                             </button>
                                           );
                                         })}

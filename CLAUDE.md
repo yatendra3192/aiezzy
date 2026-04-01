@@ -54,7 +54,7 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - **Destinations flow** (templates/AI): `addDestination` directly adds cities with `places: []`
 - `groupPlacesIntoCities()` has two-pass normalization: normalizes parentCity from fullName when API fails, then cross-references against known city groups
 - `setTripType` preserves removed return leg in `removedReturnLegRef` for restoration when toggling back to round trip
-- Transport pricing: adults + children pay full fare, infants pay 15% on **flights only**. Trains: `price × adults` (no infant surcharge)
+- Transport pricing: adults + children pay full fare, infants pay 15% on **flights only**. Trains: `price × (adults + children)` (no infant surcharge). Deep plan summary uses same formula.
 - Hotel rooms: `Math.ceil((adults + children) / 2)` rooms per hotel
 - `buildFullTrip()` creates entire trip (destinations + transport + hotels) in one atomic `setState` — avoids React batching issues with sequential `addDestination` calls
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
@@ -112,19 +112,35 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 ### Deep Plan Page (`/deep-plan`) — Day-by-Day Itinerary
 
-Day type badges (Travel/Explore/Departure), daily budget, weather per day, editable activities (add/remove), meal slots (breakfast/lunch/dinner), adjustable start time, Google Maps links, day notes, color-coded timeline, print button, drag-to-reorder activities, AI-generated itineraries.
+**Layout:** 2-column desktop (itinerary 65% + sticky sidebar 35%). Single column on mobile. Sticky day navigation chips at top. Trip overview card with stats grid (days, cities, budget, travelers).
+
+**Day types:** Travel Day (blue), Explore Day (green), Departure Day (orange), Arrival & Explore (violet — travel day with free time to explore). A day is a day — 24 hours. Same-date arrival + explore days merge into a single card.
+
+**Day cards:** Collapsible (multiple can be open simultaneously). Collapsed state shows: activity count, travel time, activity preview names. Expanded shows full timeline. Action buttons (+, refresh) in day header. Print auto-expands all days via `beforeprint`/`afterprint` events.
 
 **Smart itinerary generation:** Explore days use AI-generated activities with real durations instead of hardcoded 2-hour blocks. Activity source priority: user places (90min default) → AI-cached `cityActivities` → static `CITY_ATTRACTIONS` (typed with durations) → generic fallback. Activities scheduled into morning (start→12:30) and afternoon (13:15→18:30) blocks with 30min travel gaps, respecting `bestTime` preference and `durationMin`. Multi-day trips get themed days via `dayIndex` assignment.
 
-**Activity features:** Category icons on timeline dots (museum, park, landmark, etc.). Duration + category labels (e.g., "Museum · 2h"). Opening hours and ticket prices from AI (with Google search links). Pin/save button promotes AI activities to custom activities (survives refreshes). Drag-to-reorder via HTML5 drag-and-drop on explore day attractions.
+**Activity cards:** Three-dot action menu with: View on map, Directions, Save activity, Book tickets, Move up/down, Remove. Category-colored cards with photo thumbnails. Drag-to-reorder on explore AND arrival days via HTML5 drag-and-drop. Pin/save promotes AI activities to custom (survives refreshes).
+
+**Transport cards:** Vertical route stepper (DEP dot → journey line → ARR dot) for flights and trains. Color-coded: blue (flight), amber (train), orange (bus), slate (drive). Booking status badges (Booked/Pending) matched by city names in `bookingDocs`. "Replace" button opens full `TransportCompareModal` (same as route page).
+
+**Meal blocks:** Orange pill/chip design with distinct emojis (coffee=breakfast, plate=lunch, moon=dinner) and contextual hints. Warning boxes (red) for "Leave by" and "Board" time-sensitive notes.
+
+**Sidebar (desktop):** Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
+
+**City cards:** White card with gradient visual panel (city code watermark), hotel rating+price, action buttons (View on map, Explore suggestions), activity/day count stats.
 
 **Start time adjustment:** Changing start time re-runs the full scheduling algorithm (not a flat offset). Activities are re-sorted and re-fit into morning/afternoon blocks based on new start time.
 
-**Overnight flight handling:** Detects flights >12h or next-day arrivals. Splits into departure day + optional "In Transit" days + arrival day. Each calendar date gets its own day card. No cramming overnight arrivals into departure day.
+**Overnight flight handling:** Detects flights with `arrH < depH` (crossed midnight) or 24h+ duration. Creates "In Transit" days for genuinely multi-day flights. Same-day long flights (timezone gains where `arrH > depH`) stay on one card with full arrival timeline. Same-date arrival + explore days are merged automatically.
 
-**Inter-activity travel times:** Real walk/transit/drive times fetched via Google Directions between consecutive stops on all day types. Dropdown lets user switch modes; "Directions" link opens Google Maps with selected mode. On travel/departure days, changing mode recalculates "Leave by X to reach on time" note.
+**Day merge logic:** After all days are built, consecutive days with same `day` number and `date` are merged. Duplicate meals are skipped, sleep/overnight is repositioned to end, costs are summed, type prefers explore > arrival > travel.
 
-**Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, and day themes stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
+**Inter-activity travel times:** Real walk/transit/drive times fetched via Google Directions between consecutive stops on all day types. Dropdown (z-50) lets user switch modes; "Directions" link opens Google Maps with selected mode. On travel/departure days, changing mode recalculates "Leave by X to reach on time" note.
+
+**Empty states:** Travel days with free time show "Auto-plan this day" card. Explore days with no attractions show "Add places" + "Auto-plan" buttons.
+
+**Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, day themes, and activity order stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
 
 ### Key Patterns
 
