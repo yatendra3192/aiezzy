@@ -381,6 +381,7 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
 
     // Map carrier codes to names from dictionaries
     const carriers: Record<string, string> = data.dictionaries?.carriers || {};
+    const aircraftDict: Record<string, string> = data.dictionaries?.aircraft || {};
 
     return offers.map((offer: any, i: number) => {
       const itin = offer.itineraries?.[0];
@@ -390,6 +391,42 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
 
       const airline = carriers[first.carrierCode] || first.carrierCode || 'Unknown';
       const airlineCode = first.carrierCode || '';
+
+      // Cabin class & baggage from fare details
+      const fareDetails = offer.travelerPricings?.[0]?.fareDetailsBySegment?.[0];
+      const cabinClass = fareDetails?.cabin || 'ECONOMY';
+      const checkedBags = fareDetails?.includedCheckedBags;
+      const checkedBaggage = checkedBags?.weight
+        ? `${checkedBags.weight}${(checkedBags.weightUnit || 'KG').toLowerCase()}`
+        : checkedBags?.quantity != null
+          ? `${checkedBags.quantity} piece${checkedBags.quantity !== 1 ? 's' : ''}`
+          : undefined;
+      const cabinBags = fareDetails?.includedCabinBags;
+      const cabinBaggage = cabinBags?.weight
+        ? `${cabinBags.weight}${(cabinBags.weightUnit || 'KG').toLowerCase()}`
+        : cabinBags?.quantity != null
+          ? `${cabinBags.quantity} piece${cabinBags.quantity !== 1 ? 's' : ''}`
+          : undefined;
+
+      // Aircraft type
+      const aircraftCode = first.aircraft?.code || '';
+      const aircraft = aircraftDict[aircraftCode] || (aircraftCode ? aircraftCode : undefined);
+
+      // Operating airline (codeshare detection)
+      const operatingCode = first.operating?.carrierCode;
+      const operatingAirline = operatingCode && operatingCode !== first.carrierCode
+        ? (carriers[operatingCode] || operatingCode) : undefined;
+      const operatingAirlineCode = operatingCode && operatingCode !== first.carrierCode
+        ? operatingCode : undefined;
+
+      // Terminals
+      const depTerminal = first.departure?.terminal || undefined;
+      const arrTerminal = last.arrival?.terminal || undefined;
+
+      // Price breakdown
+      const baseTotal = parseFloat(offer.price?.base || '0');
+      const numAdultsForBase = typeof adults === 'string' ? parseInt(adults) || 1 : (adults || 1);
+      const basePrice = baseTotal > 0 ? Math.round(baseTotal / numAdultsForBase) : undefined;
 
       // Parse departure/arrival times from ISO format "2026-08-11T06:30:00"
       const depTime = first.departure?.at?.split('T')[1]?.substring(0, 5) || '00:00';
@@ -449,11 +486,22 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
         duration,
         durationMin,
         stops: stopsText,
+        stopsCount: stops,
         layovers,
         isNextDay,
         price: perPerson,
+        basePrice,
         currency: 'INR',
         source: 'amadeus' as const,
+        cabinClass,
+        checkedBaggage,
+        cabinBaggage,
+        aircraft,
+        aircraftCode,
+        operatingAirline,
+        operatingAirlineCode,
+        depTerminal,
+        arrTerminal,
       };
     });
   } catch {

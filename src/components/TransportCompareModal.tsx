@@ -116,8 +116,10 @@ export default function TransportCompareModal({
   const [flightSort, setFlightSort] = useState<'price' | 'shortest'>('price');
   const [trainSort, setTrainSort] = useState<'price' | 'shortest'>('shortest');
   // Flight filters
-  const [flightStopsFilter, setFlightStopsFilter] = useState<'all' | 'direct' | '1stop' | '2plus'>('all');
-  const [flightPriceFilter, setFlightPriceFilter] = useState<'all' | '10k' | '20k' | '50k'>('all');
+  const [filterStops, setFilterStops] = useState<Set<number>>(new Set()); // empty = all stops
+  const [filterAirlines, setFilterAirlines] = useState<Set<string>>(new Set()); // empty = all airlines
+  const [filterDepTime, setFilterDepTime] = useState<Set<string>>(new Set()); // 'morning'|'afternoon'|'evening'|'night'
+  const [showFilters, setShowFilters] = useState(false); // mobile filter toggle
   // Nearby airports dropdowns (departure + arrival)
   const [nearbyAirports, setNearbyAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
   const [nearbyArrAirports, setNearbyArrAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
@@ -254,7 +256,7 @@ export default function TransportCompareModal({
       setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
-      setFlightStopsFilter('all'); setFlightPriceFilter('all'); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
+      setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); setShowFilters(false); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
       resetCustomForm();
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
@@ -265,6 +267,10 @@ export default function TransportCompareModal({
           depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
           layovers: f.layovers, isNextDay: f.isNextDay,
           co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+          cabinClass: f.cabinClass, checkedBaggage: f.checkedBaggage, cabinBaggage: f.cabinBaggage,
+          aircraft: f.aircraft, operatingAirline: f.operatingAirline,
+          depTerminal: f.depTerminal, arrTerminal: f.arrTerminal,
+          basePrice: f.basePrice, stopsCount: f.stopsCount,
         })));
       } else {
         // No cache (e.g., after page reload) — seed with the currently selected flight
@@ -299,6 +305,10 @@ export default function TransportCompareModal({
             depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
             layovers: f.layovers, isNextDay: f.isNextDay,
             co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+            cabinClass: f.cabinClass, checkedBaggage: f.checkedBaggage, cabinBaggage: f.cabinBaggage,
+            aircraft: f.aircraft, operatingAirline: f.operatingAirline,
+            depTerminal: f.depTerminal, arrTerminal: f.arrTerminal,
+            basePrice: f.basePrice, stopsCount: f.stopsCount,
           }));
           // Include the currently selected flight if it's not in the new results
           // (preserves the original price the user selected at)
@@ -380,6 +390,10 @@ export default function TransportCompareModal({
             depAirportCode: f.depAirportCode, arrAirportCode: f.arrAirportCode,
             layovers: f.layovers, isNextDay: f.isNextDay,
             co2Kg: f.co2Kg, co2Diff: f.co2Diff, travelClass: f.travelClass, durationMin: f.durationMin,
+            cabinClass: f.cabinClass, checkedBaggage: f.checkedBaggage, cabinBaggage: f.cabinBaggage,
+            aircraft: f.aircraft, operatingAirline: f.operatingAirline,
+            depTerminal: f.depTerminal, arrTerminal: f.arrTerminal,
+            basePrice: f.basePrice, stopsCount: f.stopsCount,
           }));
           setFlights(mapped);
         } else {
@@ -465,31 +479,69 @@ export default function TransportCompareModal({
   }, [isOpen, tab]);
 
 
+  const filterMeta = useMemo(() => {
+    if (flights.length === 0) return null;
+    const prices = flights.map(f => f.pricePerAdult);
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    // Stops: count flights per stop level + cheapest per stop
+    const stopsMap = new Map<number, { count: number; cheapest: number }>();
+    flights.forEach(f => {
+      const sc = f.stopsCount ?? (f.stops === 'Nonstop' ? 0 : parseInt(String(f.stops)) || 0);
+      const existing = stopsMap.get(sc);
+      if (!existing) stopsMap.set(sc, { count: 1, cheapest: f.pricePerAdult });
+      else { existing.count++; if (f.pricePerAdult < existing.cheapest) existing.cheapest = f.pricePerAdult; }
+    });
+    // Airlines: cheapest per airline
+    const airlinesMap = new Map<string, { code: string; name: string; cheapest: number; count: number }>();
+    flights.forEach(f => {
+      const existing = airlinesMap.get(f.airlineCode);
+      if (!existing) airlinesMap.set(f.airlineCode, { code: f.airlineCode, name: f.airline, cheapest: f.pricePerAdult, count: 1 });
+      else { existing.count++; if (f.pricePerAdult < existing.cheapest) existing.cheapest = f.pricePerAdult; }
+    });
+    return { minPrice, maxPrice, stopsMap, airlinesMap };
+  }, [flights]);
+
   const sortedFlights = useMemo(() => {
     let filtered = [...flights];
-    // Stops filter
-    if (flightStopsFilter === 'direct') filtered = filtered.filter(f => f.stops === 'Nonstop');
-    else if (flightStopsFilter === '1stop') filtered = filtered.filter(f => f.stops === '1 stop');
-    else if (flightStopsFilter === '2plus') filtered = filtered.filter(f => f.stops !== 'Nonstop' && f.stops !== '1 stop');
-    // Price filter
-    if (flightPriceFilter === '10k') filtered = filtered.filter(f => f.pricePerAdult < 10000);
-    else if (flightPriceFilter === '20k') filtered = filtered.filter(f => f.pricePerAdult < 20000);
-    else if (flightPriceFilter === '50k') filtered = filtered.filter(f => f.pricePerAdult < 50000);
+    if (filterStops.size > 0) {
+      filtered = filtered.filter(f => {
+        const sc = f.stopsCount ?? (f.stops === 'Nonstop' ? 0 : parseInt(String(f.stops)) || 0);
+        return filterStops.has(sc) || (filterStops.has(2) && sc >= 2);
+      });
+    }
+    if (filterAirlines.size > 0) {
+      filtered = filtered.filter(f => filterAirlines.has(f.airlineCode));
+    }
+    if (filterDepTime.size > 0) {
+      filtered = filtered.filter(f => {
+        const h = parseInt(f.departure?.split(':')[0] || '0');
+        if (h >= 6 && h < 12) return filterDepTime.has('morning');
+        if (h >= 12 && h < 18) return filterDepTime.has('afternoon');
+        if (h >= 18 && h < 22) return filterDepTime.has('evening');
+        return filterDepTime.has('night');
+      });
+    }
     return filtered.sort((a, b) =>
       flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : (a.durationMin || parseDurationMin(a.duration)) - (b.durationMin || parseDurationMin(b.duration))
     );
-  }, [flights, flightSort, flightStopsFilter, flightPriceFilter]);
+  }, [flights, flightSort, filterStops, filterAirlines, filterDepTime]);
+
+  const flightBadges = useMemo(() => {
+    const badges = new Map<string, string>();
+    if (sortedFlights.length === 0) return badges;
+    const byPrice = [...sortedFlights].sort((a, b) => a.pricePerAdult - b.pricePerAdult);
+    const bySpeed = [...sortedFlights].sort((a, b) => (a.durationMin || 9999) - (b.durationMin || 9999));
+    if (byPrice[0]) badges.set(byPrice[0].id, 'Cheapest');
+    if (bySpeed[0] && !badges.has(bySpeed[0].id)) badges.set(bySpeed[0].id, 'Fastest');
+    const bestNonstop = sortedFlights.filter(f => f.stopsCount === 0 || f.stops === 'Nonstop').sort((a, b) => a.pricePerAdult - b.pricePerAdult)[0];
+    if (bestNonstop && !badges.has(bestNonstop.id)) badges.set(bestNonstop.id, 'Best Direct');
+    return badges;
+  }, [sortedFlights]);
 
   const sortedTrains = useMemo(() => [...trains].sort((a, b) =>
     trainSort === 'price' ? a.price - b.price : (a.durationSeconds || 0) - (b.durationSeconds || 0)
   ), [trains, trainSort]);
-
-  // Find best value flight (cheapest nonstop or cheapest overall)
-  const bestFlightId = useMemo(() => {
-    if (flights.length === 0) return '';
-    const nonstop = flights.filter(f => f.stops === 'Nonstop').sort((a, b) => a.pricePerAdult - b.pricePerAdult);
-    return (nonstop[0] || [...flights].sort((a, b) => a.pricePerAdult - b.pricePerAdult)[0])?.id || '';
-  }, [flights]);
 
   const handleSelectTrain = (t: any) => {
     onSelectTrain({
@@ -750,55 +802,6 @@ export default function TransportCompareModal({
                     </div>
                   )}
 
-                  {/* Sort + filters row */}
-                  {(flights.length > 0 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
-                    <div className="mb-4 flex items-center gap-2 flex-wrap">
-                      {/* Sort toggle */}
-                      <div className="flex rounded-lg overflow-hidden border border-border-subtle flex-shrink-0">
-                        <button onClick={() => setFlightSort('price')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
-                        <button onClick={() => setFlightSort('shortest')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
-                      </div>
-                      {flights.length >= 3 && (
-                        <>
-                          <select value={flightStopsFilter} onChange={e => setFlightStopsFilter(e.target.value as any)}
-                            className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                            <option value="all">All Stops</option>
-                            <option value="direct">Direct</option>
-                            <option value="1stop">1 Stop</option>
-                            <option value="2plus">2+ Stops</option>
-                          </select>
-                          <select value={flightPriceFilter} onChange={e => setFlightPriceFilter(e.target.value as any)}
-                            className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                            <option value="all">Any Price</option>
-                            <option value="10k">Under ₹10K</option>
-                            <option value="20k">Under ₹20K</option>
-                            <option value="50k">Under ₹50K</option>
-                          </select>
-                        </>
-                      )}
-                      {nearbyAirports.length > 0 && (
-                        <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
-                          aria-label="Departure airports"
-                          className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                          <option value="">From: Nearby Airports</option>
-                          {nearbyAirports.filter(ap => ap.code.toUpperCase() !== (selectedArrAirportFilter || toCode || '').toUpperCase()).map(ap => (
-                            <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
-                          ))}
-                        </select>
-                      )}
-                      {nearbyArrAirports.length > 0 && (
-                        <select value={selectedArrAirportFilter} onChange={e => fetchToAirport(e.target.value)}
-                          aria-label="Arrival airports"
-                          className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
-                          <option value="">To: Nearby Airports</option>
-                          {nearbyArrAirports.filter(ap => ap.code.toUpperCase() !== (selectedAirportFilter || fromCode || '').toUpperCase()).map(ap => (
-                            <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) · {Math.round(ap.distance)} km</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  )}
-
                   {sameAirport ? (
                     <div className="text-center py-12">
                       <p className="text-2xl mb-2">🚗</p>
@@ -823,104 +826,309 @@ export default function TransportCompareModal({
                         return <p className="text-text-muted text-[10px] mt-1">Try a different date or check nearby airports</p>;
                       })()}
                     </div>
-                  ) : sortedFlights.length === 0 ? (
-                    <p className="text-text-muted text-sm text-center py-8">No flights match your filters. Try adjusting the filters above.</p>
-                  ) : (
-                    <>
-                      <p className="text-text-muted text-[10px] font-body mb-2">{sortedFlights.length} of {flights.length} flights</p>
-                      <div className="space-y-2">
-                        {sortedFlights.map(f => {
-                          const isBest = f.id === bestFlightId;
-                          const isSelected = selectedFlight?.id === f.id;
-                          return (
-                            <button key={f.id} onClick={() => {
-                              // Pass airport info if user selected a different departure airport
-                              const airportInfo = selectedAirportFilter
-                                ? nearbyAirports.find(a => a.code === selectedAirportFilter)
-                                : undefined;
-                              onSelectFlight(f, airportInfo ? { fromCode: airportInfo.code, fromCity: airportInfo.city, fromDistance: airportInfo.distance } : undefined);
-                            }}
-                              className={`w-full text-left p-4 rounded-xl border transition-all relative ${
-                                isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'
-                              }`}>
-                              {/* Best value badge */}
-                              {isBest && !isSelected && (
-                                <span className="absolute -top-2 left-3 px-2 py-0.5 bg-accent-gold text-white text-[9px] font-display font-bold rounded-full">Best Value</span>
-                              )}
-                              {/* Row 1: Airline + price */}
-                              <div className="flex items-center justify-between mb-2.5">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-[10px] font-mono font-bold" style={{ backgroundColor: f.color }}>{f.airlineCode}</div>
-                                  <div>
-                                    <p className="text-sm font-display font-bold text-text-primary">{f.airline} {f.flightNumber}</p>
-                                    <p className="text-[10px] text-text-muted">{f.travelClass || 'Economy'}</p>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(f.pricePerAdult, currency)}</span>
-                                  <p className="text-[9px] text-text-muted font-mono">/person</p>
-                                </div>
-                              </div>
-                              {/* Row 2: Time + timezone, timeline, arrival */}
-                              {(() => {
-                                // Compute if flight arrives next day from times + duration
-                                const depH = parseInt(f.departure?.split(':')[0] || '0');
-                                const arrH = parseInt(f.arrival?.split(':')[0] || '0');
-                                const durMatch = f.duration?.match(/(\d+)h/);
-                                const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                                const isOvernight = f.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
-                                const depDate = new Date(date);
-                                const arrDate = new Date(date);
-                                if (isOvernight) arrDate.setDate(arrDate.getDate() + 1);
-                                const depDateStr = depDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                                const arrDateStr = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-                                return (
-                              <div className="flex items-center gap-1 mb-2">
-                                <div className="text-left min-w-[85px]">
-                                  <p className="font-mono font-bold text-base text-text-primary">
-                                    {padTime(timeStr12(f.departure))}
-                                    {getTimezone(f.depAirportCode || fromCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.depAirportCode || fromCode)}</span>}
-                                  </p>
-                                  <p className="text-[10px] text-text-secondary font-mono">{f.depAirportCode || fromCode} &middot; {depDateStr}</p>
-                                </div>
-                                <div className="flex-1 relative h-[2px] bg-border-subtle mx-2">
-                                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
-                                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
-                                  {f.layovers && f.layovers.length > 0 && f.layovers.map((_: any, li: number) => (
-                                    <div key={li} className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 border border-white" style={{ left: `${((li + 1) / (f.layovers!.length + 1)) * 100}%` }} />
-                                  ))}
-                                </div>
-                                <div className="text-right min-w-[85px]">
-                                  <p className="font-mono font-bold text-base text-text-primary">
-                                    {padTime(timeStr12(f.arrival))}
-                                    {getTimezone(f.arrAirportCode || toCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.arrAirportCode || toCode)}</span>}
-                                    {isOvernight && <span className="text-accent-cyan text-[10px] ml-1">+1</span>}
-                                  </p>
-                                  <p className="text-[10px] text-text-secondary font-mono">{f.arrAirportCode || toCode} &middot; {arrDateStr}</p>
-                                </div>
-                              </div>
-                                );
-                              })()}
-                              {/* Row 3: Duration + stops + layover details */}
-                              <p className="text-xs text-text-primary font-body text-center">
-                                {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
-                              </p>
-                              {/* Booking link */}
-                              <a
-                                href={getFlightBookingUrl(f.depAirportCode || fromCode, f.arrAirportCode || toCode, date, adults)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-accent-gold text-[9px] font-body hover:underline flex items-center justify-center gap-0.5 mt-1.5 pt-1.5 border-t border-border-subtle"
-                              >
-                                Book on Skyscanner
-                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                              </a>
+                  ) : null}
+
+                  {/* Filter sidebar + flight list */}
+                  {(flights.length > 0 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
+                    <div className="flex gap-0">
+                      {/* Desktop filter sidebar */}
+                      {flights.length >= 3 && filterMeta && (
+                        <div className="hidden md:block w-[240px] flex-shrink-0 border-r border-border-subtle p-4 overflow-y-auto max-h-[calc(100vh-220px)]">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-xs font-display font-bold text-text-primary">Filters</h3>
+                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0) && (
+                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); }}
+                                className="text-[9px] text-accent-gold font-body hover:underline">Clear all</button>
+                            )}
+                          </div>
+
+                          {/* Stops */}
+                          <div className="mb-4">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Stops</p>
+                            <div className="space-y-1">
+                              {Array.from(filterMeta.stopsMap.entries()).sort((a, b) => a[0] - b[0]).map(([stops, info]) => (
+                                <label key={stops} className="flex items-center justify-between cursor-pointer group">
+                                  <span className="flex items-center gap-1.5">
+                                    <input type="checkbox" checked={filterStops.has(stops)}
+                                      onChange={() => { const ns = new Set(filterStops); ns.has(stops) ? ns.delete(stops) : ns.add(stops); setFilterStops(ns); }}
+                                      className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
+                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan">{stops === 0 ? 'Direct' : stops === 1 ? '1 stop' : `${stops}+ stops`}</span>
+                                  </span>
+                                  <span className="text-[9px] font-mono text-text-muted">{formatPrice(info.cheapest, currency)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Airlines */}
+                          <div className="mb-4">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Airlines</p>
+                            <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                              {Array.from(filterMeta.airlinesMap.values()).sort((a, b) => a.cheapest - b.cheapest).map(al => (
+                                <label key={al.code} className="flex items-center justify-between cursor-pointer group">
+                                  <span className="flex items-center gap-1.5">
+                                    <input type="checkbox" checked={filterAirlines.size === 0 || filterAirlines.has(al.code)}
+                                      onChange={() => {
+                                        const ns = new Set(filterAirlines);
+                                        if (ns.size === 0) { Array.from(filterMeta.airlinesMap.keys()).forEach(k => { if (k !== al.code) ns.add(k); }); }
+                                        else if (ns.has(al.code)) { ns.delete(al.code); if (ns.size === 0) { /* all unchecked = show all */ } }
+                                        else ns.add(al.code);
+                                        setFilterAirlines(ns);
+                                      }}
+                                      className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
+                                    <span className="text-[10px] font-body text-text-primary group-hover:text-accent-cyan truncate max-w-[120px]">{al.name}</span>
+                                  </span>
+                                  <span className="text-[9px] font-mono text-text-muted">{formatPrice(al.cheapest, currency)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Departure time */}
+                          <div className="mb-4">
+                            <p className="text-[10px] font-display font-bold text-text-secondary mb-2">Departure time</p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {[
+                                { key: 'morning', label: 'Morning', sub: '6am-12pm' },
+                                { key: 'afternoon', label: 'Afternoon', sub: '12-6pm' },
+                                { key: 'evening', label: 'Evening', sub: '6-10pm' },
+                                { key: 'night', label: 'Night', sub: '10pm-6am' },
+                              ].map(t => (
+                                <button key={t.key}
+                                  onClick={() => { const ns = new Set(filterDepTime); ns.has(t.key) ? ns.delete(t.key) : ns.add(t.key); setFilterDepTime(ns); }}
+                                  className={`px-2 py-1.5 rounded-lg border text-center transition-all ${filterDepTime.has(t.key) ? 'border-accent-cyan bg-accent-cyan/10 text-accent-cyan' : 'border-border-subtle bg-bg-card text-text-secondary hover:border-accent-cyan/30'}`}>
+                                  <p className="text-[9px] font-display font-bold">{t.label}</p>
+                                  <p className="text-[8px] font-mono text-text-muted">{t.sub}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Airport dropdowns in sidebar */}
+                          {nearbyAirports.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-[10px] font-display font-bold text-text-secondary mb-1.5">From airport</p>
+                              <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
+                                className="w-full px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                                <option value="">All nearby</option>
+                                {nearbyAirports.filter(ap => ap.code.toUpperCase() !== (selectedArrAirportFilter || toCode || '').toUpperCase()).map(ap => (
+                                  <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) {Math.round(ap.distance)}km</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {nearbyArrAirports.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-[10px] font-display font-bold text-text-secondary mb-1.5">To airport</p>
+                              <select value={selectedArrAirportFilter} onChange={e => fetchToAirport(e.target.value)}
+                                className="w-full px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                                <option value="">All nearby</option>
+                                {nearbyArrAirports.filter(ap => ap.code.toUpperCase() !== (selectedAirportFilter || fromCode || '').toUpperCase()).map(ap => (
+                                  <option key={ap.code} value={ap.code}>{ap.city} ({ap.code}) {Math.round(ap.distance)}km</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Flight list */}
+                      <div className="flex-1 min-w-0">
+                        {/* Sort row + mobile filter toggle */}
+                        <div className="mb-3 flex items-center gap-2 flex-wrap">
+                          <div className="flex rounded-lg overflow-hidden border border-border-subtle flex-shrink-0">
+                            <button onClick={() => setFlightSort('price')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'price' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Cheapest</button>
+                            <button onClick={() => setFlightSort('shortest')} className={`px-3 py-1.5 text-[10px] font-display font-bold transition-all ${flightSort === 'shortest' ? 'bg-accent-cyan text-white' : 'bg-bg-card text-text-secondary'}`}>Fastest</button>
+                          </div>
+                          {flights.length >= 3 && (
+                            <button onClick={() => setShowFilters(!showFilters)}
+                              className="md:hidden px-3 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-display font-bold text-text-secondary">
+                              Filters{(filterStops.size + filterAirlines.size + filterDepTime.size) > 0 ? ` (${filterStops.size + filterAirlines.size + filterDepTime.size})` : ''}
                             </button>
-                          );
-                        })}
+                          )}
+                          {/* Mobile airport dropdowns */}
+                          <div className="flex gap-2 md:hidden flex-wrap">
+                            {nearbyAirports.length > 0 && (
+                              <select value={selectedAirportFilter} onChange={e => fetchFromAirport(e.target.value)}
+                                className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                                <option value="">From: Nearby</option>
+                                {nearbyAirports.filter(ap => ap.code.toUpperCase() !== (selectedArrAirportFilter || toCode || '').toUpperCase()).map(ap => (
+                                  <option key={ap.code} value={ap.code}>{ap.city} ({ap.code})</option>
+                                ))}
+                              </select>
+                            )}
+                            {nearbyArrAirports.length > 0 && (
+                              <select value={selectedArrAirportFilter} onChange={e => fetchToAirport(e.target.value)}
+                                className="px-2 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-body text-text-secondary outline-none focus:border-accent-cyan">
+                                <option value="">To: Nearby</option>
+                                {nearbyArrAirports.filter(ap => ap.code.toUpperCase() !== (selectedAirportFilter || fromCode || '').toUpperCase()).map(ap => (
+                                  <option key={ap.code} value={ap.code}>{ap.city} ({ap.code})</option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Mobile collapsible filters */}
+                        {showFilters && flights.length >= 3 && filterMeta && (
+                          <div className="md:hidden mb-4 p-3 bg-bg-card rounded-xl border border-border-subtle space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-display font-bold text-text-secondary">Stops</span>
+                              <div className="flex gap-1">
+                                {Array.from(filterMeta.stopsMap.entries()).sort((a, b) => a[0] - b[0]).map(([stops]) => (
+                                  <button key={stops} onClick={() => { const ns = new Set(filterStops); ns.has(stops) ? ns.delete(stops) : ns.add(stops); setFilterStops(ns); }}
+                                    className={`px-2 py-1 rounded-md text-[9px] font-display font-bold transition-all ${filterStops.has(stops) ? 'bg-accent-cyan text-white' : 'bg-primary border border-border-subtle text-text-secondary'}`}>
+                                    {stops === 0 ? 'Direct' : `${stops} stop${stops > 1 ? 's' : ''}`}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-display font-bold text-text-secondary">Departure</span>
+                              <div className="flex gap-1 mt-1">
+                                {[{ key: 'morning', label: '6am-12pm' }, { key: 'afternoon', label: '12-6pm' }, { key: 'evening', label: '6-10pm' }, { key: 'night', label: '10pm-6am' }].map(t => (
+                                  <button key={t.key} onClick={() => { const ns = new Set(filterDepTime); ns.has(t.key) ? ns.delete(t.key) : ns.add(t.key); setFilterDepTime(ns); }}
+                                    className={`px-2 py-1 rounded-md text-[8px] font-mono transition-all ${filterDepTime.has(t.key) ? 'bg-accent-cyan text-white' : 'bg-primary border border-border-subtle text-text-secondary'}`}>
+                                    {t.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-display font-bold text-text-secondary">Airlines</span>
+                              <div className="flex gap-1 flex-wrap mt-1">
+                                {Array.from(filterMeta.airlinesMap.values()).sort((a, b) => a.cheapest - b.cheapest).map(al => (
+                                  <button key={al.code} onClick={() => {
+                                    const ns = new Set(filterAirlines);
+                                    if (ns.size === 0) { Array.from(filterMeta.airlinesMap.keys()).forEach(k => { if (k !== al.code) ns.add(k); }); }
+                                    else if (ns.has(al.code)) { ns.delete(al.code); if (ns.size === 0) { /* all unchecked = show all */ } }
+                                    else ns.add(al.code);
+                                    setFilterAirlines(ns);
+                                  }}
+                                    className={`px-2 py-1 rounded-md text-[8px] font-display font-bold transition-all ${filterAirlines.size === 0 || filterAirlines.has(al.code) ? 'bg-accent-cyan text-white' : 'bg-primary border border-border-subtle text-text-secondary'}`}>
+                                    {al.code}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0) && (
+                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); }}
+                                className="text-[9px] text-accent-gold font-body hover:underline">Clear all filters</button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Flight count */}
+                        <p className="text-text-muted text-[10px] font-body mb-2">{sortedFlights.length} of {flights.length} flights</p>
+
+                        {/* Flight cards */}
+                        {sortedFlights.length === 0 ? (
+                          <p className="text-text-muted text-sm text-center py-8 font-body">No flights match your filters. Try adjusting above.</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {sortedFlights.map(f => {
+                              const badge = flightBadges.get(f.id);
+                              const isSelected = selectedFlight?.id === f.id;
+                              const depH = parseInt(f.departure?.split(':')[0] || '0');
+                              const arrH = parseInt(f.arrival?.split(':')[0] || '0');
+                              const durMatch = f.duration?.match(/(\d+)h/);
+                              const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                              const isOvernight = f.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                              const depDate = new Date(date);
+                              const arrDate = new Date(date);
+                              if (isOvernight) arrDate.setDate(arrDate.getDate() + 1);
+                              const depDateStr = depDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              const arrDateStr = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              return (
+                                <button key={f.id} onClick={() => {
+                                  const airportInfo = selectedAirportFilter ? nearbyAirports.find(a => a.code === selectedAirportFilter) : undefined;
+                                  onSelectFlight(f, airportInfo ? { fromCode: airportInfo.code, fromCity: airportInfo.city, fromDistance: airportInfo.distance } : undefined);
+                                }}
+                                  className={`w-full text-left p-4 rounded-xl border transition-all relative ${isSelected ? 'bg-accent-cyan/10 border-accent-cyan' : 'bg-bg-card border-border-subtle hover:border-accent-cyan/30'}`}>
+                                  {/* Badge */}
+                                  {badge && !isSelected && (
+                                    <span className={`absolute -top-2 left-3 px-2 py-0.5 text-white text-[9px] font-display font-bold rounded-full ${badge === 'Cheapest' ? 'bg-accent-gold' : badge === 'Fastest' ? 'bg-blue-500' : 'bg-accent-cyan'}`}>{badge}</span>
+                                  )}
+                                  {/* Row 1: Airline + price */}
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-[10px] font-mono font-bold" style={{ backgroundColor: f.color }}>{f.airlineCode}</div>
+                                      <div>
+                                        <p className="text-sm font-display font-bold text-text-primary">{f.airline} {f.flightNumber}</p>
+                                        <p className="text-[10px] text-text-muted">
+                                          {f.cabinClass ? f.cabinClass.charAt(0) + f.cabinClass.slice(1).toLowerCase().replace('_', ' ') : 'Economy'}
+                                          {f.aircraft && <span className="ml-1 text-text-secondary">&middot; {f.aircraft}</span>}
+                                        </p>
+                                        {f.operatingAirline && <p className="text-[9px] text-amber-600 font-body">Operated by {f.operatingAirline}</p>}
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="font-mono font-bold text-accent-cyan text-base">{formatPrice(f.pricePerAdult, currency)}</span>
+                                      <p className="text-[9px] text-text-muted font-mono">/person</p>
+                                    </div>
+                                  </div>
+                                  {/* Row 2: Time + timeline */}
+                                  <div className="flex items-center gap-1 mb-2">
+                                    <div className="text-left min-w-[85px]">
+                                      <p className="font-mono font-bold text-base text-text-primary">
+                                        {padTime(timeStr12(f.departure))}
+                                        {getTimezone(f.depAirportCode || fromCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.depAirportCode || fromCode)}</span>}
+                                      </p>
+                                      <p className="text-[10px] text-text-secondary font-mono">{f.depAirportCode || fromCode}{f.depTerminal ? ` T${f.depTerminal}` : ''} &middot; {depDateStr}</p>
+                                    </div>
+                                    <div className="flex-1 relative h-[2px] bg-border-subtle mx-2">
+                                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-accent-cyan" />
+                                      {f.layovers && f.layovers.length > 0 && f.layovers.map((_: any, li: number) => (
+                                        <div key={li} className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 border border-white" style={{ left: `${((li + 1) / (f.layovers!.length + 1)) * 100}%` }} />
+                                      ))}
+                                    </div>
+                                    <div className="text-right min-w-[85px]">
+                                      <p className="font-mono font-bold text-base text-text-primary">
+                                        {padTime(timeStr12(f.arrival))}
+                                        {getTimezone(f.arrAirportCode || toCode) && <span className="text-[10px] text-text-secondary font-normal ml-1">{getTimezone(f.arrAirportCode || toCode)}</span>}
+                                        {isOvernight && <span className="text-accent-cyan text-[10px] ml-1">+1</span>}
+                                      </p>
+                                      <p className="text-[10px] text-text-secondary font-mono">{f.arrAirportCode || toCode}{f.arrTerminal ? ` T${f.arrTerminal}` : ''} &middot; {arrDateStr}</p>
+                                    </div>
+                                  </div>
+                                  {/* Row 3: Duration + stops */}
+                                  <p className="text-xs text-text-primary font-body text-center">
+                                    {f.duration} &bull; {f.stops === 'Nonstop' ? 'Direct' : f.stops}
+                                  </p>
+                                  {/* Row 4: Baggage + booking */}
+                                  <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-border-subtle">
+                                    <div className="flex items-center gap-3">
+                                      {f.checkedBaggage && (
+                                        <span className="flex items-center gap-1 text-[9px] text-text-secondary font-body">
+                                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 10h12"/><path d="M10 2v8"/><path d="M14 2v8"/></svg>
+                                          {f.checkedBaggage}
+                                        </span>
+                                      )}
+                                      {f.cabinBaggage && (
+                                        <span className="flex items-center gap-1 text-[9px] text-text-secondary font-body">
+                                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
+                                          {f.cabinBaggage} cabin
+                                        </span>
+                                      )}
+                                      {!f.checkedBaggage && !f.cabinBaggage && (
+                                        <span className="text-[9px] text-text-muted font-body">Baggage info N/A</span>
+                                      )}
+                                    </div>
+                                    <a href={getFlightBookingUrl(f.depAirportCode || fromCode, f.arrAirportCode || toCode, date, adults)}
+                                      target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                                      className="text-accent-gold text-[9px] font-body hover:underline flex items-center gap-0.5">
+                                      Book on Skyscanner
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                    </a>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               )}

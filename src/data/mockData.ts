@@ -37,6 +37,23 @@ export interface Flight {
   route: string;
   pricePerAdult: number;
   color: string;
+  // Extended fields (optional — backward compatible with saved trips)
+  depAirportCode?: string;
+  arrAirportCode?: string;
+  layovers?: Array<{ airport: string; airportCode: string; duration: number; overnight: boolean }>;
+  isNextDay?: boolean;
+  durationMin?: number;
+  stopsCount?: number;
+  cabinClass?: string;         // "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST"
+  checkedBaggage?: string;     // "23kg" or "2 pieces" or undefined (not included)
+  cabinBaggage?: string;       // "7kg" or "1 piece"
+  aircraft?: string;           // "AIRBUS A320" or "Boeing 787-9"
+  aircraftCode?: string;       // "320" or "789"
+  operatingAirline?: string;   // "Lufthansa CityLine" — only for codeshares
+  operatingAirlineCode?: string;
+  depTerminal?: string;        // "2" or "T2"
+  arrTerminal?: string;
+  basePrice?: number;          // base fare per person (before taxes)
 }
 
 // ─── Train ───────────────────────────────────────────────────────────────────
