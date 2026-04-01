@@ -861,10 +861,10 @@ export default function TransportCompareModal({
 
                   {/* Filter sidebar + flight list */}
                   {(flights.length > 0 || nearbyAirports.length > 0) && (userAcceptedNearby || !nearbyAirportPrompt) && (
-                    <div className="flex gap-0">
+                    <div className="flex gap-0 items-stretch">
                       {/* Desktop filter sidebar */}
                       {flights.length >= 3 && filterMeta && (
-                        <div className="hidden md:block w-[190px] flex-shrink-0 border-r border-border-subtle pr-3 pl-1 py-2 overflow-y-auto max-h-[calc(100vh-220px)]">
+                        <div className="hidden md:block w-[190px] flex-shrink-0 border-r border-border-subtle pr-3 pl-1 py-2 overflow-y-auto self-stretch">
                           <div className="flex items-center justify-between mb-2">
                             <h3 className="text-[10px] font-display font-bold text-text-primary">Filters</h3>
                             {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0 || filterBaggageOnly || filterMaxLayover > 0 || filterMaxDuration > 0) && (
