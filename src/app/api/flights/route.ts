@@ -75,16 +75,17 @@ export async function GET(req: NextRequest) {
       fromCandidates = [{ code: from.toUpperCase(), city: from, name: from, distance: 0 } as any];
     }
 
-    // Search multiple arrival airports (like Skyscanner "Any airport" mode)
+    // Search multiple departure + arrival airports in parallel (Skyscanner "Any airport" mode)
     // For exact=true (user selected specific airport), only search that one
     let toCandidates = exactAirport
       ? [toAirports.find(ap => ap.code.toUpperCase() === to.toUpperCase()) || toAirports[0]]
-      : toAirports.slice(0, 5); // Top 5 nearby airports
+      : toAirports.slice(0, 5);
 
-    const fromAp = fromCandidates[0];
+    // Use top 3 departure airports (handles non-commercial airports like LBG)
+    const fromSlice: AirportCandidate[] = exactAirport ? [fromCandidates[0]] : fromCandidates.slice(0, 3);
     const nearest = fromAirports[0];
 
-    // Search ALL arrival airports in PARALLEL, merge results for best coverage + cheapest price
+    // Search departure × arrival airports in PARALLEL, merge for best coverage
     let allFlights: any[] = [];
     if (AMADEUS_API_KEY && AMADEUS_API_SECRET) {
       // Fallback: if input was an IATA code (e.g., saved LBG), also resolve nearby airports
@@ -94,19 +95,33 @@ export async function GET(req: NextRequest) {
         const extra = nearbyTo.filter(a => !existingCodes.has(a.code)).slice(0, 4);
         toCandidates = [...toCandidates, ...extra];
       }
+      if (/^[A-Z]{3}$/.test(from) && fromCandidates.length === 1 && fromCandidates[0].city && !exactAirport) {
+        const nearbyFrom = await resolveToAirports(fromCandidates[0].city, baseUrl);
+        const existingCodes = new Set(fromSlice.map(c => c.code));
+        const extra = nearbyFrom.filter(a => !existingCodes.has(a.code)).slice(0, 2);
+        fromSlice.push(...extra);
+      }
+
+      // Build all departure × arrival pairs
+      const pairs: Array<{ fromAp: AirportCandidate; toAp: AirportCandidate }> = [];
+      for (const fa of fromSlice) {
+        for (const ta of toCandidates) {
+          pairs.push({ fromAp: fa, toAp: ta });
+        }
+      }
 
       const results = await Promise.allSettled(
-        toCandidates.map(toAp =>
-          fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null)
+        pairs.map(({ fromAp: fa, toAp: ta }) =>
+          fetchAmadeusFlights(fa.code, ta.code, date, parseInt(adults)).catch(() => null)
         )
       );
 
-      // Merge all flights, dedup by flight number + departure time
+      // Merge all flights, dedup by flight number + departure time + airports
       const seen = new Set<string>();
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value && r.value.length > 0) {
           for (const f of r.value) {
-            const key = `${f.flightNumber}-${f.departure}-${f.arrAirportCode}`;
+            const key = `${f.flightNumber}-${f.departure}-${f.depAirportCode}-${f.arrAirportCode}`;
             if (!seen.has(key)) { seen.add(key); allFlights.push(f); }
           }
         }
@@ -117,21 +132,22 @@ export async function GET(req: NextRequest) {
     }
 
     if (allFlights.length > 0) {
-      // Use cheapest flight's arrival airport as the "resolved" airport
+      // Use cheapest flight's airports as the "resolved" ones
       const cheapest = allFlights[0];
+      const cheapestFromAp = fromSlice.find(a => a.code === cheapest.depAirportCode) || fromSlice[0];
       const cheapestToAp = toCandidates.find(a => a.code === cheapest.arrAirportCode) || toCandidates[0];
       const responseData = {
         status: 'OK',
         from, to, date, adults: parseInt(adults),
-        fromResolved: fromAp.code,
+        fromResolved: cheapestFromAp.code,
         toResolved: cheapestToAp.code,
-        fromAirport: fromAp.name,
-        fromCity: fromAp.city,
-        fromDistance: fromAp.distance,
+        fromAirport: cheapestFromAp.name,
+        fromCity: cheapestFromAp.city,
+        fromDistance: cheapestFromAp.distance,
         toCity: cheapestToAp.city || cheapestToAp.name || '',
         toDistance: cheapestToAp.distance || 0,
         toAirport: cheapestToAp.name || '',
-        nearestFrom: nearest.code !== fromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
+        nearestFrom: nearest.code !== cheapestFromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
         flights: allFlights,
         source: 'amadeus' as const,
       };
