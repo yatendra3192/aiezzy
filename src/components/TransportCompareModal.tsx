@@ -116,10 +116,13 @@ export default function TransportCompareModal({
   const [flightSort, setFlightSort] = useState<'price' | 'shortest'>('price');
   const [trainSort, setTrainSort] = useState<'price' | 'shortest'>('shortest');
   // Flight filters
-  const [filterStops, setFilterStops] = useState<Set<number>>(new Set()); // empty = all stops
-  const [filterAirlines, setFilterAirlines] = useState<Set<string>>(new Set()); // empty = all airlines
-  const [filterDepTime, setFilterDepTime] = useState<Set<string>>(new Set()); // 'morning'|'afternoon'|'evening'|'night'
-  const [showFilters, setShowFilters] = useState(false); // mobile filter toggle
+  const [filterStops, setFilterStops] = useState<Set<number>>(new Set());
+  const [filterAirlines, setFilterAirlines] = useState<Set<string>>(new Set());
+  const [filterDepTime, setFilterDepTime] = useState<Set<string>>(new Set());
+  const [filterBaggageOnly, setFilterBaggageOnly] = useState(false);
+  const [filterMaxLayover, setFilterMaxLayover] = useState(0); // 0 = no limit, in minutes
+  const [filterMaxDuration, setFilterMaxDuration] = useState(0); // 0 = no limit, in minutes
+  const [showFilters, setShowFilters] = useState(false);
   // Nearby airports dropdowns (departure + arrival)
   const [nearbyAirports, setNearbyAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
   const [nearbyArrAirports, setNearbyArrAirports] = useState<Array<{ code: string; city: string; distance: number }>>([]);
@@ -256,7 +259,7 @@ export default function TransportCompareModal({
       setTrains([]); setDriveInfo(null); setWalkInfo(null); setCycleInfo(null); setBusRoutes([]); setBusNotFound(false);
       setNearbyAirportPrompt(null); setUserAcceptedNearby(false);
       setConnectingTrainPrompt(false); setUserAcceptedConnecting(false);
-      setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); setShowFilters(false); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
+      setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); setFilterBaggageOnly(false); setFilterMaxLayover(0); setFilterMaxDuration(0); setShowFilters(false); setSelectedAirportFilter(''); setSelectedArrAirportFilter(''); setNearbyAirports([]); setNearbyArrAirports([]);
       resetCustomForm();
       // Pre-populate flights from cache if available (avoids re-fetching)
       if (cachedFlights && cachedFlights.length > 0) {
@@ -499,7 +502,13 @@ export default function TransportCompareModal({
       if (!existing) airlinesMap.set(f.airlineCode, { code: f.airlineCode, name: f.airline, cheapest: f.pricePerAdult, count: 1 });
       else { existing.count++; if (f.pricePerAdult < existing.cheapest) existing.cheapest = f.pricePerAdult; }
     });
-    return { minPrice, maxPrice, stopsMap, airlinesMap };
+    // Max layover duration across all flights (for slider)
+    const maxLayover = Math.max(0, ...flights.flatMap(f => (f.layovers || []).map((l: any) => l.duration || 0)));
+    // Max total flight duration (for slider)
+    const maxDuration = Math.max(0, ...flights.map(f => f.durationMin || parseDurationMin(f.duration)));
+    // Count flights with checked baggage
+    const withBaggage = flights.filter(f => f.checkedBaggage).length;
+    return { minPrice, maxPrice, stopsMap, airlinesMap, maxLayover, maxDuration, withBaggage };
   }, [flights]);
 
   const sortedFlights = useMemo(() => {
@@ -522,10 +531,25 @@ export default function TransportCompareModal({
         return filterDepTime.has('night');
       });
     }
+    // Baggage included filter
+    if (filterBaggageOnly) {
+      filtered = filtered.filter(f => !!f.checkedBaggage);
+    }
+    // Max layover duration filter
+    if (filterMaxLayover > 0) {
+      filtered = filtered.filter(f => {
+        if (!f.layovers || f.layovers.length === 0) return true; // nonstop always passes
+        return f.layovers.every((l: any) => (l.duration || 0) <= filterMaxLayover);
+      });
+    }
+    // Max total travel time filter
+    if (filterMaxDuration > 0) {
+      filtered = filtered.filter(f => (f.durationMin || parseDurationMin(f.duration)) <= filterMaxDuration);
+    }
     return filtered.sort((a, b) =>
       flightSort === 'price' ? a.pricePerAdult - b.pricePerAdult : (a.durationMin || parseDurationMin(a.duration)) - (b.durationMin || parseDurationMin(b.duration))
     );
-  }, [flights, flightSort, filterStops, filterAirlines, filterDepTime]);
+  }, [flights, flightSort, filterStops, filterAirlines, filterDepTime, filterBaggageOnly, filterMaxLayover, filterMaxDuration]);
 
   const flightBadges = useMemo(() => {
     const badges = new Map<string, string>();
@@ -836,8 +860,8 @@ export default function TransportCompareModal({
                         <div className="hidden md:block w-[190px] flex-shrink-0 border-r border-border-subtle pr-3 pl-1 py-2 overflow-y-auto max-h-[calc(100vh-220px)]">
                           <div className="flex items-center justify-between mb-2">
                             <h3 className="text-[10px] font-display font-bold text-text-primary">Filters</h3>
-                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0) && (
-                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); }}
+                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0 || filterBaggageOnly || filterMaxLayover > 0 || filterMaxDuration > 0) && (
+                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); setFilterBaggageOnly(false); setFilterMaxLayover(0); setFilterMaxDuration(0); }}
                                 className="text-[9px] text-accent-gold font-body hover:underline">Clear all</button>
                             )}
                           </div>
@@ -904,6 +928,53 @@ export default function TransportCompareModal({
                             </div>
                           </div>
 
+                          {/* Baggage included */}
+                          {filterMeta.withBaggage > 0 && filterMeta.withBaggage < flights.length && (
+                            <div className="mb-3">
+                              <label className="flex items-center justify-between cursor-pointer group">
+                                <span className="flex items-center gap-1.5">
+                                  <input type="checkbox" checked={filterBaggageOnly}
+                                    onChange={() => setFilterBaggageOnly(!filterBaggageOnly)}
+                                    className="w-3.5 h-3.5 rounded border-border-subtle accent-accent-cyan" />
+                                  <span className="text-[10px] font-display font-bold text-text-primary group-hover:text-accent-cyan">Baggage included</span>
+                                </span>
+                                <span className="text-[9px] font-mono text-text-muted">{filterMeta.withBaggage}</span>
+                              </label>
+                            </div>
+                          )}
+
+                          {/* Layover duration slider */}
+                          {filterMeta.maxLayover > 0 && (
+                            <div className="mb-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-display font-bold text-text-secondary">Layover duration</p>
+                                <p className="text-[9px] font-mono text-text-muted">
+                                  {filterMaxLayover > 0 ? `≤ ${Math.floor(filterMaxLayover / 60)}h ${filterMaxLayover % 60}m` : `Up to ${Math.floor(filterMeta.maxLayover / 60)}h`}
+                                </p>
+                              </div>
+                              <input type="range" min={30} max={filterMeta.maxLayover} step={30}
+                                value={filterMaxLayover > 0 ? filterMaxLayover : filterMeta.maxLayover}
+                                onChange={e => { const v = parseInt(e.target.value); setFilterMaxLayover(v >= filterMeta.maxLayover ? 0 : v); }}
+                                className="w-full h-1 bg-border-subtle rounded-full appearance-none cursor-pointer accent-accent-cyan [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-cyan [&::-webkit-slider-thumb]:appearance-none" />
+                            </div>
+                          )}
+
+                          {/* Travel time slider */}
+                          {filterMeta.maxDuration > 0 && (
+                            <div className="mb-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-[10px] font-display font-bold text-text-secondary">Travel time</p>
+                                <p className="text-[9px] font-mono text-text-muted">
+                                  {filterMaxDuration > 0 ? `≤ ${Math.floor(filterMaxDuration / 60)}h ${filterMaxDuration % 60}m` : `Up to ${Math.floor(filterMeta.maxDuration / 60)}h`}
+                                </p>
+                              </div>
+                              <input type="range" min={Math.floor(Math.min(...flights.map(f => f.durationMin || parseDurationMin(f.duration))) / 30) * 30} max={filterMeta.maxDuration} step={30}
+                                value={filterMaxDuration > 0 ? filterMaxDuration : filterMeta.maxDuration}
+                                onChange={e => { const v = parseInt(e.target.value); setFilterMaxDuration(v >= filterMeta.maxDuration ? 0 : v); }}
+                                className="w-full h-1 bg-border-subtle rounded-full appearance-none cursor-pointer accent-accent-cyan [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-cyan [&::-webkit-slider-thumb]:appearance-none" />
+                            </div>
+                          )}
+
                           {/* Airport dropdowns in sidebar */}
                           {nearbyAirports.length > 0 && (
                             <div className="mb-3">
@@ -943,7 +1014,7 @@ export default function TransportCompareModal({
                           {flights.length >= 3 && (
                             <button onClick={() => setShowFilters(!showFilters)}
                               className="md:hidden px-3 py-1.5 rounded-lg border border-border-subtle bg-bg-card text-[10px] font-display font-bold text-text-secondary">
-                              Filters{(filterStops.size + filterAirlines.size + filterDepTime.size) > 0 ? ` (${filterStops.size + filterAirlines.size + filterDepTime.size})` : ''}
+                              Filters{(filterStops.size + filterAirlines.size + filterDepTime.size + (filterBaggageOnly ? 1 : 0) + (filterMaxLayover > 0 ? 1 : 0) + (filterMaxDuration > 0 ? 1 : 0)) > 0 ? ` (${filterStops.size + filterAirlines.size + filterDepTime.size + (filterBaggageOnly ? 1 : 0) + (filterMaxLayover > 0 ? 1 : 0) + (filterMaxDuration > 0 ? 1 : 0)})` : ''}
                             </button>
                           )}
                           {/* Mobile airport dropdowns */}
@@ -1011,8 +1082,40 @@ export default function TransportCompareModal({
                                 ))}
                               </div>
                             </div>
-                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0) && (
-                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); }}
+                            {/* Baggage + sliders (mobile) */}
+                            {filterMeta.withBaggage > 0 && (
+                              <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" checked={filterBaggageOnly} onChange={() => setFilterBaggageOnly(!filterBaggageOnly)}
+                                  className="w-3.5 h-3.5 rounded accent-accent-cyan" />
+                                <span className="text-[9px] font-display font-bold text-text-primary">Baggage included</span>
+                              </label>
+                            )}
+                            {filterMeta.maxLayover > 0 && (
+                              <div>
+                                <div className="flex justify-between">
+                                  <span className="text-[9px] font-display font-bold text-text-secondary">Max layover</span>
+                                  <span className="text-[8px] font-mono text-text-muted">{filterMaxLayover > 0 ? `${Math.floor(filterMaxLayover/60)}h${filterMaxLayover%60 ? ` ${filterMaxLayover%60}m` : ''}` : 'Any'}</span>
+                                </div>
+                                <input type="range" min={30} max={filterMeta.maxLayover} step={30}
+                                  value={filterMaxLayover > 0 ? filterMaxLayover : filterMeta.maxLayover}
+                                  onChange={e => { const v = parseInt(e.target.value); setFilterMaxLayover(v >= filterMeta.maxLayover ? 0 : v); }}
+                                  className="w-full h-1 bg-border-subtle rounded-full appearance-none cursor-pointer accent-accent-cyan [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-cyan [&::-webkit-slider-thumb]:appearance-none" />
+                              </div>
+                            )}
+                            {filterMeta.maxDuration > 0 && (
+                              <div>
+                                <div className="flex justify-between">
+                                  <span className="text-[9px] font-display font-bold text-text-secondary">Max travel time</span>
+                                  <span className="text-[8px] font-mono text-text-muted">{filterMaxDuration > 0 ? `${Math.floor(filterMaxDuration/60)}h${filterMaxDuration%60 ? ` ${filterMaxDuration%60}m` : ''}` : 'Any'}</span>
+                                </div>
+                                <input type="range" min={Math.floor(Math.min(...flights.map(f => f.durationMin || parseDurationMin(f.duration)))/30)*30} max={filterMeta.maxDuration} step={30}
+                                  value={filterMaxDuration > 0 ? filterMaxDuration : filterMeta.maxDuration}
+                                  onChange={e => { const v = parseInt(e.target.value); setFilterMaxDuration(v >= filterMeta.maxDuration ? 0 : v); }}
+                                  className="w-full h-1 bg-border-subtle rounded-full appearance-none cursor-pointer accent-accent-cyan [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent-cyan [&::-webkit-slider-thumb]:appearance-none" />
+                              </div>
+                            )}
+                            {(filterStops.size > 0 || filterAirlines.size > 0 || filterDepTime.size > 0 || filterBaggageOnly || filterMaxLayover > 0 || filterMaxDuration > 0) && (
+                              <button onClick={() => { setFilterStops(new Set()); setFilterAirlines(new Set()); setFilterDepTime(new Set()); setFilterBaggageOnly(false); setFilterMaxLayover(0); setFilterMaxDuration(0); }}
                                 className="text-[9px] text-accent-gold font-body hover:underline">Clear all filters</button>
                             )}
                           </div>
