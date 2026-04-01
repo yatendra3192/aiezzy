@@ -135,6 +135,42 @@ export async function GET(req: NextRequest) {
       if (merged.length > 0) {
         allFlights = merged;
         resolvedToAp = toAp;
+
+        // Also search other airports within 50km (same metro area, e.g., CDG+ORY for Paris)
+        // but skip airports in different cities (e.g., BHO for Indore)
+        const SAME_METRO_KM = 50;
+        const sameMetroAirports = toCandidates.filter(ap =>
+          ap.code !== toAp.code && ap.distance <= SAME_METRO_KM
+        );
+        if (sameMetroAirports.length > 0) {
+          const metroResults = await Promise.allSettled(
+            sameMetroAirports.map(metroAp => Promise.all([
+              (AMADEUS_API_KEY && AMADEUS_API_SECRET)
+                ? fetchAmadeusFlights(fromAp.code, metroAp.code, date, parseInt(adults)).catch(() => null)
+                : Promise.resolve(null),
+              (FLIGHTS_API_URL && FLIGHTS_API_KEY)
+                ? fetchScraperFlights(fromAp.code, metroAp.code, date, adults).then(r =>
+                    r?.filter((f: any) => f.arrAirportCode === metroAp.code || !f.arrAirportCode) || null
+                  ).catch(() => null)
+                : Promise.resolve(null),
+            ]))
+          );
+          const existingSeen = new Set(allFlights.map(f => `${f.flightNumber}-${f.departure}`));
+          for (const r of metroResults) {
+            if (r.status === 'fulfilled') {
+              const [amadeus, scraper] = r.value;
+              for (const flights of [amadeus, scraper]) {
+                if (flights && flights.length > 0) {
+                  for (const f of flights) {
+                    const key = `${f.flightNumber}-${f.departure}`;
+                    if (!existingSeen.has(key)) { existingSeen.add(key); allFlights.push(f); }
+                  }
+                }
+              }
+            }
+          }
+        }
+
         break; // Found flights — stop trying other airports
       }
     }
