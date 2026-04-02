@@ -1238,7 +1238,9 @@ function DeepPlanPageContent() {
             // Skip cascade for "Leave by" stops — their time was recalculated backwards
             // from the next stop's fixed time, so the next stop is already correct
             if (!stop.note?.includes('Leave by') && nextIdx >= 0 && !newStops[nextIdx].note?.includes('Leave by') && newTime) {
-              const departMin = parseTime(newTime);
+              // Departure from this stop = arrival time + activity duration (if it's an activity)
+              const stopDuration = stop.type === 'attraction' && stop.durationMin ? stop.durationMin : 0;
+              const departMin = parseTime(newTime) + stopDuration;
               const arrivalMin = departMin + travelMin;
               const oldNextMin = newStops[nextIdx].time ? parseTime(newStops[nextIdx].time!) : arrivalMin;
               const delta = arrivalMin - oldNextMin; // how much time shifted
