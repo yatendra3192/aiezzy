@@ -1605,6 +1605,13 @@ function DeepPlanPageContent() {
   const handleDragStart = (e: React.DragEvent, dayNum: number, stopId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', stopId);
+    // Create a cleaner drag ghost
+    const el = e.currentTarget as HTMLElement;
+    const ghost = el.cloneNode(true) as HTMLElement;
+    ghost.style.cssText = 'position:fixed;top:-1000px;left:-1000px;width:' + el.offsetWidth + 'px;opacity:0.85;transform:scale(1.02);border-radius:12px;box-shadow:0 8px 25px rgba(232,101,74,0.15);background:white;z-index:9999;';
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, el.offsetWidth / 2, 30);
+    setTimeout(() => document.body.removeChild(ghost), 0);
     setDragState({ dayNum, stopId });
   };
   const handleDragOver = (e: React.DragEvent, stopId: string) => {
@@ -2122,13 +2129,15 @@ function DeepPlanPageContent() {
                       );
                     }
 
-                    // Is this an attraction on an explore day that can be dragged?
-                    const isDraggableActivity = (day.type === 'explore' || day.type === 'arrival') && stop.type === 'attraction' && !isMeal;
+                    // Is this an attraction on an explore/arrival day that can be dragged?
+                    const isDraggableActivity = (day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival') && stop.type === 'attraction' && !isMeal;
+                    const isBeingDragged = dragState?.stopId === stop.id;
+                    const isDropTarget = dragOverId === stop.id && dragState?.stopId !== stop.id;
 
                     return (
                       <div
                         key={stop.id}
-                        className={`relative${isDraggableActivity ? ' transition-all' : ''}${dragOverId === stop.id ? ' bg-accent-cyan/5 rounded-lg' : ''}`}
+                        className={`relative${isDraggableActivity ? ' transition-all duration-200' : ''}${isDropTarget ? ' border-t-2 border-accent-cyan pt-1' : ''}${isBeingDragged ? ' opacity-40 scale-[0.97]' : ''}`}
                         draggable={isDraggableActivity}
                         onDragStart={isDraggableActivity ? (e) => handleDragStart(e, day.day, stop.id) : undefined}
                         onDragOver={isDraggableActivity ? (e) => handleDragOver(e, stop.id) : undefined}
@@ -2155,7 +2164,7 @@ function DeepPlanPageContent() {
                           </div>
                           {/* Drag handle for explore day activities */}
                           {isDraggableActivity && (
-                            <div className="print-hide flex flex-col gap-[2px] opacity-25 hover:opacity-60 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1 -mr-1" aria-label="Drag to reorder">
+                            <div className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5 -mr-1 select-none" aria-label="Drag to reorder">
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
