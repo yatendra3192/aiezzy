@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const perDay = 6;
-  const extras = 2;
+  const perDay = 7;
+  const extras = 3;
   const targetCount = days * perDay + extras;
 
   if (!openaiKey && !anthropicKey) {
@@ -83,7 +83,7 @@ Rules:
         },
         body: JSON.stringify({
           model: 'gpt-4.1-mini',
-          max_tokens: 2048,
+          max_tokens: 4096,
           temperature: 0.7,
           messages: [
             { role: 'system', content: systemPrompt },
@@ -111,7 +111,7 @@ Rules:
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2048,
+          max_tokens: 4096,
           messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
         }),
       });

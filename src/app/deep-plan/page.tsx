@@ -371,24 +371,25 @@ function DeepPlanPageContent() {
     if (citiesNeeded.length === 0) return;
     autoFillRanRef.current = true;
 
-    // Show progress overlay and fetch sequentially
+    // Show progress overlay and fetch ALL cities in parallel for speed
     const cities = citiesNeeded.map(c => ({ name: c.cityName, done: false }));
-    setAutoFillProgress({ total: citiesNeeded.length, done: 0, current: citiesNeeded[0].cityName, cities });
+    setAutoFillProgress({ total: citiesNeeded.length, done: 0, current: 'All cities', cities });
 
-    (async () => {
-      for (let i = 0; i < citiesNeeded.length; i++) {
-        const c = citiesNeeded[i];
-        setAutoFillProgress(prev => prev ? { ...prev, done: i, current: c.cityName } : null);
-        await fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces);
+    // Fire all requests in parallel
+    const promises = citiesNeeded.map((c, i) =>
+      fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces).then(() => {
         setAutoFillProgress(prev => {
           if (!prev) return null;
           const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
-          return { ...prev, done: i + 1, cities: updated };
+          const doneCount = updated.filter(city => city.done).length;
+          const nextPending = updated.find(city => !city.done);
+          return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
         });
-      }
-      // Keep showing 100% briefly then dismiss
+      })
+    );
+    Promise.all(promises).then(() => {
       setTimeout(() => setAutoFillProgress(null), 800);
-    })();
+    });
   }, [trip.destinations.length, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh AI suggestions for a specific city
