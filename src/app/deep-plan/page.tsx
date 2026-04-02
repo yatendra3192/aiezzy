@@ -662,19 +662,18 @@ function DeepPlanPageContent() {
                 time: hotelArriveTime2, transport: null,
               });
             }
-            result.push(arrivalDay);
-            // If arriving early enough (before 6 PM), don't increment — explore day merges as "Arrival & Explore"
-            // If arriving late (after 6 PM), the arrival day is its own day — increment so explore starts next day
-            const arrivalMinForCheck = arrTime ? parseTime(arrTime) : null;
-            if (arrivalMinForCheck !== null && arrivalMinForCheck >= 18 * 60) {
-              // Late arrival: add dinner + sleep to the arrival day so it's a complete day
-              if (!arrivalDay.stops.some(s => s.mealType === 'dinner')) {
-                arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '21:00', transport: null, mealType: 'dinner', note: 'Late dinner after arrival' });
-              }
-              arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:30', transport: null });
-              dayNum++; // explore days start the next calendar day
+            // Always add dinner + sleep to arrival day and keep it separate from explore days
+            // Merging arrival + explore into one card created confusing 24h+ timelines
+            if (!arrivalDay.stops.some(s => s.mealType === 'dinner')) {
+              const arrMinCheck = arrTime ? parseTime(arrTime) : 15 * 60;
+              const dinnerTimeStr = arrMinCheck >= 20 * 60 ? '21:00' : '19:00';
+              arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: dinnerTimeStr, transport: null, mealType: 'dinner' });
             }
-            // else: dayNum stays — explore day merges with arrival on same date
+            if (!arrivalDay.stops.some(s => s.name === 'Rest / Sleep')) {
+              arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null });
+            }
+            result.push(arrivalDay);
+            dayNum++; // explore days always start the next calendar day
           } else {
             // Same-day arrival — keep everything on the travel day
             const arrTerminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
