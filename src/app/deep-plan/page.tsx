@@ -1508,6 +1508,7 @@ function DeepPlanPageContent() {
               ...(walk && { walk }),
               ...(transit && { transit }),
               ...(drive && { drive }),
+              _fetched: true, // marker so UI knows fetch completed (even if all modes failed)
             },
           }));
         });
@@ -2620,7 +2621,7 @@ function DeepPlanPageContent() {
                                               <span className="flex-1 font-body">{label}</span>
                                               {d ? (
                                                 <span className="font-mono text-[11px] text-text-muted">{d.duration} &middot; {d.distance}</span>
-                                              ) : travelData?.walk || travelData?.transit || travelData?.drive ? (
+                                              ) : (travelData as any)?._fetched ? (
                                                 <span className="text-[11px] text-text-muted/40 italic font-body">N/A</span>
                                               ) : (
                                                 <span className="text-[11px] text-text-muted/50 italic font-body">Loading...</span>
