@@ -2053,7 +2053,7 @@ function DeepPlanPageContent() {
                 {/* Timeline — solid line = confirmed plan */}
                 {(() => {
                   const isDraggableDay = day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival';
-                  const activityIds = isDraggableDay ? day.stops.filter(s => s.type === 'attraction' && !s.mealType).map(s => s.id) : [];
+                  const activityIds = isDraggableDay ? day.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).map(s => s.id) : [];
                   const useReorder = isDraggableDay && activityIds.length > 1;
 
                   const stopsContent = day.stops.map((stop, si) => {
@@ -2091,7 +2091,7 @@ function DeepPlanPageContent() {
                     }
 
                     // Is this an attraction on an explore/arrival day that can be dragged?
-                    const isDraggableActivity = (day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival') && stop.type === 'attraction' && !isMeal;
+                    const isDraggableActivity = (day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival') && stop.type === 'attraction' && !isMeal && !stop.name.startsWith('Free time') && !stop.name.startsWith('Morning in');
 
                     // Render stop content — wrapped in Reorder.Item if draggable
                     const stopContent = (
