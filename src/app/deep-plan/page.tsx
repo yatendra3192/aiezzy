@@ -2606,7 +2606,7 @@ function DeepPlanPageContent() {
                       </>
                     );
 
-                    if (isDraggableActivity) {
+                    if (isDraggableActivity && useReorder) {
                       return (
                         <Reorder.Item
                           key={stop.id}
