@@ -348,22 +348,47 @@ function DeepPlanPageContent() {
     }
   }, [trip.departureDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On mount / trip load: fetch AI activities for cities that need them
+  // Auto-fill progress state
+  const [autoFillProgress, setAutoFillProgress] = useState<{ total: number; done: number; current: string; cities: Array<{ name: string; done: boolean }> } | null>(null);
+  const autoFillRanRef = useRef(false);
+
+  // On mount / trip load: auto-fetch AI activities for ALL cities that need them
   useEffect(() => {
-    if (trip.destinations.length === 0) return;
+    if (trip.destinations.length === 0 || autoFillRanRef.current) return;
+    // Collect cities that need AI activities
+    const citiesNeeded: Array<{ cityName: string; country: string; days: number; userPlaces: string[] }> = [];
     for (const dest of trip.destinations) {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
-      // Skip if already cached in deepPlanData
       if (trip.deepPlanData?.cityActivities?.[cityName]?.length) continue;
-      // Skip if in static data
-      if (CITY_ATTRACTIONS[cityName]) continue;
-      // Skip 0-night layovers (no explore days)
-      if (dest.nights <= 1) continue;
-      const exploreDays = Math.max(0, dest.nights - 1);
+      if (dest.nights < 1) continue;
+      const exploreDays = Math.max(1, dest.nights - 1);
       const userPlaces = dest.places?.map(p => p.name) || [];
-      fetchAiActivities(cityName, dest.city.country || '', exploreDays, userPlaces);
+      if (!citiesNeeded.some(c => c.cityName === cityName)) {
+        citiesNeeded.push({ cityName, country: dest.city.country || '', days: exploreDays, userPlaces });
+      }
     }
+    if (citiesNeeded.length === 0) return;
+    autoFillRanRef.current = true;
+
+    // Show progress overlay and fetch sequentially
+    const cities = citiesNeeded.map(c => ({ name: c.cityName, done: false }));
+    setAutoFillProgress({ total: citiesNeeded.length, done: 0, current: citiesNeeded[0].cityName, cities });
+
+    (async () => {
+      for (let i = 0; i < citiesNeeded.length; i++) {
+        const c = citiesNeeded[i];
+        setAutoFillProgress(prev => prev ? { ...prev, done: i, current: c.cityName } : null);
+        await fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces);
+        setAutoFillProgress(prev => {
+          if (!prev) return null;
+          const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
+          return { ...prev, done: i + 1, cities: updated };
+        });
+      }
+      // Keep showing 100% briefly then dismiss
+      setTimeout(() => setAutoFillProgress(null), 800);
+    })();
   }, [trip.destinations.length, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh AI suggestions for a specific city
@@ -1692,6 +1717,60 @@ function DeepPlanPageContent() {
 
   return (
     <div className="min-h-screen flex justify-center p-4 py-6 deep-plan-page">
+      {/* Auto-fill progress overlay */}
+      {autoFillProgress && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-[360px]"
+          >
+            <div className="text-center mb-4">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-accent-cyan/10 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </div>
+              <h3 className="font-display text-lg font-bold text-text-primary">Filling Your Itinerary</h3>
+              <p className="text-text-muted text-xs font-body mt-1">Generating activities for each city...</p>
+            </div>
+            {/* Progress bar */}
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <motion.div
+                className="h-full bg-accent-cyan rounded-full"
+                initial={{ width: '0%' }}
+                animate={{ width: `${Math.round((autoFillProgress.done / autoFillProgress.total) * 100)}%` }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+            {/* City list */}
+            <div className="space-y-2">
+              {autoFillProgress.cities.map((city, i) => (
+                <div key={city.name} className="flex items-center gap-2.5 text-[13px] font-body">
+                  {city.done ? (
+                    <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                  ) : autoFillProgress.current === city.name ? (
+                    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
+                      <div className="w-4 h-4 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-gray-100 flex-shrink-0" />
+                  )}
+                  <span className={city.done ? 'text-text-muted' : autoFillProgress.current === city.name ? 'text-accent-cyan font-semibold' : 'text-text-secondary'}>{city.name}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-text-muted font-body text-center mt-4">
+              {autoFillProgress.done}/{autoFillProgress.total} cities completed
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[960px]">
         <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-5 md:p-8 relative">
           {/* ====== [A] TRIP HEADER ====== */}
