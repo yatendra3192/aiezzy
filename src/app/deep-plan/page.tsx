@@ -649,6 +649,7 @@ function DeepPlanPageContent() {
                       time: formatTime24(evCursor2),
                       transport: ei < count2 - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
                       category: aiD2?.category || 'landmark', durationMin: dur2,
+                      note: aiD2?.note, openingHours: aiD2?.openingHours, ticketPrice: aiD2?.ticketPrice,
                     });
                     evCursor2 += dur2 + 30;
                   }
@@ -745,6 +746,7 @@ function DeepPlanPageContent() {
                       transport: ei < maxActivities - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
                       category: aiDetail?.category || 'landmark',
                       durationMin: dur,
+                      note: aiDetail?.note, openingHours: aiDetail?.openingHours, ticketPrice: aiDetail?.ticketPrice,
                     });
                     evCursor += dur + 30; // activity + travel gap
                   }
