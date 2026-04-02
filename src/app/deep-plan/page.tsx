@@ -1622,13 +1622,22 @@ function DeepPlanPageContent() {
       if (res.ok) {
         const data = await res.json();
         if (data.activities?.length > 0) {
-          // Pick activities that fit within the free hours
+          // Cache AI activities in deepPlanData so arrival/travel days pick them up
+          const cityKey = city;
+          trip.updateDeepPlanData({
+            cityActivities: {
+              ...trip.deepPlanData?.cityActivities,
+              [cityKey]: data.activities,
+            },
+            ...(data.dayThemes ? { dayThemes: { ...trip.deepPlanData?.dayThemes, [cityKey]: data.dayThemes } } : {}),
+          });
+
+          // Also add as custom activities for this specific day
           const maxMin = freeHours * 60;
           let totalMin = 0;
           const dayData = adjustedDays.find(d => d.day === dayNum);
-          // Find the "Free time" stop to get start time
           const freeStop = dayData?.stops.find(s => s.name.startsWith('Free time'));
-          let cursor = freeStop?.time ? parseTime(freeStop.time) + 30 : 13 * 60; // 30min after free time start
+          let cursor = freeStop?.time ? parseTime(freeStop.time) + 30 : 13 * 60;
           const newActivities: Array<{ name: string; time: string }> = [];
           for (const act of data.activities) {
             const dur = act.durationMin || 60;
