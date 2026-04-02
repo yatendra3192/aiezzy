@@ -443,6 +443,7 @@ function DeepPlanPageContent() {
     const result: DayPlan[] = [];
     let dayNum = 0;
     let sc = 0; // stop counter
+    const usedArrivalActivities = new Set<string>(); // track activities used on arrival days to avoid repeats
 
     for (let destIdx = 0; destIdx < trip.destinations.length; destIdx++) {
       let transitDays = 0;
@@ -629,7 +630,6 @@ function DeepPlanPageContent() {
                   : (trip.deepPlanData?.cityActivities?.[evCityKey2]?.map(a => a.name)
                     || (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
                 if (cityAttr2.length > 0 && freeHrs2 >= 1.5 && freeStart2 < dinnerTime2 - 60) {
-                  const count2 = Math.min(freeHrs2 >= 5 ? 3 : freeHrs2 >= 3 ? 2 : 1, cityAttr2.length);
                   const aiActs2 = trip.deepPlanData?.cityActivities?.[evCityKey2] || [];
                   arrivalDay.stops.push({
                     id: `dp${sc++}`, name: `Free time — ${Math.round(freeHrs2)} hours to explore ${toCity.name}`,
@@ -637,20 +637,30 @@ function DeepPlanPageContent() {
                     transport: { icon: 'walk', duration: '', distance: '' },
                     note: 'Evening exploration (optional)',
                   });
+                  // Fill as many activities as fit in the free time (no cap)
                   let evCursor2 = freeStart2 + 30;
-                  for (let ei = 0; ei < count2; ei++) {
-                    if (evCursor2 + 45 > dinnerTime2) break;
+                  let addedCount2 = 0;
+                  for (let ei = 0; ei < cityAttr2.length; ei++) {
+                    if (evCursor2 + 30 > dinnerTime2) break; // no room for even a short activity
                     const attrName2 = cityAttr2[ei];
                     const aiD2 = aiActs2.find(a => a.name === attrName2);
-                    const dur2 = aiD2?.durationMin ? Math.min(aiD2.durationMin, 90) : 60;
+                    const dur2 = aiD2?.durationMin || 60;
+                    if (evCursor2 + dur2 > dinnerTime2) continue; // this one doesn't fit, try next
                     arrivalDay.stops.push({
                       id: `dp${sc++}`, name: attrName2, type: 'attraction',
                       time: formatTime24(evCursor2),
-                      transport: ei < count2 - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                      transport: { icon: 'walk', duration: '', distance: '' },
                       category: aiD2?.category || 'landmark', durationMin: dur2,
                       note: aiD2?.note, openingHours: aiD2?.openingHours, ticketPrice: aiD2?.ticketPrice,
                     });
+                    usedArrivalActivities.add(attrName2.toLowerCase());
                     evCursor2 += dur2 + 30;
+                    addedCount2++;
+                  }
+                  // Remove transport from last activity (before dinner)
+                  if (addedCount2 > 0) {
+                    const lastAct = arrivalDay.stops[arrivalDay.stops.length - 1];
+                    if (lastAct.type === 'attraction') lastAct.transport = null;
                   }
                 }
                 arrivalDay.stops.push({ id: `dp${sc++}`, name: 'Dinner', type: 'hotel', time: '19:00', transport: null, mealType: 'dinner' });
@@ -721,9 +731,6 @@ function DeepPlanPageContent() {
                     || (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
 
                 if (cityAttractions.length > 0 && totalFreeHours >= 1.5 && freeStartMin < dinnerTime - 60) {
-                  // Suggest activities that fit before dinner, max 90 min each
-                  const maxActivities = Math.min(totalFreeHours >= 5 ? 3 : totalFreeHours >= 3 ? 2 : 1, cityAttractions.length);
-                  // Get AI activity details if available for proper category/duration
                   const aiActs = trip.deepPlanData?.cityActivities?.[evCityKey] || [];
 
                   travelDay.stops.push({
@@ -733,21 +740,31 @@ function DeepPlanPageContent() {
                     note: 'Evening exploration (optional)',
                   });
 
+                  // Fill as many activities as fit (no cap)
                   let evCursor = freeStartMin + 30;
-                  for (let ei = 0; ei < maxActivities; ei++) {
-                    if (evCursor + 45 > dinnerTime) break; // Don't schedule past dinner
+                  let addedCount = 0;
+                  for (let ei = 0; ei < cityAttractions.length; ei++) {
+                    if (evCursor + 30 > dinnerTime) break;
                     const attrName = cityAttractions[ei];
                     const aiDetail = aiActs.find(a => a.name === attrName);
-                    const dur = aiDetail?.durationMin ? Math.min(aiDetail.durationMin, 90) : 60; // cap at 90 min for evening
+                    const dur = aiDetail?.durationMin || 60;
+                    if (evCursor + dur > dinnerTime) continue;
                     travelDay.stops.push({
                       id: `dp${sc++}`, name: attrName, type: 'attraction',
                       time: formatTime24(evCursor),
-                      transport: ei < maxActivities - 1 ? { icon: 'walk', duration: '', distance: '' } : null,
+                      transport: { icon: 'walk', duration: '', distance: '' },
                       category: aiDetail?.category || 'landmark',
                       durationMin: dur,
                       note: aiDetail?.note, openingHours: aiDetail?.openingHours, ticketPrice: aiDetail?.ticketPrice,
                     });
+                    usedArrivalActivities.add(attrName.toLowerCase());
+                    addedCount++;
                     evCursor += dur + 30; // activity + travel gap
+                  }
+                  // Remove transport from last activity (before dinner)
+                  if (addedCount > 0) {
+                    const lastAct = travelDay.stops[travelDay.stops.length - 1];
+                    if (lastAct.type === 'attraction') lastAct.transport = null;
                   }
                 }
 
@@ -800,9 +817,10 @@ function DeepPlanPageContent() {
       const exploreDays = Math.max(0, dest.nights - 1);
 
       // Build typed activity list with durations from multiple sources
+      // Skip activities already used on the arrival day to avoid repeats
       type TypedActivity = { name: string; category: string; durationMin: number; bestTime: string; note?: string; openingHours?: string; ticketPrice?: string; dayIndex?: number };
       const typedActivities: TypedActivity[] = [];
-      const usedNames = new Set<string>();
+      const usedNames = new Set<string>(usedArrivalActivities); // start with arrival activities excluded
 
       // Priority 1: user-added places (wrapped with default 90min)
       if (dest.places && dest.places.length > 0) {
