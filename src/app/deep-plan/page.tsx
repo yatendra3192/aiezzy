@@ -272,8 +272,7 @@ function DeepPlanPageContent() {
       return next;
     });
   };
-  const [dragState, setDragState] = useState<{ dayNum: number; stopId: string } | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // dragState/dragOverId removed — now using Framer Motion Reorder
 
   // Wrappers that update both local state and context
   const setDayStartTimes = (updater: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
@@ -1602,51 +1601,9 @@ function DeepPlanPageContent() {
   };
 
   // Drag-to-reorder handlers for explore day activities
-  const handleDragStart = (e: React.DragEvent, dayNum: number, stopId: string) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', stopId);
-    // Create a cleaner drag ghost
-    const el = e.currentTarget as HTMLElement;
-    const ghost = el.cloneNode(true) as HTMLElement;
-    ghost.style.cssText = 'position:fixed;top:-1000px;left:-1000px;width:' + el.offsetWidth + 'px;opacity:0.85;transform:scale(1.02);border-radius:12px;box-shadow:0 8px 25px rgba(232,101,74,0.15);background:white;z-index:9999;';
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, el.offsetWidth / 2, 30);
-    setTimeout(() => document.body.removeChild(ghost), 0);
-    setDragState({ dayNum, stopId });
-  };
-  const handleDragOver = (e: React.DragEvent, stopId: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverId(stopId);
-  };
-  const handleDragLeave = () => {
-    setDragOverId(null);
-  };
-  const handleDrop = (e: React.DragEvent, targetStopId: string, dayNum: number) => {
-    e.preventDefault();
-    setDragOverId(null);
-    if (!dragState || dragState.dayNum !== dayNum || dragState.stopId === targetStopId) {
-      setDragState(null);
-      return;
-    }
-    // Get current day's activity stops from the adjusted data
-    const dayData = adjustedDays.find(d => d.day === dayNum);
-    if (!dayData) { setDragState(null); return; }
-    const actStops = dayData.stops.filter(s => s.type === 'attraction' && !s.mealType);
-    const currentIds = actStops.map(s => s.id);
-    const fromIdx = currentIds.indexOf(dragState.stopId);
-    const toIdx = currentIds.indexOf(targetStopId);
-    if (fromIdx < 0 || toIdx < 0) { setDragState(null); return; }
-    // Move the dragged item to the target position
-    const newOrder = [...currentIds];
-    newOrder.splice(fromIdx, 1);
-    newOrder.splice(toIdx, 0, dragState.stopId);
+  // Reorder callback for Framer Motion Reorder.Group
+  const handleActivityReorder = (dayNum: number, newOrder: string[]) => {
     setActivityOrder(prev => ({ ...prev, [dayNum]: newOrder }));
-    setDragState(null);
-  };
-  const handleDragEnd = () => {
-    setDragState(null);
-    setDragOverId(null);
   };
 
   // Generate itinerary for a travel/departure day's free time
@@ -2094,8 +2051,12 @@ function DeepPlanPageContent() {
                 )}
 
                 {/* Timeline — solid line = confirmed plan */}
-                <div className={`ml-4 border-l-2 ${dayStyle.line} pl-0 mt-2`}>
-                  {day.stops.map((stop, si) => {
+                {(() => {
+                  const isDraggableDay = day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival';
+                  const activityIds = isDraggableDay ? day.stops.filter(s => s.type === 'attraction' && !s.mealType).map(s => s.id) : [];
+                  const useReorder = isDraggableDay && activityIds.length > 1;
+
+                  const stopsContent = day.stops.map((stop, si) => {
                     const hasTransport = stop.transport !== null;
                     const isMeal = !!stop.mealType;
                     const isCustom = isCustomDeletable(stop.name);
@@ -2131,29 +2092,10 @@ function DeepPlanPageContent() {
 
                     // Is this an attraction on an explore/arrival day that can be dragged?
                     const isDraggableActivity = (day.type === 'explore' || (day.type as string) === 'arrival' || day.costLabel === 'Arrival') && stop.type === 'attraction' && !isMeal;
-                    const isBeingDragged = dragState?.stopId === stop.id;
-                    const isDropTarget = dragOverId === stop.id && dragState?.stopId !== stop.id;
 
-                    const StopWrapper = isDraggableActivity ? motion.div : 'div' as any;
-                    const wrapperProps = isDraggableActivity ? {
-                      layout: true,
-                      layoutId: `activity-${stop.id}`,
-                      transition: { type: 'spring', stiffness: 400, damping: 30, duration: 0.25 },
-                      whileDrag: { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', zIndex: 50 },
-                      draggable: true,
-                      onDragStart: (e: React.DragEvent) => handleDragStart(e, day.day, stop.id),
-                      onDragOver: (e: React.DragEvent) => handleDragOver(e, stop.id),
-                      onDragLeave: handleDragLeave,
-                      onDrop: (e: React.DragEvent) => handleDrop(e, stop.id, day.day),
-                      onDragEnd: handleDragEnd,
-                    } : {};
-
-                    return (
-                      <StopWrapper
-                        key={stop.id}
-                        {...wrapperProps}
-                        className={`relative${isDraggableActivity ? ' select-none' : ''}${isDropTarget ? ' border-t-2 border-accent-cyan pt-1' : ''}${isBeingDragged ? ' opacity-40 scale-[0.97]' : ''}`}
-                      >
+                    // Render stop content — wrapped in Reorder.Item if draggable
+                    const stopContent = (
+                      <>
                         {/* Stop */}
                         <div className="flex items-start gap-3 pl-4 py-1.5">
                           {/* Timeline circle — category icon for attractions, plain dot otherwise */}
@@ -2661,10 +2603,42 @@ function DeepPlanPageContent() {
                             </div>
                           );
                         })()}
-                      </StopWrapper>
+                      </>
                     );
-                  })}
-                </div>
+
+                    if (isDraggableActivity) {
+                      return (
+                        <Reorder.Item
+                          key={stop.id}
+                          value={stop.id}
+                          as="div"
+                          className="relative cursor-grab active:cursor-grabbing active:z-10 select-none"
+                          whileDrag={{ scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
+                        >
+                          {stopContent}
+                        </Reorder.Item>
+                      );
+                    }
+
+                    return <div key={stop.id} className="relative">{stopContent}</div>;
+                  });
+
+                  return useReorder ? (
+                    <Reorder.Group
+                      axis="y"
+                      values={activityIds}
+                      onReorder={(newOrder: string[]) => handleActivityReorder(day.day, newOrder)}
+                      as="div"
+                      className={`ml-4 border-l-2 ${dayStyle.line} pl-0 mt-2`}
+                    >
+                      {stopsContent}
+                    </Reorder.Group>
+                  ) : (
+                    <div className={`ml-4 border-l-2 ${dayStyle.line} pl-0 mt-2`}>
+                      {stopsContent}
+                    </div>
+                  );
+                })()}
 
                 {/* Smart empty state / Generate Itinerary for days with free time */}
                 {(day.type === 'travel' || day.type === 'departure' || day.type === 'arrival') && day.stops.some(s => s.name.startsWith('Free time')) && (() => {
