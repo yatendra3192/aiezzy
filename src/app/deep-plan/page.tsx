@@ -1485,7 +1485,7 @@ function DeepPlanPageContent() {
         const fromIsHub = queryFrom.type === 'airport' || queryFrom.type === 'station' || queryFrom.type === 'home';
         const toIsHub = to.type === 'airport' || to.type === 'station' || to.type === 'home';
         const key = `${from.name}→${to.name}`; // Key uses original stop name for render lookup
-        if (travelFetchedRef.current[key]) continue;
+        if (travelFetchedRef.current[key] || travelBetween[key]) continue;
         travelFetchedRef.current[key] = true;
         const fromQ = fromIsHub ? queryFrom.name : `${queryFrom.name}, ${fromCity}`;
         const toQ = toIsHub ? to.name : `${to.name}, ${toCity}`;
@@ -1517,7 +1517,7 @@ function DeepPlanPageContent() {
         });
       }
     }
-  }, [adjustedDays.map(d => `${d.day}-${d.stops.length}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [adjustedDays.map(d => `${d.day}-${d.stops.map(s => s.name).join('|')}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getDefaultActivityTime = (dayNumber: number): string => {
     const existing = customActivities[dayNumber] || [];
