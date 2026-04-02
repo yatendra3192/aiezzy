@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, Reorder } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
@@ -2134,16 +2134,25 @@ function DeepPlanPageContent() {
                     const isBeingDragged = dragState?.stopId === stop.id;
                     const isDropTarget = dragOverId === stop.id && dragState?.stopId !== stop.id;
 
+                    const StopWrapper = isDraggableActivity ? motion.div : 'div' as any;
+                    const wrapperProps = isDraggableActivity ? {
+                      layout: true,
+                      layoutId: `activity-${stop.id}`,
+                      transition: { type: 'spring', stiffness: 400, damping: 30, duration: 0.25 },
+                      whileDrag: { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', zIndex: 50 },
+                      draggable: true,
+                      onDragStart: (e: React.DragEvent) => handleDragStart(e, day.day, stop.id),
+                      onDragOver: (e: React.DragEvent) => handleDragOver(e, stop.id),
+                      onDragLeave: handleDragLeave,
+                      onDrop: (e: React.DragEvent) => handleDrop(e, stop.id, day.day),
+                      onDragEnd: handleDragEnd,
+                    } : {};
+
                     return (
-                      <div
+                      <StopWrapper
                         key={stop.id}
-                        className={`relative${isDraggableActivity ? ' transition-all duration-200' : ''}${isDropTarget ? ' border-t-2 border-accent-cyan pt-1' : ''}${isBeingDragged ? ' opacity-40 scale-[0.97]' : ''}`}
-                        draggable={isDraggableActivity}
-                        onDragStart={isDraggableActivity ? (e) => handleDragStart(e, day.day, stop.id) : undefined}
-                        onDragOver={isDraggableActivity ? (e) => handleDragOver(e, stop.id) : undefined}
-                        onDragLeave={isDraggableActivity ? handleDragLeave : undefined}
-                        onDrop={isDraggableActivity ? (e) => handleDrop(e, stop.id, day.day) : undefined}
-                        onDragEnd={isDraggableActivity ? handleDragEnd : undefined}
+                        {...wrapperProps}
+                        className={`relative${isDraggableActivity ? ' select-none' : ''}${isDropTarget ? ' border-t-2 border-accent-cyan pt-1' : ''}${isBeingDragged ? ' opacity-40 scale-[0.97]' : ''}`}
                       >
                         {/* Stop */}
                         <div className="flex items-start gap-3 pl-4 py-1.5">
@@ -2652,7 +2661,7 @@ function DeepPlanPageContent() {
                             </div>
                           );
                         })()}
-                      </div>
+                      </StopWrapper>
                     );
                   })}
                 </div>
