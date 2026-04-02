@@ -1478,8 +1478,11 @@ function DeepPlanPageContent() {
         if (!to) continue;
         // For travel/departure days, stops may be in different cities
         // Use departureCity for pre-flight stops, day.city for post-flight stops
-        const fromCity = day.departureCity || day.city;
-        const toCity = day.city;
+        const transportLegIdx = day.stops.findIndex(s => s.legIndex !== undefined);
+        const isFromAfterTransport = transportLegIdx >= 0 && j > transportLegIdx;
+        const isToAfterTransport = transportLegIdx >= 0 && day.stops.indexOf(to) > transportLegIdx;
+        const fromCity = isFromAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city);
+        const toCity = isToAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city);
         // If stop is an airport/station, use its full name directly (not "Mumbai Airport, Amsterdam")
         const queryFrom = actualFrom || from; // Use actual location for directions query
         const fromIsHub = queryFrom.type === 'airport' || queryFrom.type === 'station' || queryFrom.type === 'home';
