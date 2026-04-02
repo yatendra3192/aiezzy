@@ -620,6 +620,15 @@ async function fetchScraperFlights(from: string, to: string, date: string, adult
       const depDate = dep.time?.split(' ')[0] || '';
       const arrDate = arr.time?.split(' ')[0] || '';
 
+      // Determine isNextDay: scraper dates can be unreliable for cross-timezone flights
+      // (e.g., BOM 4:25 AM → AMS 1:15 PM, 12h 20m — same day but scraper may show +1 from HTML)
+      // Use hour-based check as primary: if arrival hour < departure hour and duration > 2h, it's overnight
+      // Only trust date comparison if hours also confirm it, or duration >= 24h
+      const depHr = parseInt(depTime.split(':')[0] || '0');
+      const arrHr = parseInt(arrTime.split(':')[0] || '0');
+      const crossesMidnight = arrHr < depHr && durHrs > 2;
+      const isNextDay = durHrs >= 24 || crossesMidnight;
+
       return {
         airline,
         airlineCode,
@@ -636,7 +645,7 @@ async function fetchScraperFlights(from: string, to: string, date: string, adult
           airport: l.name || '', airportCode: l.id || '',
           duration: l.duration || 0, overnight: l.overnight || false,
         })),
-        isNextDay: depDate && arrDate && depDate !== arrDate,
+        isNextDay,
         price: f.price || 0,
         currency: 'INR',
         source: 'scraper' as const,

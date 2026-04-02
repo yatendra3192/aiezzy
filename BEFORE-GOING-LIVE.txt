@@ -1,0 +1,119 @@
+========================================
+  AIEZZY — PRE-LAUNCH CHECKLIST
+  Updated: 2 April 2026
+========================================
+
+ALREADY FIXED (by Claude Code)
+------------------------------
+[x] Auth added to all 6 AI API routes (suggest, extract-trip, extract-booking, extract-transport, classify-doc, itinerary-activities)
+[x] Security headers added (X-Frame-Options DENY, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy)
+[x] Admin routes secured with session-based auth + email whitelist (no more query-param secret)
+[x] Removed localhost:3000 fallbacks from email links
+[x] Error messages no longer leak internals to clients
+[x] Route protection middleware for /my-trips, /plan, /route, /deep-plan, /settings
+[x] Fetch timeouts (10-15s) on all external API calls
+[x] Image domains configured in next.config.mjs
+[x] Custom 404 page created
+[x] Node engine >=18 specified in package.json
+
+
+YOU NEED TO DO BEFORE LAUNCH
+-----------------------------
+
+1. GENERATE A STRONG NEXTAUTH_SECRET
+   Your current secret literally says "change-in-production".
+   Run this command to generate a proper one:
+     openssl rand -base64 48
+   Then set it as NEXTAUTH_SECRET in Railway environment variables.
+   DO NOT reuse the dev secret.
+
+2. SET NEXTAUTH_URL IN RAILWAY
+   Set NEXTAUTH_URL=https://aiezzy.com in Railway env vars.
+   This is required — password reset and email verification links
+   will break without it (we removed the localhost fallback).
+
+3. ROTATE ALL API KEYS
+   Your .env.local has been on disk with real keys. Even though
+   .gitignore excludes it, regenerate these keys for production:
+     - Google Maps API key (restrict to your domain in Google Cloud Console)
+     - Supabase anon key (if compromised)
+     - OpenAI API key
+     - Amadeus API key + secret
+     - FLIGHTS_API_KEY
+     - Google OAuth client secret
+   Set all of them as Railway env vars, NOT in .env.local.
+
+4. RESTRICT GOOGLE MAPS API KEY
+   Go to Google Cloud Console > Credentials > Your API key:
+     - Add HTTP referrer restriction: aiezzy.com/*
+     - Restrict to only the APIs you use (Places, Directions, Geocoding, Maps JS)
+   Without this, anyone who finds your key can burn your quota.
+
+5. ADD RATE LIMITING
+   Currently zero rate limiting. Someone can spam your AI endpoints
+   and burn your OpenAI credits. Options:
+     a) Upstash Redis (free tier, works with Railway)
+        npm install @upstash/ratelimit @upstash/redis
+     b) Vercel KV if you move to Vercel
+   Priority routes to rate limit:
+     - /api/ai/* (most expensive — OpenAI calls)
+     - /api/flights (Amadeus quota)
+     - /api/nearby (Google Hotels scraper)
+     - /api/auth/signup (prevent spam signups)
+     - /api/auth/forgot-password (prevent email spam)
+
+6. GENERATE PWA ICONS
+   manifest.json references icon-192.png and icon-512.png but
+   they don't exist. PWA install will fail on mobile.
+   Generate from your logo and place in /public/:
+     - /public/icon-192.png (192x192 px)
+     - /public/icon-512.png (512x512 px)
+
+7. SET UP SUPABASE RLS PROPERLY
+   Double check that Row Level Security is enabled on ALL tables:
+     - profiles
+     - trips
+     - trip_destinations
+     - trip_transport_legs
+   Make sure policies only allow users to access their own data.
+
+8. SET UP CUSTOM DOMAIN + SSL
+   In Railway:
+     - Add custom domain aiezzy.com
+     - Verify DNS records
+     - SSL is automatic on Railway
+   Update NEXTAUTH_URL to match.
+
+9. SET UP ERROR MONITORING
+   You have Sentry support (NEXT_PUBLIC_SENTRY_DSN env var).
+   Create a Sentry project and add the DSN to Railway env vars.
+   This will catch errors in production that you won't see otherwise.
+
+10. SET UP GOOGLE ANALYTICS
+    You have GA support (NEXT_PUBLIC_GA_ID env var).
+    Create a GA4 property and add the measurement ID to Railway.
+
+
+NICE TO HAVE (can do after launch)
+-----------------------------------
+
+- Add dynamic metadata (generateMetadata) for /shared/[token] pages
+  so shared trip links show proper previews on WhatsApp/social media.
+
+- Remove console.log statements from production code
+  (console.error is fine for server-side logging).
+
+- Add Cache-Control headers to API routes that don't have them
+  (/api/trains, /api/places, /api/directions, /api/weather).
+
+- Generate a proper sitemap.xml (you have sitemap.ts, verify it
+  generates correctly at https://aiezzy.com/sitemap.xml).
+
+- Set up a staging environment on Railway so you can test
+  changes before pushing to production.
+
+- Add database backups — enable Point-in-Time Recovery in Supabase
+  (available on Pro plan).
+
+- Consider adding Content Security Policy (CSP) header once you
+  know all the external domains your app loads scripts/images from.

@@ -12,9 +12,7 @@ export async function POST(req: NextRequest) {
   try {
     const supabase = createServiceClient();
 
-    const redirectTo =
-      (process.env.NEXTAUTH_URL || 'http://localhost:3000') +
-      '/auth/reset-callback';
+    const redirectTo = process.env.NEXTAUTH_URL + '/auth/reset-callback';
 
     await supabase.auth.resetPasswordForEmail(email, { redirectTo });
   } catch {

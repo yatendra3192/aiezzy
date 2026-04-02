@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
-    return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 });
   }
 
   try {
@@ -108,8 +113,8 @@ Rules:
       || data.output?.[0]?.content?.[0]?.text || '';
     const jsonMatch = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();
     return NextResponse.json(JSON.parse(jsonMatch));
-  } catch (err: any) {
+  } catch (err) {
     console.error('Extract transport error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to extract ticket details' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to extract ticket details' }, { status: 500 });
   }
 }

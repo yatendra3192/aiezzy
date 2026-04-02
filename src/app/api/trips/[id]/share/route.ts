@@ -25,7 +25,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   // If already shared, return existing token
   if (trip.share_token) {
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = process.env.NEXTAUTH_URL || '';
     return NextResponse.json({
       shareToken: trip.share_token,
       shareUrl: `${baseUrl}/shared/${trip.share_token}`,
@@ -44,7 +44,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  const baseUrl = process.env.NEXTAUTH_URL || '';
   return NextResponse.json({
     shareToken,
     shareUrl: `${baseUrl}/shared/${shareToken}`,

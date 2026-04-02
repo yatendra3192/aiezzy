@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
               : {}),
             languageCode: 'en',
           }),
+          signal: AbortSignal.timeout(10000),
         }
       );
       const data = await res.json();
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest) {
         if (oldest) placesCache.delete(oldest[0]);
       }
 
-      return NextResponse.json(data);
+      return NextResponse.json(data, {
+        headers: { 'Cache-Control': 'private, max-age=300' },
+      });
     }
 
     if (type === 'details') {
@@ -62,10 +65,13 @@ export async function GET(req: NextRequest) {
             'X-Goog-Api-Key': API_KEY,
             'X-Goog-FieldMask': 'displayName,formattedAddress,location,addressComponents',
           },
+          signal: AbortSignal.timeout(10000),
         }
       );
       const data = await res.json();
-      return NextResponse.json(data);
+      return NextResponse.json(data, {
+        headers: { 'Cache-Control': 'private, max-age=3600' },
+      });
     }
 
     return NextResponse.json({ error: 'Invalid type' }, { status: 400 });

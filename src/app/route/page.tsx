@@ -104,7 +104,7 @@ function RoutePageContent() {
       try {
         const result = await trip.saveTrip();
         setAutoSaveStatus(result ? 'saved' : 'error');
-        console.log('[auto-save]', result ? `saved trip ${result}` : 'save returned null');
+        // auto-save complete
         // Update URL with trip ID so the link is shareable/bookmarkable
         if (result) {
           router.replace(`/route?id=${result}`, { scroll: false });
@@ -842,7 +842,7 @@ function RoutePageContent() {
           const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
           const durMatch = sel.duration?.match(/(\d+)h/);
           const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-          if ((sel as any).isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2)) {
+          if ((sel as any).isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24) {
             d.setDate(d.getDate() + 1);
           }
         }
@@ -1005,7 +1005,7 @@ function RoutePageContent() {
                       const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
                       const durMatch = sel.duration?.match(/(\d+)h/);
                       const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                      const isOvernight = (sel as any).isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                      const isOvernight = (sel as any).isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
                       if (isOvernight) d.setDate(d.getDate() + 1);
                     }
                   }
@@ -1527,7 +1527,7 @@ function RoutePageContent() {
                               const arrH = parseInt(leg.selectedFlight!.arrival?.split(':')[0] || '0');
                               const durMatch = leg.selectedFlight!.duration?.match(/(\d+)h/);
                               const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                              const isNextDay = (leg.selectedFlight as any)?.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                              const isNextDay = (leg.selectedFlight as any)?.isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
                               const arrDate = new Date(legDate);
                               if (isNextDay) arrDate.setDate(arrDate.getDate() + 1);
                               const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -1618,7 +1618,7 @@ function RoutePageContent() {
                                 const arrH = parseInt(leg.selectedTrain!.arrival?.split(':')[0] || '0');
                                 const durMatch = leg.selectedTrain!.duration?.match(/(\d+)h/);
                                 const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                                const isNext = durHrs >= 12 || (arrH < depH && durHrs > 2);
+                                const isNext = (leg.selectedTrain as any)?.isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
                                 const arrDate = new Date(legDate);
                                 if (isNext) arrDate.setDate(arrDate.getDate() + 1);
                                 const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });

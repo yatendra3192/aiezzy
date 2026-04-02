@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
         if (transitMode) params.set('transit_mode', transitMode);
         if (useTime && departureTime) params.set('departure_time', departureTime);
 
-        return fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`)
+        return fetch(`https://maps.googleapis.com/maps/api/directions/json?${params}`, { signal: AbortSignal.timeout(15000) })
           .then(res => res.json());
       })
     );
@@ -205,7 +205,9 @@ export async function GET(req: NextRequest) {
       if (oldest) trainCache.delete(oldest[0]);
     }
 
-    return NextResponse.json(responseData);
+    return NextResponse.json(responseData, {
+      headers: { 'Cache-Control': 'private, max-age=1800' },
+    });
   } catch (e) {
     return NextResponse.json({ trains: [], error: 'Failed to fetch transit routes' }, { status: 500 });
   }

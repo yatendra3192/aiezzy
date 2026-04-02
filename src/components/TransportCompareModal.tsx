@@ -1143,7 +1143,7 @@ export default function TransportCompareModal({
                               const arrH = parseInt(f.arrival?.split(':')[0] || '0');
                               const durMatch = f.duration?.match(/(\d+)h/);
                               const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-                              const isOvernight = f.isNextDay || durHrs >= 12 || (arrH < depH && durHrs > 2);
+                              const isOvernight = f.isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
                               const depDate = new Date(date);
                               const arrDate = new Date(date);
                               if (isOvernight) arrDate.setDate(arrDate.getDate() + 1);

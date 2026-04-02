@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export interface ItineraryActivity {
   name: string;
@@ -12,6 +14,9 @@ export interface ItineraryActivity {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   let city: string, country: string, days: number, userPlaces: string[], month: string | undefined;
   try {
     const body = await req.json();

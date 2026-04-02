@@ -175,7 +175,8 @@ async function fetchNearbyPlaces(location: string, radiusMeters: number) {
     [lat, lng] = location.split(',').map(Number);
   } else {
     const geoRes = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${API_KEY}`
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${API_KEY}`,
+      { signal: AbortSignal.timeout(10000) }
     );
     const geoData = await geoRes.json();
     if (geoData.status !== 'OK' || !geoData.results?.[0]) return [];
@@ -197,6 +198,7 @@ async function fetchNearbyPlaces(location: string, radiusMeters: number) {
       rankPreference: 'DISTANCE',
       languageCode: 'en',
     }),
+    signal: AbortSignal.timeout(15000),
   });
 
   const data = await res.json();

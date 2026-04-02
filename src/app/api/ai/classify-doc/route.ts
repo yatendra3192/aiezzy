@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 /** Lightweight document classifier — determines type and cities from ONE file */
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) return NextResponse.json({ error: 'No API key' }, { status: 500 });
+  if (!openaiKey) return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 });
 
   try {
     const formData = await req.formData();

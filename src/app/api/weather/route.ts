@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
   try {
     // Step 1: Geocode the city using Open-Meteo geocoding
     const geoRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en`
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en`,
+      { signal: AbortSignal.timeout(10000) }
     );
     const geoData = await geoRes.json();
 
@@ -67,7 +68,8 @@ export async function GET(req: NextRequest) {
     // Open-Meteo free tier supports up to 16 days forecast
     // For dates beyond that, return null gracefully
     const weatherRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${date}&end_date=${date}`
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${date}&end_date=${date}`,
+      { signal: AbortSignal.timeout(10000) }
     );
     const weatherData = await weatherRes.json();
 
@@ -87,7 +89,9 @@ export async function GET(req: NextRequest) {
     // Cache the result
     cache.set(cacheKey, { data: result, ts: Date.now() });
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'private, max-age=3600' },
+    });
   } catch (e) {
     console.error('[weather] Error:', e);
     return NextResponse.json({ error: 'Failed to fetch weather data' }, { status: 500 });

@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
+
+const ADMIN_EMAILS = ['yatendra3192@gmail.com'];
 
 /**
  * POST /api/admin/migrate
  * Run once to add share_token column and RLS policy for public trip sharing.
- * Requires NEXTAUTH_SECRET as authorization key.
  */
 export async function POST(req: NextRequest) {
-  // Simple auth check using the app secret
-  const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.NEXTAUTH_SECRET}`) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

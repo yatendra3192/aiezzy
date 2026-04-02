@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { motion } from 'framer-motion';
 
 interface Stats {
@@ -24,8 +25,7 @@ interface Trip {
 }
 
 export default function AdminPage() {
-  const [adminKey, setAdminKey] = useState('');
-  const [authenticated, setAuthenticated] = useState(false);
+  const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -34,37 +34,40 @@ export default function AdminPage() {
   const [error, setError] = useState('');
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
 
-  const fetchData = async (key: string) => {
+  const fetchData = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/admin?key=${encodeURIComponent(key)}`);
-      if (!res.ok) { setError('Invalid admin key'); setLoading(false); return; }
+      const res = await fetch('/api/admin');
+      if (res.status === 401) { setError('Access denied. Admin privileges required.'); setLoading(false); return; }
+      if (!res.ok) { setError('Failed to load data'); setLoading(false); return; }
       const data = await res.json();
       setStats(data.stats);
       setUsers(data.users);
       setTrips(data.trips);
-      setAuthenticated(true);
-    } catch (e) { setError('Failed to load data'); }
+    } catch { setError('Failed to load data'); }
     setLoading(false);
   };
 
-  if (!authenticated) {
+  useEffect(() => {
+    if (status === 'authenticated') fetchData();
+  }, [status]);
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-primary">
+        <div className="w-8 h-8 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (status === 'unauthenticated' || error === 'Access denied. Admin privileges required.') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-bg-primary">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-8 w-full max-w-[400px]">
-          <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Admin Dashboard</h1>
-          <p className="text-text-muted text-sm font-body mb-6">Enter admin key to access</p>
-          <form onSubmit={e => { e.preventDefault(); fetchData(adminKey); }}>
-            <input type="password" placeholder="Admin key" value={adminKey} onChange={e => setAdminKey(e.target.value)}
-              className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3 text-text-primary placeholder:text-text-muted text-sm font-body outline-none mb-3 input-glow focus:border-accent-cyan" />
-            {error && <p className="text-red-500 text-xs mb-3">{error}</p>}
-            <button type="submit" disabled={loading}
-              className="w-full bg-accent-cyan text-white font-display font-bold py-3 rounded-xl text-sm disabled:opacity-50">
-              {loading ? 'Loading...' : 'Access Dashboard'}
-            </button>
-          </form>
+          className="bg-bg-surface border border-border-subtle rounded-2xl card-warm-lg p-8 w-full max-w-[400px] text-center">
+          <h1 className="font-display text-2xl font-bold text-text-primary mb-2">Admin Dashboard</h1>
+          <p className="text-red-500 text-sm font-body">{error || 'Please sign in with an admin account.'}</p>
         </motion.div>
       </div>
     );
@@ -81,7 +84,7 @@ export default function AdminPage() {
             </h1>
             <p className="text-text-muted text-sm font-body">Dashboard</p>
           </div>
-          <button onClick={() => setAuthenticated(false)} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Lock</button>
+          <button onClick={() => window.location.href = '/my-trips'} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Back to App</button>
         </div>
 
         {/* Stats cards */}

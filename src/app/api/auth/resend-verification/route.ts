@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     type: 'signup',
     email,
     options: {
-      emailRedirectTo: `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/auth/verify-callback`,
+      emailRedirectTo: `${process.env.NEXTAUTH_URL}/auth/verify-callback`,
     },
   });
 

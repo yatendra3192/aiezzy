@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const openaiKey = process.env.OPENAI_API_KEY;
   if (!openaiKey) {
-    return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
+    return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 });
   }
 
   try {
@@ -93,8 +98,8 @@ Rules:
     const parsed = JSON.parse(jsonMatch);
 
     return NextResponse.json(parsed);
-  } catch (err: any) {
+  } catch (err) {
     console.error('Extract booking error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to extract booking details' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to extract booking details' }, { status: 500 });
   }
 }

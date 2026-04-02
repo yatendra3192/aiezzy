@@ -543,8 +543,8 @@ function DeepPlanPageContent() {
               : `Board ${bufferMin}min before departure at ${depTime ? formatTime12(parseTime(depTime)) : '~'}`,
           });
 
-          // Detect overnight/multi-day arrival (bug fix #4)
-          // Only split into separate days if flight ACTUALLY arrives next day, not just based on duration
+          // Detect overnight/multi-day arrival
+          // Use arrDate vs depDate from flight data (most reliable), then fall back to hour-based check
           const sel = leg.selectedFlight || leg.selectedTrain;
           transitDays = 0;
           if (sel && depTime && arrTime) {
@@ -552,9 +552,9 @@ function DeepPlanPageContent() {
             const arrH = parseInt(arrTime.split(':')[0] || '0');
             const durMatch = (sel as any).duration?.match(/(\d+)h/);
             const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
-            // Check if explicitly marked as next-day, OR arrival hour < departure hour (crossed midnight)
-            // Don't assume overnight just from duration — timezone differences can make long flights arrive same calendar day
-            const arrivesNextDay = (sel as any).isNextDay || (arrH < depH && durHrs > 2) || (durHrs >= 24);
+            // Only trust isNextDay if arrDate/depDate are available and different (ignore timezone-confused flags)
+            const hasReliableDateInfo = (sel as any).arrDate && (sel as any).depDate && (sel as any).arrDate !== (sel as any).depDate;
+            const arrivesNextDay = hasReliableDateInfo || (arrH < depH && durHrs > 2) || (durHrs >= 24);
             if (arrivesNextDay) {
               // 1 transit day for overnight, +1 for each additional 24h
               transitDays = durHrs >= 36 ? Math.ceil(durHrs / 24) : 1;
@@ -1063,7 +1063,8 @@ function DeepPlanPageContent() {
             const retArrH = parseInt(arrTime.split(':')[0] || '0');
             const retDurMatch = (retSel as any).duration?.match(/(\d+)h/);
             const retDurHrs = retDurMatch ? parseInt(retDurMatch[1]) : 0;
-            const retArrivesNextDay = (retSel as any).isNextDay || (retArrH < retDepH && retDurHrs > 2) || retDurHrs >= 20;
+            const retHasReliableDate = (retSel as any).arrDate && (retSel as any).depDate && (retSel as any).arrDate !== (retSel as any).depDate;
+            const retArrivesNextDay = retHasReliableDate || (retArrH < retDepH && retDurHrs > 2) || retDurHrs >= 20;
             if (retArrivesNextDay) {
               returnTransitDays = retDurHrs >= 36 ? Math.ceil(retDurHrs / 24) : 1;
             }
@@ -2353,11 +2354,12 @@ function DeepPlanPageContent() {
                             const flightToName = legToCity?.parentCity || legToCity?.name || '';
                             const depTz = getCityTimezone((legFromCity as any)?.country || trip.from?.country || '');
                             const arrTz = getCityTimezone((legToCity as any)?.country || '');
-                            // Calculate arrival date: if overnight (arrH < depH or duration > 12h), show +1
+                            // Calculate arrival date using reliable date info from API
                             const depHour = parseInt((flight.departure || '').split(':')[0] || '0');
                             const arrHour = parseInt((flight.arrival || '').split(':')[0] || '0');
                             const durH = parseInt(((flight.duration || '').match(/(\d+)h/) || ['', '0'])[1]);
-                            const isNextDayArr = (arrHour < depHour && durH > 2) || durH >= 24;
+                            const hasReliableDates = (flight as any).arrDate && (flight as any).depDate && (flight as any).arrDate !== (flight as any).depDate;
+                            const isNextDayArr = hasReliableDates || (arrHour < depHour && durH > 2) || durH >= 24;
                             return (
                               <div className="pl-4 py-1">
                                 <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">

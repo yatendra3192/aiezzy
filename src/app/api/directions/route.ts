@@ -31,7 +31,8 @@ export async function GET(req: NextRequest) {
     });
 
     const res = await fetch(
-      `https://maps.googleapis.com/maps/api/directions/json?${params}`
+      `https://maps.googleapis.com/maps/api/directions/json?${params}`,
+      { signal: AbortSignal.timeout(15000) }
     );
     const data = await res.json();
 
@@ -42,7 +43,9 @@ export async function GET(req: NextRequest) {
       if (oldest) dirCache.delete(oldest[0]);
     }
 
-    return NextResponse.json(data);
+    return NextResponse.json(data, {
+      headers: { 'Cache-Control': 'private, max-age=3600' },
+    });
   } catch {
     return NextResponse.json({ error: 'API request failed' }, { status: 500 });
   }

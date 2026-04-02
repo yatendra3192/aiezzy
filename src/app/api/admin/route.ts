@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
 
-const ADMIN_EMAILS = ['yatendra3192@gmail.com']; // Add your admin emails here
+const ADMIN_EMAILS = ['yatendra3192@gmail.com'];
 
 export async function GET(req: NextRequest) {
-  const adminKey = req.nextUrl.searchParams.get('key') || '';
-
-  // Simple admin auth — check admin key or session
-  if (adminKey !== process.env.NEXTAUTH_SECRET) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
       users: userList,
       trips: tripList,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
