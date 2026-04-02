@@ -362,7 +362,7 @@ function DeepPlanPageContent() {
       if (!cityName) continue;
       if (trip.deepPlanData?.cityActivities?.[cityName]?.length) continue;
       if (dest.nights < 1) continue;
-      const exploreDays = Math.max(1, dest.nights - 1);
+      const exploreDays = Math.max(1, dest.nights); // include arrival day in count for more activities
       const userPlaces = dest.places?.map(p => p.name) || [];
       if (!citiesNeeded.some(c => c.cityName === cityName)) {
         citiesNeeded.push({ cityName, country: dest.city.country || '', days: exploreDays, userPlaces });

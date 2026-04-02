@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const perDay = 4;
+  const perDay = 6;
   const extras = 2;
   const targetCount = days * perDay + extras;
 
