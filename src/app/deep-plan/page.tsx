@@ -228,6 +228,7 @@ function DeepPlanPageContent() {
   const [showActivityInput, setShowActivityInput] = useState<Record<number, boolean>>({});
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
   const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
+  const [placeSuggestions, setPlaceSuggestions] = useState<Record<number, Array<{ name: string; description: string }>>>({});
   const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
   // Collapsible days: Record<dayNumber, boolean> — multiple can be open
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({ 1: true });
@@ -2956,18 +2957,55 @@ function DeepPlanPageContent() {
                 )}
 
                 {/* Add Activity input form (explore days, shown via header button) */}
-                {(day.type === 'explore' || day.type === 'arrival') && showActivityInput[day.day] && (
+                {(day.type === 'explore' || day.type === 'arrival') && showActivityInput[day.day] && (() => {
+                  const suggestions = placeSuggestions[day.day] || [];
+                  return (
                   <div className="print-hide ml-4 pl-4 mt-2">
-                    <div className="flex items-center gap-2 flex-wrap bg-bg-card border border-accent-cyan/30 rounded-xl p-2.5">
-                      <input
-                        type="text"
-                        placeholder="Activity name..."
-                        value={activityInputText[day.day] || ''}
-                        onChange={e => setActivityInputText(prev => ({ ...prev, [day.day]: e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAddActivity(day.day); if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
-                        className="flex-1 min-w-[120px] text-xs font-body bg-transparent border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
-                        autoFocus
-                      />
+                    <div className="flex items-center gap-2 flex-wrap bg-bg-card border border-accent-cyan/30 rounded-xl p-2.5 relative">
+                      <div className="flex-1 min-w-[120px] relative">
+                        <input
+                          type="text"
+                          placeholder="Search places..."
+                          value={activityInputText[day.day] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setActivityInputText(prev => ({ ...prev, [day.day]: val }));
+                            // Fetch suggestions from Google Places
+                            if (val.length >= 2) {
+                              fetch(`/api/places?input=${encodeURIComponent(val + ' ' + day.city)}&scope=all`)
+                                .then(r => r.json())
+                                .then(data => {
+                                  const items = (data.suggestions || []).slice(0, 5).map((s: any) => ({
+                                    name: s.placePrediction?.structuredFormat?.mainText?.text || s.placePrediction?.text?.text || '',
+                                    description: s.placePrediction?.structuredFormat?.secondaryText?.text || '',
+                                  })).filter((s: any) => s.name);
+                                  setPlaceSuggestions(prev => ({ ...prev, [day.day]: items }));
+                                })
+                                .catch(() => {});
+                            } else {
+                              setPlaceSuggestions(prev => ({ ...prev, [day.day]: [] }));
+                            }
+                          }}
+                          onKeyDown={e => { if (e.key === 'Enter') { handleAddActivity(day.day); setPlaceSuggestions(prev => ({ ...prev, [day.day]: [] })); } if (e.key === 'Escape') setShowActivityInput(prev => ({ ...prev, [day.day]: false })); }}
+                          className="w-full text-xs font-body bg-transparent border border-border-subtle rounded-lg px-3 py-1.5 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent-cyan"
+                          autoFocus
+                        />
+                        {suggestions.length > 0 && (
+                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-border-subtle rounded-lg shadow-xl z-50 overflow-hidden">
+                            {suggestions.map((s: any, i: number) => (
+                              <button key={i} onClick={() => {
+                                setActivityInputText(prev => ({ ...prev, [day.day]: s.name }));
+                                setPlaceSuggestions(prev => ({ ...prev, [day.day]: [] }));
+                              }}
+                                className="w-full text-left px-3 py-2 hover:bg-accent-cyan/5 transition-colors border-b border-border-subtle/50 last:border-0"
+                              >
+                                <p className="text-[12px] font-body font-medium text-text-primary">{s.name}</p>
+                                {s.description && <p className="text-[10px] font-body text-text-muted truncate">{s.description}</p>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <input
                         type="time"
                         value={activityInputTime[day.day] || getDefaultActivityTime(day.day)}
@@ -2975,7 +3013,7 @@ function DeepPlanPageContent() {
                         className="text-xs font-mono bg-transparent border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary focus:outline-none focus:border-accent-cyan w-[90px]"
                       />
                       <button
-                        onClick={() => handleAddActivity(day.day)}
+                        onClick={() => { handleAddActivity(day.day); setPlaceSuggestions(prev => ({ ...prev, [day.day]: [] })); }}
                         className="px-3 py-1.5 bg-accent-cyan text-white text-xs font-body font-semibold rounded-lg hover:opacity-90 transition-opacity"
                       >
                         Add
@@ -2988,7 +3026,8 @@ function DeepPlanPageContent() {
                       </button>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Day Notes */}
                 <div className="print-hide ml-4 pl-4 mt-2">
