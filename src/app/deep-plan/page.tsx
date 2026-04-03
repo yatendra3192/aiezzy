@@ -662,10 +662,16 @@ function DeepPlanPageContent() {
                 const freeStart2 = hotelArriveMin2 + 30;
                 const freeHrs2 = (sleepTime2 - freeStart2) / 60;
                 const evCityKey2 = toCity.parentCity || toCity.name;
-                const cityAttr2 = dest.places?.length
-                  ? dest.places.map(p => p.name)
-                  : (trip.deepPlanData?.cityActivities?.[evCityKey2]?.map(a => a.name)
-                    || (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
+                let cityAttr2: string[] = [];
+                if (dest.places?.length) {
+                  cityAttr2 = dest.places.map(p => p.name);
+                } else if (trip.deepPlanData?.cityActivities?.[evCityKey2]?.length) {
+                  cityAttr2 = trip.deepPlanData.cityActivities[evCityKey2].map(a => a.name);
+                } else if (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name]) {
+                  cityAttr2 = (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
+                } else {
+                  cityAttr2 = [`${toCity.name} Old Town`, `${toCity.name} Walking Tour`, `${toCity.name} Main Square`, `${toCity.name} Local Market`];
+                }
                 if (cityAttr2.length > 0 && freeHrs2 >= 1.5 && freeStart2 < dinnerTime2 - 60) {
                   const aiActs2 = trip.deepPlanData?.cityActivities?.[evCityKey2] || [];
                   arrivalDay.stops.push({
@@ -760,12 +766,19 @@ function DeepPlanPageContent() {
                 const freeStartMin = hotelArriveMin + 30; // 30 min to settle in
                 const totalFreeHours = (sleepTime - freeStartMin) / 60; // Total evening free time until sleep
 
-                // Get attractions for this city (AI cache > static > empty)
+                // Get attractions for this city (AI cache > static > generic fallback)
                 const evCityKey = toCity.parentCity || toCity.name;
-                const cityAttractions = dest.places && dest.places.length > 0
-                  ? dest.places.map(p => p.name)
-                  : (trip.deepPlanData?.cityActivities?.[evCityKey]?.map(a => a.name)
-                    || (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || []);
+                let cityAttractions: string[] = [];
+                if (dest.places && dest.places.length > 0) {
+                  cityAttractions = dest.places.map(p => p.name);
+                } else if (trip.deepPlanData?.cityActivities?.[evCityKey]?.length) {
+                  cityAttractions = trip.deepPlanData.cityActivities[evCityKey].map(a => a.name);
+                } else if (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name]) {
+                  cityAttractions = (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
+                } else {
+                  // Generic fallback so the day isn't empty while AI loads
+                  cityAttractions = [`${toCity.name} Old Town`, `${toCity.name} Walking Tour`, `${toCity.name} Main Square`, `${toCity.name} Local Market`];
+                }
 
                 if (cityAttractions.length > 0 && totalFreeHours >= 1.5 && freeStartMin < dinnerTime - 60) {
                   const aiActs = trip.deepPlanData?.cityActivities?.[evCityKey] || [];
