@@ -710,9 +710,8 @@ function DeepPlanPageContent() {
                   cityAttr2 = trip.deepPlanData.cityActivities[evCityKey2].map(a => a.name);
                 } else if (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name]) {
                   cityAttr2 = (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
-                } else {
-                  cityAttr2 = [`${toCity.name} Old Town`, `${toCity.name} Walking Tour`, `${toCity.name} Main Square`, `${toCity.name} Local Market`];
                 }
+                // No generic fallback — wait for AI. "Auto-plan" button shows if empty.
                 if (cityAttr2.length > 0 && freeHrs2 >= 1.5 && freeStart2 < dinnerTime2 - 60) {
                   const aiActs2 = trip.deepPlanData?.cityActivities?.[evCityKey2] || [];
                   arrivalDay.stops.push({
@@ -816,10 +815,8 @@ function DeepPlanPageContent() {
                   cityAttractions = trip.deepPlanData.cityActivities[evCityKey].map(a => a.name);
                 } else if (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name]) {
                   cityAttractions = (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
-                } else {
-                  // Generic fallback so the day isn't empty while AI loads
-                  cityAttractions = [`${toCity.name} Old Town`, `${toCity.name} Walking Tour`, `${toCity.name} Main Square`, `${toCity.name} Local Market`];
                 }
+                // No generic fallback — AI auto-fill handles it
 
                 if (cityAttractions.length > 0 && totalFreeHours >= 1.5 && freeStartMin < dinnerTime - 60) {
                   const aiActs = trip.deepPlanData?.cityActivities?.[evCityKey] || [];
@@ -946,16 +943,7 @@ function DeepPlanPageContent() {
         }
       }
 
-      // Priority 4: generic fallback (with prices + notes)
-      if (typedActivities.length === 0) {
-        typedActivities.push(
-          { name: `${toCity.name} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning', ticketPrice: 'Free', note: 'Self-guided walk through the city center' },
-          { name: `${toCity.name} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning', ticketPrice: 'Free', note: 'Browse local produce and street food' },
-          { name: `${toCity.name} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'afternoon', ticketPrice: 'Free', note: 'Explore the historic quarter' },
-          { name: `${toCity.name} Main Square`, category: 'landmark', durationMin: 45, bestTime: 'anytime', ticketPrice: 'Free' },
-          { name: `${toCity.name} City Park`, category: 'park', durationMin: 60, bestTime: 'afternoon', ticketPrice: 'Free' },
-        );
-      }
+      // No generic fallback — wait for AI data. Empty days show "Auto-plan" prompt.
 
       for (let n = 0; n < exploreDays; n++) {
         const roomsNeeded = Math.ceil(((trip.adults || 1) + (trip.children || 0)) / 2);
