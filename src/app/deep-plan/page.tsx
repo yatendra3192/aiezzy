@@ -264,6 +264,13 @@ function DeepPlanPageContent() {
   const [openTravelDropdown, setOpenTravelDropdown] = useState<string | null>(null);
   // Activity action menu (three-dot)
   const [openActivityMenu, setOpenActivityMenu] = useState<string | null>(null);
+  // Close activity menu on click outside
+  useEffect(() => {
+    if (!openActivityMenu) return;
+    const handleClick = () => setOpenActivityMenu(null);
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [openActivityMenu]);
   // Drag-reorder: overridden activity order per day (day number → ordered stop IDs)
   const [activityOrder, setActivityOrderLocal] = useState<Record<number, string[]>>(deepPlan.activityOrder || {});
   const setActivityOrder = (updater: Record<number, string[]> | ((prev: Record<number, string[]>) => Record<number, string[]>)) => {
@@ -2388,14 +2395,14 @@ function DeepPlanPageContent() {
                                   </span>
                                 )}
                                 <button
-                                  onClick={() => setOpenActivityMenu(openActivityMenu === stop.id ? null : stop.id)}
+                                  onClick={(e) => { e.stopPropagation(); setOpenActivityMenu(openActivityMenu === stop.id ? null : stop.id); }}
                                   className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
                                   aria-label="Activity actions"
                                 >
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                                 </button>
                                 {openActivityMenu === stop.id && (
-                                  <div className="absolute right-0 top-full mt-1 z-50 bg-bg-surface border border-border-subtle rounded-xl shadow-xl py-1.5 min-w-[160px]">
+                                  <div onClick={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 z-50 bg-bg-surface border border-border-subtle rounded-xl shadow-xl py-1.5 min-w-[160px]">
                                     {/* View on map */}
                                     {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
                                       <a href={mapsUrl(stop.name, day.city)} target="_blank" rel="noopener noreferrer"
