@@ -76,43 +76,34 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
     if (!suggestion) return;
     const s = suggestion as any;
 
-    trip.resetTrip();
+    // Build origin
+    const originCity = s.origin?.city || 'Mumbai';
+    const originCountry = s.origin?.country || 'India';
 
-    // Delay all setters to run AFTER resetTrip state has committed
-    setTimeout(() => {
-      // Set origin from AI response
-      const originCity = s.origin?.city || 'Mumbai';
-      const originCountry = s.origin?.country || 'India';
-      trip.setFrom({ name: originCity, country: originCountry, fullName: `${originCity}, ${originCountry}`, parentCity: originCity });
-      trip.setFromAddress(`${originCity}, ${originCountry}`);
+    // Build destinations for buildFullTrip
+    const destinations = suggestion.destinations.map((dest: any) => ({
+      city: { name: dest.city, country: dest.country, fullName: `${dest.city}, ${dest.country}`, parentCity: dest.city },
+      nights: dest.nights || 2,
+    }));
 
-      // Set departure date if AI extracted one
-      if (s.departureDate && s.departureDate !== 'null') {
-        trip.setDepartureDate(s.departureDate);
-      }
+    // Transport: null for each leg (auto-select will pick flights/trains)
+    const transports = destinations.map(() => null);
 
-      // Set travelers if AI extracted them
-      if (s.travelers) {
-        if (s.travelers.adults > 0) trip.setAdults(s.travelers.adults);
-        if (s.travelers.children > 0) trip.setChildren(s.travelers.children);
-        if (s.travelers.infants > 0) trip.setInfants(s.travelers.infants);
-      }
+    // Use buildFullTrip for atomic state update — no race condition
+    trip.buildFullTrip({
+      from: { name: originCity, country: originCountry, fullName: `${originCity}, ${originCountry}`, parentCity: originCity },
+      fromAddress: `${originCity}, ${originCountry}`,
+      destinations,
+      transports,
+      departureDate: (s.departureDate && s.departureDate !== 'null') ? s.departureDate : trip.departureDate,
+      adults: s.travelers?.adults || trip.adults || 1,
+      children: s.travelers?.children || trip.children || 0,
+      infants: s.travelers?.infants || trip.infants || 0,
+      tripType: s.tripType === 'oneWay' ? 'oneWay' : 'roundTrip',
+    });
 
-      // Set trip type
-      if (s.tripType === 'oneWay') trip.setTripType('oneWay');
-
-      // Add destinations
-      for (const dest of suggestion.destinations) {
-        trip.addDestination(
-          { name: dest.city, country: dest.country, fullName: `${dest.city}, ${dest.country}`, parentCity: dest.city },
-          dest.nights
-        );
-      }
-
-      onClose();
-      // Clear URL params to prevent old trip ID from persisting
-      router.replace('/plan');
-    }, 50);
+    onClose();
+    router.replace('/plan');
   };
 
   const handleClose = () => {
