@@ -496,9 +496,10 @@ function DeepPlanPageContent() {
     const result: DayPlan[] = [];
     let dayNum = 0;
     let sc = 0; // stop counter
-    const usedArrivalActivities = new Set<string>(); // track activities used on arrival days to avoid repeats
+    let usedArrivalActivities = new Set<string>(); // track activities used on arrival day — reset per destination
 
     for (let destIdx = 0; destIdx < trip.destinations.length; destIdx++) {
+      usedArrivalActivities = new Set<string>(); // reset for each city — only exclude THIS city's arrival activities
       let transitDays = 0;
       const dest = trip.destinations[destIdx];
       const leg = trip.transportLegs[destIdx];
