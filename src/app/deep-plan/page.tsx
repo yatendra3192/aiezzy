@@ -2455,12 +2455,17 @@ function DeepPlanPageContent() {
                                     {stop.openingHours}
                                   </span>
                                 )}
-                                {stop.ticketPrice && (
-                                  <span className="text-[10px] text-text-muted font-body flex items-center gap-1">
+                                {stop.ticketPrice ? (
+                                  <span className={`text-[10px] font-body font-semibold flex items-center gap-1 ${stop.ticketPrice.toLowerCase().includes('free') ? 'text-emerald-600' : 'text-violet-600'}`}>
                                     <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                                     {stop.ticketPrice}
                                   </span>
-                                )}
+                                ) : isAttractionCard ? (
+                                  <span className="text-[10px] text-emerald-600 font-body font-semibold flex items-center gap-1">
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                    Free
+                                  </span>
+                                ) : null}
                                 {isAttractionCard && (
                                   <a
                                     href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(stop.name + ' ' + day.city)}`}
@@ -2772,9 +2777,21 @@ function DeepPlanPageContent() {
                                             <path d={TRANSPORT_ICONS[selIcon] || TRANSPORT_ICONS.walk} />
                                           </svg>
                                           {selData ? (
-                                            <span className="text-[11px] font-mono">{selData.duration} &middot; {selData.distance}</span>
+                                            <span className="text-[11px] font-mono">{selData.duration} &middot; {selData.distance}
+                                              {(() => {
+                                                const cityKey = day.city;
+                                                const lt = (trip.deepPlanData?.localTransport || {})[cityKey];
+                                                if (!lt) return null;
+                                                const rate = convRates[lt.currency?.toUpperCase()] || 1;
+                                                if (selMode === 'walk') return <span className="text-emerald-500 ml-1">Free</span>;
+                                                if (selMode === 'transit') return <span className="text-violet-500 ml-1">~{formatPrice(Math.round((lt.metroSingleRide || lt.busSingleRide || 2) * rate), currency)}</span>;
+                                                const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
+                                                const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+                                                return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(distKm * (lt.taxiPerKm || 2) * rate), currency)}</span>;
+                                              })()}
+                                            </span>
                                           ) : (
-                                            <span className="text-[11px] font-body text-text-muted">Walk</span>
+                                            <span className="text-[11px] font-body text-text-muted">Walk <span className="text-emerald-500">Free</span></span>
                                           )}
                                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
                                         </button>
