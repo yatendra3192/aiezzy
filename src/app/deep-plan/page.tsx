@@ -398,6 +398,17 @@ function DeepPlanPageContent() {
     if (citiesNeeded.length === 0) return;
     autoFillRanRef.current = true;
 
+    // Clear old cached data for cities that need refresh
+    const existingActivities = { ...(trip.deepPlanData?.cityActivities || {}) };
+    const existingMeals = { ...(trip.deepPlanData?.mealCosts || {}) };
+    const existingTransport = { ...(trip.deepPlanData?.localTransport || {}) };
+    for (const c of citiesNeeded) {
+      delete existingActivities[c.cityName];
+      delete existingMeals[c.cityName];
+      delete existingTransport[c.cityName];
+    }
+    trip.updateDeepPlanData({ cityActivities: existingActivities, mealCosts: existingMeals, localTransport: existingTransport });
+
     // Show progress overlay and fetch ALL cities in parallel for speed
     const cities = citiesNeeded.map(c => ({ name: c.cityName, done: false }));
     setAutoFillProgress({ total: citiesNeeded.length, done: 0, current: 'All cities', cities });
