@@ -946,12 +946,14 @@ function DeepPlanPageContent() {
         }
       }
 
-      // Priority 4: generic fallback
+      // Priority 4: generic fallback (with prices + notes)
       if (typedActivities.length === 0) {
         typedActivities.push(
-          { name: `${toCity.name} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning' },
-          { name: `${toCity.name} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning' },
-          { name: `${toCity.name} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'afternoon' },
+          { name: `${toCity.name} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning', ticketPrice: 'Free', note: 'Self-guided walk through the city center' },
+          { name: `${toCity.name} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning', ticketPrice: 'Free', note: 'Browse local produce and street food' },
+          { name: `${toCity.name} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'afternoon', ticketPrice: 'Free', note: 'Explore the historic quarter' },
+          { name: `${toCity.name} Main Square`, category: 'landmark', durationMin: 45, bestTime: 'anytime', ticketPrice: 'Free' },
+          { name: `${toCity.name} City Park`, category: 'park', durationMin: 60, bestTime: 'afternoon', ticketPrice: 'Free' },
         );
       }
 
