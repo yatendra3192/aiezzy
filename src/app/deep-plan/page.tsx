@@ -323,6 +323,11 @@ function DeepPlanPageContent() {
     setActivityOrderLocal((deepPlan as any).activityOrder || {});
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Reset autoFillRanRef when tripId changes so AI activities are fetched for the new trip
+  useEffect(() => {
+    autoFillRanRef.current = false;
+  }, [trip.tripId]);
+
   // Fetch AI activities for cities not in static CITY_ATTRACTIONS and not already cached
   const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[], hotel?: string, timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }>) => {
     if (aiFetchedRef.current[cityName]) return;
@@ -1700,7 +1705,7 @@ function DeepPlanPageContent() {
               _fetched: true, // marker so UI knows fetch completed (even if all modes failed)
             },
           }));
-        });
+        }).catch(() => {});
       }
     }
   }, [adjustedDays.map(d => `${d.day}-${d.stops.map(s => s.name).join('|')}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1755,6 +1760,14 @@ function DeepPlanPageContent() {
     const idx = customs.findIndex(c => c.name === stopName);
     if (idx >= 0) {
       handleDeleteActivity(dayNumber, idx);
+      // Also remove the deleted activity's ID from activityOrder for this day
+      setActivityOrder(prev => {
+        const dayOrder = prev[dayNumber];
+        if (!dayOrder) return prev;
+        const stopId = adjustedDays.find(d => d.day === dayNumber)?.stops.find(s => s.name === stopName)?.id;
+        if (!stopId) return prev;
+        return { ...prev, [dayNumber]: dayOrder.filter(id => id !== stopId) };
+      });
     }
   };
 
@@ -2285,7 +2298,13 @@ function DeepPlanPageContent() {
                     <input
                       type="time"
                       value={dayStartTimes[day.day] || '09:00'}
-                      onChange={e => setDayStartTimes(prev => ({ ...prev, [day.day]: e.target.value }))}
+                      onChange={e => {
+                        let v = e.target.value;
+                        if (v < '06:00') v = '06:00';
+                        else if (v > '22:00') v = '22:00';
+                        setDayStartTimes(prev => ({ ...prev, [day.day]: v }));
+                      }}
+                      min="06:00" max="22:00"
                       className="text-xs font-mono bg-bg-card border border-border-subtle rounded px-2 py-1 text-text-primary focus:outline-none focus:border-accent-cyan"
                     />
                     {aiLoading[day.city] && (
@@ -2510,7 +2529,7 @@ function DeepPlanPageContent() {
                             )}
 
                             {/* Hotel card with rating, price, booking status */}
-                            {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && (() => {
+                            {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && stop.destIndex < trip.destinations.length && (() => {
                               const dest = trip.destinations[stop.destIndex!];
                               const hotel = dest?.selectedHotel;
                               const hasBookingDoc = day.city ? (trip.bookingDocs || []).some((d: any) => d.docType === 'hotel' && (d.city || '').toLowerCase().includes(day.city.toLowerCase())) : false;
@@ -3016,7 +3035,13 @@ function DeepPlanPageContent() {
                       <input
                         type="time"
                         value={activityInputTime[day.day] || getDefaultActivityTime(day.day)}
-                        onChange={e => setActivityInputTime(prev => ({ ...prev, [day.day]: e.target.value }))}
+                        onChange={e => {
+                          let v = e.target.value;
+                          if (v < '06:00') v = '06:00';
+                          else if (v > '22:00') v = '22:00';
+                          setActivityInputTime(prev => ({ ...prev, [day.day]: v }));
+                        }}
+                        min="06:00" max="22:00"
                         className="text-xs font-mono bg-transparent border border-border-subtle rounded-lg px-2 py-1.5 text-text-primary focus:outline-none focus:border-accent-cyan w-[90px]"
                       />
                       <button
