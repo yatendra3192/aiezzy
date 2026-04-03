@@ -59,7 +59,8 @@ Return ONLY valid JSON (no other text):
   "activities": [
     { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line tip (optional)", "openingHours": "9 AM - 5 PM (optional, skip if unknown)", "ticketPrice": "Free or e.g. $15 (optional, skip if unknown)"${days > 1 ? ', "dayIndex": 0' : ''} }
   ]${days > 1 ? ',\n  "dayThemes": ["Historic & Cultural", "Outdoor & Nature"]' : ''},
-  "mealCosts": { "currency": "EUR", "breakfast": 12, "lunch": 18, "dinner": 30 }
+  "mealCosts": { "currency": "EUR", "breakfast": 12, "lunch": 18, "dinner": 30 },
+  "localTransport": { "currency": "EUR", "metroSingleRide": 2, "busSingleRide": 2, "taxiPerKm": 2.5, "dailyPass": 8 }
 }
 
 Rules:
@@ -71,7 +72,8 @@ Rules:
 - openingHours: include only if you know them — use local format. Skip for outdoor/24h places
 - ticketPrice: include only if you know — use local currency or "Free". Skip if unsure
 - No duplicates
-- mealCosts: average cost PER PERSON for a typical meal in this city. Use local currency. breakfast = cafe/bakery, lunch = casual restaurant, dinner = mid-range restaurant`;
+- mealCosts: average cost PER PERSON for a typical meal in this city. Use local currency. breakfast = cafe/bakery, lunch = casual restaurant, dinner = mid-range restaurant
+- localTransport: typical per-ride or per-km costs in this city. metroSingleRide = one metro/subway ticket, busSingleRide = one bus ticket, taxiPerKm = taxi/cab rate per kilometer, dailyPass = day pass for public transport if available (0 if not)`;
 
   try {
     let text = '';
@@ -156,7 +158,15 @@ Rules:
       dinner: Number(parsed.mealCosts.dinner) || 0,
     } : undefined;
 
-    return NextResponse.json({ activities, dayThemes, mealCosts, source: 'ai' });
+    const localTransport = parsed.localTransport ? {
+      currency: String(parsed.localTransport.currency || 'USD'),
+      metroSingleRide: Number(parsed.localTransport.metroSingleRide) || 0,
+      busSingleRide: Number(parsed.localTransport.busSingleRide) || 0,
+      taxiPerKm: Number(parsed.localTransport.taxiPerKm) || 0,
+      dailyPass: Number(parsed.localTransport.dailyPass) || 0,
+    } : undefined;
+
+    return NextResponse.json({ activities, dayThemes, mealCosts, localTransport, source: 'ai' });
   } catch (err) {
     console.error('AI itinerary-activities error:', err);
     return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });

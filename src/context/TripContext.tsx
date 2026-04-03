@@ -36,6 +36,8 @@ export interface DeepPlanData {
   activityOrder?: Record<number, string[]>;
   /** AI-generated meal costs per city: { currency, breakfast, lunch, dinner } */
   mealCosts?: Record<string, { currency: string; breakfast: number; lunch: number; dinner: number }>;
+  /** AI-generated local transport costs per city */
+  localTransport?: Record<string, { currency: string; metroSingleRide: number; busSingleRide: number; taxiPerKm: number; dailyPass: number }>;
 }
 
 interface TripState {

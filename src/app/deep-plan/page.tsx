@@ -342,6 +342,10 @@ function DeepPlanPageContent() {
             const existingMeals = trip.deepPlanData?.mealCosts || {};
             updates.mealCosts = { ...existingMeals, [cityName]: data.mealCosts };
           }
+          if (data.localTransport) {
+            const existingTransport = trip.deepPlanData?.localTransport || {};
+            updates.localTransport = { ...existingTransport, [cityName]: data.localTransport };
+          }
           trip.updateDeepPlanData(updates);
         }
       }
@@ -1540,34 +1544,43 @@ function DeepPlanPageContent() {
     return Math.round(total);
   }, [adjustedDays, trip.adults, trip.children, trip.deepPlanData?.mealCosts]);
 
-  // Estimate local transport costs (transit/drive between activities — walking is free)
+  // Estimate local transport costs using AI-generated city rates
   const localTransportCost = useMemo(() => {
     const pax = (trip.adults || 1) + (trip.children || 0);
+    const cityTransportData = trip.deepPlanData?.localTransport || {};
     let total = 0;
     for (const day of adjustedDays) {
+      const cityKey = day.city;
+      const lt = cityTransportData[cityKey];
+      const rate = lt ? (convRates[lt.currency?.toUpperCase()] || convRates[lt.currency] || 1) : 1;
       for (const stop of day.stops) {
-        if (!stop.transport || stop.legIndex !== undefined) continue; // skip flight/train legs
-        const key = `${stop.name}→${day.stops.find((s, i) => i > day.stops.indexOf(stop) && !s.mealType)?.name || ''}`;
+        if (!stop.transport || stop.legIndex !== undefined) continue;
+        const nextIdx = day.stops.findIndex((s, i) => i > day.stops.indexOf(stop) && !s.mealType);
+        if (nextIdx < 0) continue;
+        const key = `${stop.name}→${day.stops[nextIdx].name}`;
         const td = travelBetween[key];
         if (!td) continue;
         const mode = td.selected;
-        if (mode === 'walk') continue; // free
+        if (mode === 'walk') continue;
         const selData = td[mode as 'transit' | 'drive'];
         if (!selData) continue;
-        const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
-        const distKm = distMatch ? parseFloat(distMatch[1]) : 0;
-        if (mode === 'transit') {
-          // Average transit fare ~₹100-250 per ride depending on city
-          total += 150 * pax;
+        if (mode === 'transit' && lt) {
+          total += (lt.metroSingleRide || lt.busSingleRide || 2) * rate * pax;
+        } else if (mode === 'drive' && lt) {
+          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
+          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+          total += distKm * (lt.taxiPerKm || 2) * rate;
+        } else if (mode === 'transit') {
+          total += 150 * pax; // fallback if no AI data
         } else if (mode === 'drive') {
-          // Cab fare ~₹18/km in India, ~₹80-120/km in Europe
-          const perKmRate = 100; // rough global average in INR
-          total += distKm * perKmRate;
+          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
+          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+          total += distKm * 100; // fallback ₹100/km
         }
       }
     }
     return Math.round(total);
-  }, [adjustedDays, travelBetween, trip.adults, trip.children]);
+  }, [adjustedDays, travelBetween, trip.adults, trip.children, trip.deepPlanData?.localTransport]);
 
   const getLegCities = (legIdx: number) => {
     const fromCity = legIdx === 0 ? trip.from : trip.destinations[Math.min(legIdx - 1, trip.destinations.length - 1)]?.city;
