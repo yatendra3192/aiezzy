@@ -1491,6 +1491,61 @@ function DeepPlanPageContent() {
   const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * (trip.adults + (trip.children || 0));
   const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights * summaryRooms, 0);
 
+  // Calculate attraction costs from AI ticketPrice (e.g., "€26", "$15", "₹500", "Free")
+  const attractionCost = useMemo(() => {
+    const conversionRates: Record<string, number> = { '€': 93, '$': 85, '£': 108, '¥': 0.57, '₹': 1 };
+    let total = 0;
+    const seen = new Set<string>();
+    for (const day of adjustedDays) {
+      for (const stop of day.stops) {
+        if (stop.type !== 'attraction' || !stop.ticketPrice || seen.has(stop.name)) continue;
+        seen.add(stop.name);
+        const priceStr = String(stop.ticketPrice);
+        if (priceStr.toLowerCase().includes('free')) continue;
+        const match = priceStr.match(/([€$£¥₹])\s*([\d,.]+)/);
+        if (match) {
+          const rate = conversionRates[match[1]] || 1;
+          const amount = parseFloat(match[2].replace(',', ''));
+          if (!isNaN(amount)) total += amount * rate * (trip.adults + (trip.children || 0));
+        }
+      }
+    }
+    return Math.round(total);
+  }, [adjustedDays, trip.adults, trip.children]);
+
+  // Estimate food costs: breakfast + lunch + dinner per person per day
+  // Uses country-based average meal costs in INR
+  const MEAL_COSTS_INR: Record<string, { breakfast: number; lunch: number; dinner: number }> = {
+    'France': { breakfast: 850, lunch: 1400, dinner: 2200 },
+    'Netherlands': { breakfast: 800, lunch: 1300, dinner: 2000 },
+    'Belgium': { breakfast: 750, lunch: 1200, dinner: 1800 },
+    'Spain': { breakfast: 600, lunch: 1100, dinner: 1700 },
+    'Italy': { breakfast: 600, lunch: 1000, dinner: 1600 },
+    'Germany': { breakfast: 700, lunch: 1200, dinner: 1800 },
+    'Czech Republic': { breakfast: 400, lunch: 700, dinner: 1100 },
+    'United Kingdom': { breakfast: 900, lunch: 1500, dinner: 2500 },
+    'United States': { breakfast: 850, lunch: 1400, dinner: 2200 },
+    'Japan': { breakfast: 600, lunch: 900, dinner: 1500 },
+    'Thailand': { breakfast: 200, lunch: 350, dinner: 500 },
+    'India': { breakfast: 200, lunch: 300, dinner: 500 },
+    'default': { breakfast: 500, lunch: 800, dinner: 1300 },
+  };
+  const totalDays = adjustedDays.length;
+  const foodCost = useMemo(() => {
+    const pax = (trip.adults || 1) + (trip.children || 0);
+    let total = 0;
+    for (const day of adjustedDays) {
+      if (day.type === 'travel' && !day.stops.some(s => s.mealType)) continue; // skip pure travel days without meals
+      const country = trip.destinations.find(d => (d.city.parentCity || d.city.name) === day.city || d.city.name === day.city)?.city.country || '';
+      const rates = MEAL_COSTS_INR[country] || MEAL_COSTS_INR['default'];
+      const hasMeals = day.stops.filter(s => s.mealType);
+      for (const meal of hasMeals) {
+        total += (rates[meal.mealType as 'breakfast' | 'lunch' | 'dinner'] || 0) * pax;
+      }
+    }
+    return Math.round(total);
+  }, [adjustedDays, trip.adults, trip.children, trip.destinations]);
+
   const getLegCities = (legIdx: number) => {
     const fromCity = legIdx === 0 ? trip.from : trip.destinations[Math.min(legIdx - 1, trip.destinations.length - 1)]?.city;
     const toCity = legIdx < trip.destinations.length ? trip.destinations[legIdx]?.city : trip.from;
@@ -1848,13 +1903,13 @@ function DeepPlanPageContent() {
                     <p className="text-[11px] text-text-muted font-body mt-0.5">{trip.destinations.length === 1 ? 'City' : 'Cities'}</p>
                   </div>
                 </div>
-                {(flightCost + trainCost + hotelCost) > 0 && (
+                {(flightCost + trainCost + hotelCost + attractionCost + foodCost) > 0 && (
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                     </div>
                     <div>
-                      <p className="text-[16px] font-mono font-bold text-accent-cyan leading-none">{formatPrice(flightCost + trainCost + hotelCost, currency)}</p>
+                      <p className="text-[16px] font-mono font-bold text-accent-cyan leading-none">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost, currency)}</p>
                       <p className="text-[11px] text-text-muted font-body mt-0.5">Est. Budget</p>
                     </div>
                   </div>
@@ -2904,7 +2959,7 @@ function DeepPlanPageContent() {
               <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{trip.destinations.length}</p><p className="text-text-muted text-[11px] font-body">Cities</p></div>
               <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{totalNights}</p><p className="text-text-muted text-[11px] font-body">Nights</p></div>
             </div>
-            {(flightCost + trainCost + hotelCost) > 0 && (
+            {(flightCost + trainCost + hotelCost + attractionCost + foodCost) > 0 && (
               <div className="pt-3 border-t border-border-subtle space-y-2">
                 {flightCost > 0 && (
                   <div className="flex justify-between items-center">
@@ -2924,9 +2979,21 @@ function DeepPlanPageContent() {
                     <span className="text-[13px] font-mono text-text-secondary">{formatPrice(hotelCost, currency)}</span>
                   </div>
                 )}
+                {attractionCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[12px] text-text-muted font-body">Attractions</span>
+                    <span className="text-[13px] font-mono text-text-secondary">{formatPrice(attractionCost, currency)}</span>
+                  </div>
+                )}
+                {foodCost > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-[12px] text-text-muted font-body">Food ({totalDays}D)</span>
+                    <span className="text-[13px] font-mono text-text-secondary">{formatPrice(foodCost, currency)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
                   <span className="text-[13px] text-text-primary font-body font-semibold">Estimated Total</span>
-                  <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+                  <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost, currency)}</span>
                 </div>
               </div>
             )}
@@ -2972,7 +3039,7 @@ function DeepPlanPageContent() {
             </div>
 
             {/* Budget Summary */}
-            {(flightCost + trainCost + hotelCost) > 0 && (
+            {(flightCost + trainCost + hotelCost + attractionCost + foodCost) > 0 && (
               <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
                 <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Budget</h3>
                 <div className="space-y-2.5">
@@ -3000,9 +3067,25 @@ function DeepPlanPageContent() {
                       <span className="font-mono text-text-primary">{formatPrice(hotelCost, currency)}</span>
                     </div>
                   )}
+                  {attractionCost > 0 && (
+                    <div className="flex justify-between items-center text-[12px]">
+                      <span className="text-text-secondary font-body flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400" /> Attractions
+                      </span>
+                      <span className="font-mono text-text-primary">{formatPrice(attractionCost, currency)}</span>
+                    </div>
+                  )}
+                  {foodCost > 0 && (
+                    <div className="flex justify-between items-center text-[12px]">
+                      <span className="text-text-secondary font-body flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-400" /> Food ({totalDays}D)
+                      </span>
+                      <span className="font-mono text-text-primary">{formatPrice(foodCost, currency)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center pt-2.5 border-t border-border-subtle">
                     <span className="text-[13px] text-text-primary font-body font-semibold">Total</span>
-                    <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost, currency)}</span>
+                    <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost, currency)}</span>
                   </div>
                 </div>
               </div>
