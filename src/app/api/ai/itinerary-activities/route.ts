@@ -58,7 +58,8 @@ Return ONLY valid JSON (no other text):
 {
   "activities": [
     { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line tip (optional)", "openingHours": "9 AM - 5 PM (optional, skip if unknown)", "ticketPrice": "Free or e.g. $15 (optional, skip if unknown)"${days > 1 ? ', "dayIndex": 0' : ''} }
-  ]${days > 1 ? ',\n  "dayThemes": ["Historic & Cultural", "Outdoor & Nature"]' : ''}
+  ]${days > 1 ? ',\n  "dayThemes": ["Historic & Cultural", "Outdoor & Nature"]' : ''},
+  "mealCosts": { "currency": "EUR", "breakfast": 12, "lunch": 18, "dinner": 30 }
 }
 
 Rules:
@@ -69,7 +70,8 @@ Rules:
 - Notes should be specific and practical (skip if obvious)
 - openingHours: include only if you know them — use local format. Skip for outdoor/24h places
 - ticketPrice: include only if you know — use local currency or "Free". Skip if unsure
-- No duplicates`;
+- No duplicates
+- mealCosts: average cost PER PERSON for a typical meal in this city. Use local currency. breakfast = cafe/bakery, lunch = casual restaurant, dinner = mid-range restaurant`;
 
   try {
     let text = '';
@@ -147,7 +149,14 @@ Rules:
       ? parsed.dayThemes.map((t: any) => String(t))
       : undefined;
 
-    return NextResponse.json({ activities, dayThemes, source: 'ai' });
+    const mealCosts = parsed.mealCosts ? {
+      currency: String(parsed.mealCosts.currency || 'USD'),
+      breakfast: Number(parsed.mealCosts.breakfast) || 0,
+      lunch: Number(parsed.mealCosts.lunch) || 0,
+      dinner: Number(parsed.mealCosts.dinner) || 0,
+    } : undefined;
+
+    return NextResponse.json({ activities, dayThemes, mealCosts, source: 'ai' });
   } catch (err) {
     console.error('AI itinerary-activities error:', err);
     return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });

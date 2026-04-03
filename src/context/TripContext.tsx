@@ -34,6 +34,8 @@ export interface DeepPlanData {
   dayThemes?: Record<string, string[]>;
   /** Persisted drag-reorder: day number → ordered stop IDs */
   activityOrder?: Record<number, string[]>;
+  /** AI-generated meal costs per city: { currency, breakfast, lunch, dinner } */
+  mealCosts?: Record<string, { currency: string; breakfast: number; lunch: number; dinner: number }>;
 }
 
 interface TripState {
