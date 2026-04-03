@@ -911,22 +911,19 @@ function DeepPlanPageContent() {
         };
         const hotelName = dest.selectedHotel?.name || `Stay in ${toCity.name}`;
 
-        // Distribute activities: use dayIndex assignment if present, fall back to even split
-        const hasDayIndexes = typedActivities.some(a => typeof a.dayIndex === 'number');
-        let dayActivities: TypedActivity[];
-        if (hasDayIndexes) {
-          // Activities assigned to this explore day index, plus unassigned extras distributed evenly
-          const assigned = typedActivities.filter(a => a.dayIndex === n);
-          const unassigned = typedActivities.filter(a => typeof a.dayIndex !== 'number');
-          const unassignedPerDay = Math.ceil(unassigned.length / exploreDays);
-          const unassignedSlice = unassigned.slice(n * unassignedPerDay, (n + 1) * unassignedPerDay);
-          dayActivities = [...assigned, ...unassignedSlice];
-        } else {
-          const perDay = Math.ceil(typedActivities.length / exploreDays);
-          const startIdx = n * perDay;
-          dayActivities = typedActivities.slice(startIdx, startIdx + perDay);
+        // Distribute activities evenly across explore days — ensure each day gets enough to fill morning + afternoon
+        const minPerDay = 5; // need at least 5 to fill a full day (2 morning + lunch + 3 afternoon)
+        const perDay = Math.max(minPerDay, Math.ceil(typedActivities.length / exploreDays));
+        const startIdx = n * perDay;
+        let dayActivities: TypedActivity[] = typedActivities.slice(startIdx, startIdx + perDay);
+        // If this day got fewer than minimum, pull from any remaining unassigned activities
+        if (dayActivities.length < minPerDay) {
+          const assigned = new Set(dayActivities.map(a => a.name));
+          for (const a of typedActivities) {
+            if (dayActivities.length >= minPerDay) break;
+            if (!assigned.has(a.name)) { dayActivities.push(a); assigned.add(a.name); }
+          }
         }
-        if (dayActivities.length === 0 && typedActivities.length > 0) dayActivities.push(typedActivities[0]);
 
         // Smart scheduling: fit activities into morning + afternoon windows
         const dayStartMin = 9 * 60; // 09:00
