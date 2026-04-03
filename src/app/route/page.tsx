@@ -607,13 +607,22 @@ function RoutePageContent() {
       for (let d = 0; d < i; d++) {
         hotelCheckInOffset += trip.destinations[d]?.nights ?? 0;
       }
-      const checkInDate = new Date(trip.departureDate);
-      checkInDate.setDate(checkInDate.getDate() + hotelCheckInOffset);
-      const checkOutDate = new Date(checkInDate);
-      checkOutDate.setDate(checkOutDate.getDate() + (dest.nights ?? 1));
-      const checkInStr = checkInDate.toISOString().split('T')[0];
-      const checkOutStr = checkOutDate.toISOString().split('T')[0];
-      fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}&checkIn=${checkInStr}&checkOut=${checkOutStr}`)
+      let checkInStr = '';
+      let checkOutStr = '';
+      if (trip.departureDate) {
+        try {
+          const checkInDate = new Date(trip.departureDate);
+          if (!isNaN(checkInDate.getTime())) {
+            checkInDate.setDate(checkInDate.getDate() + hotelCheckInOffset);
+            const checkOutDate = new Date(checkInDate);
+            checkOutDate.setDate(checkOutDate.getDate() + (dest.nights ?? 1));
+            checkInStr = checkInDate.toISOString().split('T')[0];
+            checkOutStr = checkOutDate.toISOString().split('T')[0];
+          }
+        } catch { /* invalid date — fetch without dates */ }
+      }
+      const dateParams = checkInStr && checkOutStr ? `&checkIn=${checkInStr}&checkOut=${checkOutStr}` : '';
+      fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}${dateParams}`)
         .then(r => r.json())
         .then(data => {
           const places = data.places || [];
