@@ -360,12 +360,15 @@ function DeepPlanPageContent() {
     for (const dest of trip.destinations) {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
-      if (trip.deepPlanData?.cityActivities?.[cityName]?.length) continue;
+      const cachedCount = trip.deepPlanData?.cityActivities?.[cityName]?.length || 0;
+      const targetCount = Math.max(1, dest.nights) * 7 + 3;
+      if (cachedCount >= targetCount * 0.7) continue; // skip if already has 70%+ of target
       if (dest.nights < 1) continue;
       const exploreDays = Math.max(1, dest.nights); // include arrival day in count for more activities
       const userPlaces = dest.places?.map(p => p.name) || [];
       if (!citiesNeeded.some(c => c.cityName === cityName)) {
         citiesNeeded.push({ cityName, country: dest.city.country || '', days: exploreDays, userPlaces });
+        aiFetchedRef.current[cityName] = false; // allow re-fetch for stale/insufficient cache
       }
     }
     if (citiesNeeded.length === 0) return;
@@ -937,7 +940,7 @@ function DeepPlanPageContent() {
         const scheduledSet = new Set<string>();
 
         for (const act of morningPool) {
-          if (cursor + act.durationMin > morningEnd) break;
+          if (cursor + act.durationMin > morningEnd) continue; // try shorter activities
           morningScheduled.push({ act, startMin: cursor });
           scheduledSet.add(act.name);
           cursor += act.durationMin + travelGap;
