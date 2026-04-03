@@ -276,7 +276,7 @@ function PlanPageContent() {
       setIsRestoring(true);
       trip.loadTrip(idToLoad).catch(() => {}).finally(() => setIsRestoring(false));
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showAISuggest, setShowAISuggest] = useState(false);
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
   const [optimizing, setOptimizing] = useState(false);

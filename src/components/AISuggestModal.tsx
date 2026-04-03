@@ -103,7 +103,8 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
     });
 
     onClose();
-    router.replace('/plan');
+    // Navigate after state has committed — prevents plan page seeing empty context
+    setTimeout(() => router.replace('/plan'), 0);
   };
 
   const handleClose = () => {
