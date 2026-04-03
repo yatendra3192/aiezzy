@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   let city: string, country: string, days: number, userPlaces: string[], month: string | undefined;
+  // Rich context: hotel, time windows, dates for smarter planning
+  let hotel: string | undefined, timeWindows: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }> | undefined;
   try {
     const body = await req.json();
     city = body.city;
@@ -25,6 +27,8 @@ export async function POST(req: NextRequest) {
     days = body.days || 2;
     userPlaces = body.userPlaces || [];
     month = body.month;
+    hotel = body.hotel;
+    timeWindows = body.timeWindows;
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
@@ -46,34 +50,48 @@ export async function POST(req: NextRequest) {
 
   const monthHint = month ? ` The trip is in ${month}.` : '';
 
-  const multiDayInstruction = days > 1
-    ? `\nOrganize activities into ${days} logical day themes (e.g., Day 1: historic/cultural, Day 2: outdoor/nature, Day 3: local life/markets). Set "dayIndex" (0-based) for each activity to assign it to a day. Distribute activities evenly across days (~${perDay} per day + ${extras} extras without dayIndex).`
-    : '';
+  // Build rich context from time windows
+  let scheduleContext = '';
+  if (timeWindows && timeWindows.length > 0) {
+    scheduleContext = `\n\nDETAILED SCHEDULE — fill EVERY time slot with activities:\n`;
+    for (const tw of timeWindows) {
+      scheduleContext += `Day ${tw.dayIndex + 1} (${tw.date}):\n`;
+      for (const slot of tw.slots) {
+        scheduleContext += `  ${slot.from} - ${slot.to}: ${slot.label}\n`;
+      }
+    }
+    scheduleContext += `\nAssign each activity a "dayIndex" (0-based) matching the day above. Fill ALL slots — morning AND afternoon. Each slot should have 2-4 activities depending on duration.\n`;
+  }
 
-  const systemPrompt = `You are an expert travel guide. Suggest specific activities and attractions for a city visit. Be practical: include realistic durations, best times of day, and useful visitor info. Prefer well-known landmarks, cultural sites, and unique local experiences over generic suggestions.`;
+  const hotelContext = hotel ? `\nStaying at: ${hotel} (suggest activities near the hotel and plan an efficient walking route)\n` : '';
 
-  const userPrompt = `Suggest ${targetCount} activities for ${days} day${days > 1 ? 's' : ''} in ${city}${country ? ', ' + country : ''}.${monthHint}
-${userPlacesSection}${multiDayInstruction}
+  const systemPrompt = `You are an expert local travel guide who creates detailed, realistic day plans. You know opening hours, ticket prices, and the best order to visit places. You fill EVERY available time slot with activities — no empty afternoons. Prefer well-known landmarks, cultural sites, and unique local experiences.`;
+
+  const userPrompt = `Plan ${targetCount} activities for ${days} day${days > 1 ? 's' : ''} in ${city}${country ? ', ' + country : ''}.${monthHint}
+${hotelContext}${userPlacesSection}${scheduleContext}
 Return ONLY valid JSON (no other text):
 {
   "activities": [
-    { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line tip (optional)", "openingHours": "9 AM - 5 PM (optional, skip if unknown)", "ticketPrice": "Free or e.g. $15 (optional, skip if unknown)"${days > 1 ? ', "dayIndex": 0' : ''} }
-  ]${days > 1 ? ',\n  "dayThemes": ["Historic & Cultural", "Outdoor & Nature"]' : ''},
+    { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line practical tip", "openingHours": "9 AM - 5 PM", "ticketPrice": "Free or e.g. €15", "dayIndex": 0 }
+  ],
+  "dayThemes": ["Historic & Cultural", "Outdoor & Nature"],
   "mealCosts": { "currency": "EUR", "breakfast": 12, "lunch": 18, "dinner": 30 },
   "localTransport": { "currency": "EUR", "metroSingleRide": 2, "busSingleRide": 2, "taxiPerKm": 2.5, "dailyPass": 8 }
 }
 
 Rules:
-- Return exactly ${targetCount} activities
-- Duration in minutes: quick photo stops 20-30, parks/neighborhoods 45-60, museums 90-120, major landmarks 60-90, experiences 30-60
-- bestTime: museums/indoor morning, parks/viewpoints afternoon or evening, markets morning, religious sites morning
-- Include a mix of categories — not all landmarks
-- Notes should be specific and practical (skip if obvious)
-- openingHours: include only if you know them — use local format. Skip for outdoor/24h places
-- ticketPrice: include only if you know — use local currency or "Free". Skip if unsure
-- No duplicates
-- mealCosts: average cost PER PERSON for a typical meal in this city. Use local currency. breakfast = cafe/bakery, lunch = casual restaurant, dinner = mid-range restaurant
-- localTransport: typical per-ride or per-km costs in this city. metroSingleRide = one metro/subway ticket, busSingleRide = one bus ticket, taxiPerKm = taxi/cab rate per kilometer, dailyPass = day pass for public transport if available (0 if not)`;
+- Return EXACTLY ${targetCount} activities — this is critical. ${days} days × ${perDay} activities + ${extras} extras
+- Distribute EVENLY: each dayIndex must have ${perDay} activities. Do NOT put all on day 0
+- Duration: photo stops 20-30min, parks/neighborhoods 45-60, museums 90-120, landmarks 60-90, experiences 30-60
+- bestTime: museums morning, parks/viewpoints afternoon, markets morning, religious sites morning
+- Mix of categories — not all landmarks
+- Notes: specific and practical (e.g., "Buy tickets online to skip 2h queue", "Free entry first Sunday")
+- openingHours: include if known. Skip for outdoor/24h places
+- ticketPrice: ALWAYS include — use "Free" for free places, local currency for paid (e.g., "€20", "$15")
+- NO duplicate activities
+- Plan an efficient route — nearby activities should be on the same day
+- mealCosts: average PER PERSON in local currency. breakfast=cafe, lunch=casual, dinner=mid-range
+- localTransport: per-ride/km costs. metroSingleRide, busSingleRide, taxiPerKm, dailyPass (0 if unavailable)`;
 
   try {
     let text = '';

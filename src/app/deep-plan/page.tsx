@@ -316,7 +316,7 @@ function DeepPlanPageContent() {
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch AI activities for cities not in static CITY_ATTRACTIONS and not already cached
-  const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[]) => {
+  const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[], hotel?: string, timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }>) => {
     if (aiFetchedRef.current[cityName]) return;
     aiFetchedRef.current[cityName] = true;
     setAiLoading(prev => ({ ...prev, [cityName]: true }));
@@ -327,7 +327,7 @@ function DeepPlanPageContent() {
       const res = await fetch('/api/ai/itinerary-activities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ city: cityName, country, days, userPlaces, month: monthName }),
+        body: JSON.stringify({ city: cityName, country, days, userPlaces, month: monthName, hotel, timeWindows }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -364,19 +364,35 @@ function DeepPlanPageContent() {
   useEffect(() => {
     if (trip.destinations.length === 0 || autoFillRanRef.current) return;
     // Collect cities that need AI activities
-    const citiesNeeded: Array<{ cityName: string; country: string; days: number; userPlaces: string[] }> = [];
+    const citiesNeeded: Array<{ cityName: string; country: string; days: number; userPlaces: string[]; hotel?: string; timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }> }> = [];
     for (const dest of trip.destinations) {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
       const cachedCount = trip.deepPlanData?.cityActivities?.[cityName]?.length || 0;
       const targetCount = Math.max(1, dest.nights) * 7 + 3;
-      if (cachedCount >= targetCount * 0.7) continue; // skip if already has 70%+ of target
+      if (cachedCount >= targetCount * 0.7) continue;
       if (dest.nights < 1) continue;
-      const exploreDays = Math.max(1, dest.nights); // include arrival day in count for more activities
+      const exploreDays = Math.max(1, dest.nights);
       const userPlaces = dest.places?.map(p => p.name) || [];
+      const hotelName = dest.selectedHotel?.name;
+      // Build time windows from trip dates
+      const destIdx = trip.destinations.indexOf(dest);
+      const timeWindows: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }> = [];
+      for (let d = 0; d < exploreDays; d++) {
+        const slots: Array<{ from: string; to: string; label: string }> = [];
+        if (d === 0) {
+          // Arrival day might have limited time
+          slots.push({ from: '9:00 AM', to: '12:30 PM', label: 'Morning activities' });
+          slots.push({ from: '1:15 PM', to: '6:30 PM', label: 'Afternoon activities' });
+        } else {
+          slots.push({ from: '9:00 AM', to: '12:30 PM', label: 'Morning activities' });
+          slots.push({ from: '1:15 PM', to: '6:30 PM', label: 'Afternoon activities' });
+        }
+        timeWindows.push({ dayIndex: d, date: `Day ${d + 1}`, slots });
+      }
       if (!citiesNeeded.some(c => c.cityName === cityName)) {
-        citiesNeeded.push({ cityName, country: dest.city.country || '', days: exploreDays, userPlaces });
-        aiFetchedRef.current[cityName] = false; // allow re-fetch for stale/insufficient cache
+        citiesNeeded.push({ cityName, country: dest.city.country || '', days: exploreDays, userPlaces, hotel: hotelName, timeWindows });
+        aiFetchedRef.current[cityName] = false;
       }
     }
     if (citiesNeeded.length === 0) return;
@@ -388,7 +404,7 @@ function DeepPlanPageContent() {
 
     // Fire all requests in parallel
     const promises = citiesNeeded.map((c, i) =>
-      fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces).then(() => {
+      fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces, c.hotel, c.timeWindows).then(() => {
         setAutoFillProgress(prev => {
           if (!prev) return null;
           const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
