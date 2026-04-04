@@ -280,7 +280,23 @@ function DeepPlanPageContent() {
       return next;
     });
   };
-  // dragState/dragOverId removed — now using Framer Motion Reorder
+  // Persisted: removed activities + edited times for meals/hotel/overnight
+  const [removedActivities, setRemovedActivitiesLocal] = useState<Record<string, string[]>>(deepPlan.removedActivities || {});
+  const [editedTimes, setEditedTimesLocal] = useState<Record<string, string>>(deepPlan.editedTimes || {});
+  const setRemovedActivities = (updater: Record<string, string[]> | ((prev: Record<string, string[]>) => Record<string, string[]>)) => {
+    setRemovedActivitiesLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ removedActivities: next });
+      return next;
+    });
+  };
+  const setEditedTimes = (updater: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => {
+    setEditedTimesLocal(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trip.updateDeepPlanData({ editedTimes: next });
+      return next;
+    });
+  };
 
   // Wrappers that update both local state and context
   const setDayStartTimes = (updater: Record<number, string> | ((prev: Record<number, string>) => Record<number, string>)) => {
@@ -321,6 +337,8 @@ function DeepPlanPageContent() {
     setDayNotesLocal(deepPlan.dayNotes || {});
     setDayStartTimesLocal(deepPlan.dayStartTimes || {});
     setActivityOrderLocal((deepPlan as any).activityOrder || {});
+    setRemovedActivitiesLocal(deepPlan.removedActivities || {});
+    setEditedTimesLocal(deepPlan.editedTimes || {});
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset autoFillRanRef when tripId changes so AI activities are fetched for the new trip
@@ -710,7 +728,9 @@ function DeepPlanPageContent() {
                 } else if (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name]) {
                   cityAttr2 = (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
                 }
-                // No generic fallback — wait for AI. "Auto-plan" button shows if empty.
+                // Filter out user-removed activities
+                const removed2 = new Set((removedActivities[evCityKey2] || []).map(n => n.toLowerCase()));
+                cityAttr2 = cityAttr2.filter(n => !removed2.has(n.toLowerCase()));
                 if (cityAttr2.length > 0 && freeHrs2 >= 1.5 && freeStart2 < dinnerTime2 - 60) {
                   const aiActs2 = trip.deepPlanData?.cityActivities?.[evCityKey2] || [];
                   arrivalDay.stops.push({
@@ -815,7 +835,9 @@ function DeepPlanPageContent() {
                 } else if (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name]) {
                   cityAttractions = (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
                 }
-                // No generic fallback — AI auto-fill handles it
+                // Filter out user-removed activities
+                const removedSame = new Set((removedActivities[evCityKey] || []).map(n => n.toLowerCase()));
+                cityAttractions = cityAttractions.filter(n => !removedSame.has(n.toLowerCase()));
 
                 if (cityAttractions.length > 0 && totalFreeHours >= 1.5 && freeStartMin < dinnerTime - 60) {
                   const aiActs = trip.deepPlanData?.cityActivities?.[evCityKey] || [];
@@ -907,7 +929,10 @@ function DeepPlanPageContent() {
       // Skip activities already used on the arrival day to avoid repeats
       type TypedActivity = { name: string; category: string; durationMin: number; bestTime: string; note?: string; openingHours?: string; ticketPrice?: string; dayIndex?: number };
       const typedActivities: TypedActivity[] = [];
-      const usedNames = new Set<string>(usedArrivalActivities); // start with arrival activities excluded
+      const cityKey = toCity.parentCity || toCity.name;
+      // Exclude: arrival activities + user-removed activities
+      const cityRemoved = new Set((removedActivities[cityKey] || []).map(n => n.toLowerCase()));
+      const usedNames = new Set<string>([...Array.from(usedArrivalActivities), ...Array.from(cityRemoved)]);
 
       // Priority 1: user-added places (wrapped with default 90min)
       if (dest.places && dest.places.length > 0) {
@@ -920,7 +945,6 @@ function DeepPlanPageContent() {
       }
 
       // Priority 2: AI-cached activities from deepPlanData
-      const cityKey = toCity.parentCity || toCity.name;
       const aiCached = trip.deepPlanData?.cityActivities?.[cityKey];
       if (aiCached && aiCached.length > 0) {
         for (const a of aiCached) {
@@ -1279,7 +1303,7 @@ function DeepPlanPageContent() {
       }
     }
     return merged;
-  }, [trip, realTimes, isLocalStay]);
+  }, [trip, realTimes, isLocalStay, removedActivities]);
 
   // Recalculate explore day times: re-run scheduling algorithm with new start time
   const adjustedDays: DayPlan[] = useMemo(() => {
@@ -1750,20 +1774,31 @@ function DeepPlanPageContent() {
   };
 
   const handleDeleteStop = (dayNumber: number, stopName: string) => {
-    // For built-in attractions, we don't modify the memo. Only custom activities can be deleted.
+    // Remove from custom activities if it's a custom one
     const customs = customActivities[dayNumber] || [];
     const idx = customs.findIndex(c => c.name === stopName);
     if (idx >= 0) {
       handleDeleteActivity(dayNumber, idx);
-      // Also remove the deleted activity's ID from activityOrder for this day
-      setActivityOrder(prev => {
-        const dayOrder = prev[dayNumber];
-        if (!dayOrder) return prev;
-        const stopId = adjustedDays.find(d => d.day === dayNumber)?.stops.find(s => s.name === stopName)?.id;
-        if (!stopId) return prev;
-        return { ...prev, [dayNumber]: dayOrder.filter(id => id !== stopId) };
-      });
     }
+
+    // Always track removal so AI activities don't reappear on rebuild
+    const dayData = adjustedDays.find(d => d.day === dayNumber);
+    const cityKey = dayData?.city || '';
+    if (cityKey) {
+      setRemovedActivities(prev => ({
+        ...prev,
+        [cityKey]: [...(prev[cityKey] || []), stopName],
+      }));
+    }
+
+    // Remove from activityOrder
+    setActivityOrder(prev => {
+      const dayOrder = prev[dayNumber];
+      if (!dayOrder) return prev;
+      const stopId = dayData?.stops.find(s => s.name === stopName)?.id;
+      if (!stopId) return prev;
+      return { ...prev, [dayNumber]: dayOrder.filter(id => id !== stopId) };
+    });
   };
 
   // Move an activity up/down within a day's attraction order
@@ -2339,14 +2374,11 @@ function DeepPlanPageContent() {
                                 {stop.time && (
                                   <input
                                     type="time"
-                                    value={stop.time}
+                                    value={editedTimes[`day_${day.day}_${stop.mealType}`] || stop.time}
                                     onChange={e => {
                                       const newTime = e.target.value;
                                       if (!newTime) return;
-                                      setCustomActivities(prev => {
-                                        const key = `_meal_${day.day}_${stop.mealType}`;
-                                        return { ...prev, [key]: [{ name: stop.name, time: newTime }] };
-                                      });
+                                      setEditedTimes(prev => ({ ...prev, [`day_${day.day}_${stop.mealType}`]: newTime }));
                                     }}
                                     className="text-orange-400 text-[10px] font-mono bg-transparent border-none outline-none w-[52px] cursor-pointer hover:text-orange-600 p-0"
                                     title="Click to change time"
@@ -2409,14 +2441,11 @@ function DeepPlanPageContent() {
                                     return isEditableTime ? (
                                       <input
                                         type="time"
-                                        value={stop.time}
+                                        value={editedTimes[`day_${day.day}_${stop.name.replace(/\s+/g, '_')}`] || stop.time}
                                         onChange={e => {
                                           const newTime = e.target.value;
                                           if (!newTime) return;
-                                          setCustomActivities(prev => {
-                                            const key = `_time_${day.day}_${stop.name.replace(/\s+/g, '_')}`;
-                                            return { ...prev, [key]: [{ name: stop.name, time: newTime }] };
-                                          });
+                                          setEditedTimes(prev => ({ ...prev, [`day_${day.day}_${stop.name.replace(/\s+/g, '_')}`]: newTime }));
                                         }}
                                         className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[60px] cursor-pointer hover:text-accent-cyan/70 p-0 flex-shrink-0"
                                         title="Click to change time"

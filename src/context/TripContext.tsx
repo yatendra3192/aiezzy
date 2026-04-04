@@ -38,6 +38,10 @@ export interface DeepPlanData {
   mealCosts?: Record<string, { currency: string; breakfast: number; lunch: number; dinner: number }>;
   /** AI-generated local transport costs per city */
   localTransport?: Record<string, { currency: string; metroSingleRide: number; busSingleRide: number; taxiPerKm: number; dailyPass: number }>;
+  /** Activities user explicitly removed — never show again unless user re-adds */
+  removedActivities?: Record<string, string[]>; // cityKey → list of removed activity names
+  /** User-edited times for meals, return to hotel, overnight per day */
+  editedTimes?: Record<string, string>; // "day_3_breakfast" | "day_3_dinner" | "day_3_Return_to_hotel" → "19:30"
 }
 
 interface TripState {
