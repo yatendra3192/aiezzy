@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createUserClient } from '@/lib/supabase/server';
 
 /** GET /api/profile - Fetch user profile */
 export async function GET() {
@@ -15,7 +15,7 @@ export async function GET() {
     return NextResponse.json({ error: 'No user ID' }, { status: 401 });
   }
 
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   const { data: profile, error } = await supabase
     .from('profiles')
@@ -52,7 +52,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Display name is required' }, { status: 400 });
   }
 
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   const { error } = await supabase
     .from('profiles')

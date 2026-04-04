@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createUserClient } from '@/lib/supabase/server';
 import { validateTripPayload } from '@/lib/tripValidation';
 
 /** GET /api/trips - List user's trips */
@@ -16,7 +16,7 @@ export async function GET() {
     return NextResponse.json({ error: 'No user ID' }, { status: 401 });
   }
 
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   const { data: trips, error } = await supabase
     .from('trips')
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
   const body = validation.data;
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   // Generate title: "Trip 4 · 26 Jan · Mumbai to Paris"
   // Count existing trips for numbering

@@ -51,7 +51,9 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 
 ### Database
 
-**App Supabase** (`NEXT_PUBLIC_SUPABASE_URL`): `profiles`, `trips`, `trip_destinations`, `trip_transport_legs`. JSONB for City/Flight/Train/Hotel. RLS on all.
+**App Supabase** (`NEXT_PUBLIC_SUPABASE_URL`): `profiles`, `trips`, `trip_destinations`, `trip_transport_legs`. JSONB for City/Flight/Train/Hotel. RLS on all. Two Supabase client modes in `src/lib/supabase/server.ts`:
+- `createUserClient(userId)` — signs a short-lived JWT with the user's ID via `jose`, creates a Supabase client that enforces RLS (`auth.uid() = user_id`). Used for trip CRUD, profile, share routes. Falls back to service client if `SUPABASE_JWT_SECRET` is not set.
+- `createServiceClient()` — service role key, bypasses RLS. Used ONLY for admin ops, auth (signup/password), storage (booking-docs), shared trip public access, and NextAuth callbacks.
 
 **Catalog Supabase** (`CATALOG_SUPABASE_URL`): 47,830 airports with PostGIS. Used via `nearby_airports(lat, lng, radius_km)` RPC.
 
@@ -199,6 +201,10 @@ GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 AMADEUS_API_KEY / AMADEUS_API_SECRET / AMADEUS_BASE_URL
 OPENAI_API_KEY                # AI trip suggestions (primary)
 ANTHROPIC_API_KEY             # AI trip suggestions (fallback)
+SUPABASE_JWT_SECRET           # Optional: enables per-user RLS (Supabase Dashboard > Settings > API > JWT Secret)
+EMAIL_VERIFY_ENABLED          # Optional: set "true" to require email verification on signup
+NEXT_PUBLIC_TURNSTILE_SITE_KEY # Optional: Cloudflare Turnstile CAPTCHA site key
+TURNSTILE_SECRET_KEY          # Optional: Cloudflare Turnstile secret key
 NEXT_PUBLIC_GA_ID             # Google Analytics 4
 NEXT_PUBLIC_SENTRY_DSN        # Optional: Sentry
 ```

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createUserClient } from '@/lib/supabase/server';
 
 /** POST /api/trips/[id]/share — Generate or return existing share link */
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -9,7 +9,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   // Verify trip belongs to user
   const { data: trip, error } = await supabase
@@ -57,7 +57,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   const { error } = await supabase
     .from('trips')

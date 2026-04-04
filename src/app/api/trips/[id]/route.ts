@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { createServiceClient } from '@/lib/supabase/server';
+import { createUserClient, createServiceClient } from '@/lib/supabase/server';
 import { validateTripPayload } from '@/lib/tripValidation';
 
 /** GET /api/trips/[id] - Load a single trip with all data */
@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   const { data: trip, error } = await supabase
     .from('trips')
@@ -93,7 +93,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
   const body = validation.data;
-  const supabase = createServiceClient();
+  const supabase = await createUserClient(userId);
 
   // Verify trip belongs to user
   const { data: existing } = await supabase
@@ -205,16 +205,19 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const supabase = createServiceClient();
+  // Service client for storage operations (storage doesn't support RLS JWTs)
+  const storageClient = createServiceClient();
+  // User client for the trip delete (RLS enforced)
+  const supabase = await createUserClient(userId);
 
   // Clean up booking documents in storage before deleting the trip
   try {
-    const { data: files } = await supabase.storage
+    const { data: files } = await storageClient.storage
       .from('booking-docs')
       .list(`${userId}/${params.id}`);
     if (files && files.length > 0) {
       const paths = files.map(f => `${userId}/${params.id}/${f.name}`);
-      await supabase.storage.from('booking-docs').remove(paths);
+      await storageClient.storage.from('booking-docs').remove(paths);
     }
   } catch {
     // Storage cleanup is best-effort — don't block trip deletion
