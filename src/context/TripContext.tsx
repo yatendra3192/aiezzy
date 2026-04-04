@@ -209,7 +209,19 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateDeepPlanData = useCallback((data: Partial<DeepPlanData>) => {
-    setState(s => dirty({ ...s, deepPlanData: { ...s.deepPlanData, ...data } }));
+    setState(s => {
+      const prev = s.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
+      // Deep merge nested Record objects so parallel updates don't overwrite each other
+      const merged = { ...prev, ...data };
+      if (data.cityActivities) merged.cityActivities = { ...prev.cityActivities, ...data.cityActivities };
+      if (data.dayThemes) merged.dayThemes = { ...prev.dayThemes, ...data.dayThemes };
+      if (data.mealCosts) merged.mealCosts = { ...prev.mealCosts, ...data.mealCosts };
+      if (data.localTransport) merged.localTransport = { ...prev.localTransport, ...data.localTransport };
+      if (data.removedActivities) merged.removedActivities = { ...prev.removedActivities, ...data.removedActivities };
+      if (data.editedTimes) merged.editedTimes = { ...prev.editedTimes, ...data.editedTimes };
+      if (data.activityOrder) merged.activityOrder = { ...prev.activityOrder, ...data.activityOrder };
+      return dirty({ ...s, deepPlanData: merged });
+    });
   }, []);
 
   // Build entire trip in one atomic setState (no stale state issues)

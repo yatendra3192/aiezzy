@@ -383,20 +383,11 @@ function DeepPlanPageContent() {
       if (res.ok) {
         const data = await res.json();
         if (data.activities?.length > 0) {
-          const existingAct = trip.deepPlanData?.cityActivities || {};
-          const updates: Record<string, any> = { cityActivities: { ...existingAct, [cityName]: data.activities } };
-          if (data.dayThemes?.length > 0) {
-            const existingThemes = trip.deepPlanData?.dayThemes || {};
-            updates.dayThemes = { ...existingThemes, [cityName]: data.dayThemes };
-          }
-          if (data.mealCosts) {
-            const existingMeals = trip.deepPlanData?.mealCosts || {};
-            updates.mealCosts = { ...existingMeals, [cityName]: data.mealCosts };
-          }
-          if (data.localTransport) {
-            const existingTransport = trip.deepPlanData?.localTransport || {};
-            updates.localTransport = { ...existingTransport, [cityName]: data.localTransport };
-          }
+          // updateDeepPlanData deep-merges nested Records, safe for parallel calls
+          const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities } };
+          if (data.dayThemes?.length > 0) updates.dayThemes = { [cityName]: data.dayThemes };
+          if (data.mealCosts) updates.mealCosts = { [cityName]: data.mealCosts };
+          if (data.localTransport) updates.localTransport = { [cityName]: data.localTransport };
           trip.updateDeepPlanData(updates);
         }
       }
