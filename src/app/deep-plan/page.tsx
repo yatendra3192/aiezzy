@@ -418,8 +418,11 @@ function DeepPlanPageContent() {
     for (const dest of trip.destinations) {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
-      const cachedCount = trip.deepPlanData?.cityActivities?.[cityName]?.length || 0;
-      if (cachedCount > 0) continue; // Already has activities — don't regenerate
+      const cached = trip.deepPlanData?.cityActivities?.[cityName] || [];
+      const cachedCount = cached.length;
+      // Skip if has activities WITH prices (complete data). Regenerate if missing prices (stale format).
+      const hasCompletePrices = cachedCount > 0 && cached.filter(a => a.ticketPrice).length >= cachedCount * 0.5;
+      if (hasCompletePrices) continue;
       if (dest.nights < 1) continue;
       const exploreDays = Math.max(1, dest.nights);
       const userPlaces = dest.places?.map(p => p.name) || [];
