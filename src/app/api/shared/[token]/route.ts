@@ -61,9 +61,12 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     .reduce((s: number, d: any) => s + (d.selectedHotel?.pricePerNight || 0) * d.nights, 0);
   const totalNights = destinations.reduce((s: number, d: any) => s + (d.nights || 0), 0);
 
+  // Strip internal fields from from_city (old trips may still have embedded data)
+  const { _deepPlanData, _bookingDocs, ...cleanFrom } = (trip.from_city || {}) as any;
+
   return NextResponse.json({
     title: trip.title,
-    from: trip.from_city,
+    from: cleanFrom,
     fromAddress: trip.from_address,
     departureDate: trip.departure_date,
     adults: trip.adults,

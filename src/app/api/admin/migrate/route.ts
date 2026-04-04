@@ -57,14 +57,28 @@ export async function POST(req: NextRequest) {
     // Policy may already exist, that's fine
   }
 
+  // Add deep_plan_data and booking_docs columns to trips table
+  try {
+    await supabase.rpc('exec_sql', {
+      sql: `ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS deep_plan_data JSONB DEFAULT NULL;`,
+    }).maybeSingle();
+    await supabase.rpc('exec_sql', {
+      sql: `ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS booking_docs JSONB DEFAULT NULL;`,
+    }).maybeSingle();
+  } catch {
+    // RPC may not exist — SQL will be provided for manual execution
+  }
+
   return NextResponse.json({
     success: true,
-    message: 'Migration complete. share_token column and RLS policy added.',
+    message: 'Migration complete.',
     note: 'If the RPC failed, run the SQL manually in Supabase dashboard.',
     sql: [
       'ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS share_token TEXT UNIQUE;',
       'CREATE POLICY "Anyone can view shared trips" ON public.trips FOR SELECT USING (share_token IS NOT NULL);',
       'ALTER TABLE public.trip_destinations ADD COLUMN IF NOT EXISTS places JSONB DEFAULT \'[]\'::jsonb;',
+      'ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS deep_plan_data JSONB DEFAULT NULL;',
+      'ALTER TABLE public.trips ADD COLUMN IF NOT EXISTS booking_docs JSONB DEFAULT NULL;',
     ],
   });
 }

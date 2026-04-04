@@ -518,12 +518,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       const hasDeepPlanData = Object.keys(s.deepPlanData.customActivities || {}).length > 0 || Object.keys(s.deepPlanData.dayNotes || {}).length > 0 || Object.keys(s.deepPlanData.dayStartTimes || {}).length > 0 || Object.keys(s.deepPlanData.cityActivities || {}).length > 0 || Object.keys(s.deepPlanData.mealCosts || {}).length > 0 || Object.keys(s.deepPlanData.localTransport || {}).length > 0 || Object.keys(s.deepPlanData.removedActivities || {}).length > 0 || Object.keys(s.deepPlanData.editedTimes || {}).length > 0 || Object.keys(s.deepPlanData.activityOrder || {}).length > 0 || Object.keys(s.deepPlanData.dayThemes || {}).length > 0;
 
       const payload = {
-        from: {
-          ...s.from,
-          _bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
-          _deepPlanData: hasDeepPlanData ? s.deepPlanData : undefined,
-        },
+        from: s.from,
         fromAddress: s.fromAddress,
+        bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
+        deepPlanData: hasDeepPlanData ? s.deepPlanData : undefined,
         destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, additionalHotels: d.additionalHotels || [], notes: d.notes, places: d.places || [] })),
         transportLegs: s.transportLegs.map(l => ({
           type: l.type, duration: l.duration, distance: l.distance,
@@ -595,8 +593,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     // Reconstruct userPlaces from all destinations' places for Plan page editing
     const reconstructedPlaces: Place[] = loadedDests.flatMap((d: any) => d.places || []);
 
-    // Extract _bookingDocs and _deepPlanData from from_city JSONB
+    // Read deepPlanData/bookingDocs from top-level fields (new), fall back to from_city embedding (old trips)
     const { _bookingDocs, _deepPlanData, ...fromCity } = data.from || {};
+    const loadedBookingDocs = data.bookingDocs || _bookingDocs || [];
+    const loadedDeepPlanData = data.deepPlanData || _deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
 
     // If from city name is empty but address exists, extract city name from address
     let resolvedFrom = fromCity.name ? fromCity : CITIES[0];
@@ -634,8 +634,8 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       children: data.children,
       infants: data.infants,
       tripType: data.tripType,
-      bookingDocs: _bookingDocs || [],
-      deepPlanData: _deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} },
+      bookingDocs: loadedBookingDocs,
+      deepPlanData: loadedDeepPlanData,
       isSaving: false,
       isDirty: false,
       lastSavedAt: data.updatedAt ? new Date(data.updatedAt) : null,

@@ -38,6 +38,8 @@ export const tripPayloadSchema = z.object({
   children: z.number().int().min(0).max(20).default(0),
   infants: z.number().int().min(0).max(10).default(0),
   tripType: z.enum(['roundTrip', 'oneWay']).default('roundTrip'),
+  deepPlanData: z.any().optional(),
+  bookingDocs: z.any().optional(),
 });
 
 export type TripPayload = z.infer<typeof tripPayloadSchema>;

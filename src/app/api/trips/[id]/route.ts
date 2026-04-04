@@ -56,10 +56,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       selectedTrain: l.selected_train,
     }));
 
+  // Extract deepPlanData and bookingDocs: prefer dedicated columns, fall back to from_city embedding
+  const { _deepPlanData, _bookingDocs, ...cleanFromCity } = (trip.from_city || {}) as any;
+  const deepPlanData = trip.deep_plan_data || _deepPlanData || null;
+  const bookingDocs = trip.booking_docs || _bookingDocs || null;
+
   return NextResponse.json({
     tripId: trip.id,
     title: trip.title,
-    from: trip.from_city,
+    from: cleanFromCity,
     fromAddress: trip.from_address,
     departureDate: trip.departure_date,
     adults: trip.adults,
@@ -69,6 +74,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     status: trip.status,
     destinations,
     transportLegs,
+    deepPlanData,
+    bookingDocs,
     createdAt: trip.created_at,
     updatedAt: trip.updated_at,
   });
@@ -112,19 +119,27 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     ? `${tripPrefix} · ${depDate} · ${fromName} to ${lastDest}`
     : `${tripPrefix} · ${depDate}`;
 
+  // Strip _deepPlanData and _bookingDocs from from_city (now stored in dedicated columns)
+  const { _deepPlanData, _bookingDocs, ...cleanFrom } = (body.from || {}) as any;
+
   // 1. Update trip metadata (scoped to user_id for defense-in-depth)
+  const updatePayload: Record<string, any> = {
+    title,
+    from_city: cleanFrom,
+    from_address: body.fromAddress || '',
+    departure_date: body.departureDate,
+    adults: body.adults || 1,
+    children: body.children || 0,
+    infants: body.infants || 0,
+    trip_type: body.tripType || 'roundTrip',
+  };
+  // Write deepPlanData and bookingDocs to dedicated columns if provided
+  if (body.deepPlanData !== undefined) updatePayload.deep_plan_data = body.deepPlanData;
+  if (body.bookingDocs !== undefined) updatePayload.booking_docs = body.bookingDocs;
+
   const { error: updateError } = await supabase
     .from('trips')
-    .update({
-      title,
-      from_city: body.from || {},
-      from_address: body.fromAddress || '',
-      departure_date: body.departureDate,
-      adults: body.adults || 1,
-      children: body.children || 0,
-      infants: body.infants || 0,
-      trip_type: body.tripType || 'roundTrip',
-    })
+    .update(updatePayload)
     .eq('id', params.id)
     .eq('user_id', userId);
 

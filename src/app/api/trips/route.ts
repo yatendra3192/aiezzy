@@ -112,26 +112,35 @@ export async function POST(req: NextRequest) {
     ? `Trip ${tripNum} · ${depDate} · ${fromName} to ${lastDest}`
     : `Trip ${tripNum} · ${depDate}`;
 
+  // Strip _deepPlanData and _bookingDocs from from_city (now stored in dedicated columns)
+  const { _deepPlanData, _bookingDocs, ...cleanFrom } = (body.from || {}) as any;
+
   // 1. Create trip
+  const insertPayload: Record<string, any> = {
+    user_id: userId,
+    title,
+    from_city: cleanFrom,
+    from_address: body.fromAddress || '',
+    departure_date: body.departureDate,
+    adults: body.adults || 1,
+    children: body.children || 0,
+    infants: body.infants || 0,
+    trip_type: body.tripType || 'roundTrip',
+    status: 'draft',
+  };
+  // Write deepPlanData and bookingDocs to dedicated columns if provided
+  if (body.deepPlanData !== undefined) insertPayload.deep_plan_data = body.deepPlanData;
+  if (body.bookingDocs !== undefined) insertPayload.booking_docs = body.bookingDocs;
+
   const { data: trip, error: tripError } = await supabase
     .from('trips')
-    .insert({
-      user_id: userId,
-      title,
-      from_city: body.from || {},
-      from_address: body.fromAddress || '',
-      departure_date: body.departureDate,
-      adults: body.adults || 1,
-      children: body.children || 0,
-      infants: body.infants || 0,
-      trip_type: body.tripType || 'roundTrip',
-      status: 'draft',
-    })
+    .insert(insertPayload)
     .select('id')
     .single();
 
   if (tripError || !trip) {
-    return NextResponse.json({ error: tripError?.message || 'Failed to create trip' }, { status: 500 });
+    console.error('[trip-create] error:', tripError?.message);
+    return NextResponse.json({ error: 'Failed to create trip' }, { status: 500 });
   }
 
   // 2. Insert destinations

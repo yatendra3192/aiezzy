@@ -61,7 +61,7 @@ async function getSharedTrip(token: string): Promise<SharedTrip | null> {
     .reduce((s: number, d: any) => s + (d.selectedHotel?.pricePerNight || 0) * d.nights, 0);
   const totalNights = destinations.reduce((s: number, d: any) => s + (d.nights || 0), 0);
 
-  // Strip internal fields from from_city (don't leak _deepPlanData, _bookingDocs)
+  // Strip internal fields from from_city (old trips may still have embedded data)
   const { _deepPlanData, _bookingDocs, ...fromCity } = (trip.from_city || {}) as any;
 
   return {
