@@ -341,6 +341,25 @@ function DeepPlanPageContent() {
     setEditedTimesLocal(deepPlan.editedTimes || {});
   }, [trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-save: persist ALL changes to DB (5s debounce)
+  const deepPlanSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deepPlanStableRef = useRef(false);
+  // Mark stable after 2s (skip initial load changes)
+  useEffect(() => {
+    const t = setTimeout(() => { deepPlanStableRef.current = true; }, 2000);
+    return () => clearTimeout(t);
+  }, []);
+  // Watch for deepPlanData changes and auto-save
+  const deepPlanJSON = JSON.stringify(trip.deepPlanData || {});
+  useEffect(() => {
+    if (!deepPlanStableRef.current || !trip.tripId) return;
+    if (deepPlanSaveTimerRef.current) clearTimeout(deepPlanSaveTimerRef.current);
+    deepPlanSaveTimerRef.current = setTimeout(() => {
+      trip.saveTrip().catch(() => {});
+    }, 3000);
+    return () => { if (deepPlanSaveTimerRef.current) clearTimeout(deepPlanSaveTimerRef.current); };
+  }, [deepPlanJSON]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset autoFillRanRef when tripId changes so AI activities are fetched for the new trip
   useEffect(() => {
     autoFillRanRef.current = false;
