@@ -856,6 +856,24 @@ export default function TransportCompareModal({
                         }
                         return <p className="text-text-muted text-[10px] mt-1">Try a different date or check nearby airports</p>;
                       })()}
+                      <div className="mt-4 flex flex-col items-center gap-2">
+                        <a
+                          href={`https://www.google.com/travel/flights?q=Flights+from+${encodeURIComponent(fromCity)}+to+${encodeURIComponent(toCity)}+on+${date}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-[12px] font-body font-semibold rounded-lg hover:bg-blue-100 transition-colors"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          Search on Google Flights
+                        </a>
+                        <a
+                          href={`https://www.skyscanner.co.in/transport/flights/${encodeURIComponent(fromCity)}/${encodeURIComponent(toCity)}/${date.replace(/-/g, '').slice(2)}/`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-teal-50 border border-teal-200 text-teal-700 text-[12px] font-body font-semibold rounded-lg hover:bg-teal-100 transition-colors"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                          Search on Skyscanner
+                        </a>
+                      </div>
                     </div>
                   ) : null}
 
