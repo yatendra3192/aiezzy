@@ -89,8 +89,7 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
     // Transport: null for each leg (auto-select will pick flights/trains)
     const transports = destinations.map(() => null);
 
-    // Use buildFullTrip for atomic state update — no race condition
-    trip.buildFullTrip({
+    const tripData = {
       from: { name: originCity, country: originCountry, fullName: `${originCity}, ${originCountry}`, parentCity: originCity },
       fromAddress: `${originCity}, ${originCountry}`,
       destinations,
@@ -99,12 +98,17 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
       adults: s.travelers?.adults || trip.adults || 1,
       children: s.travelers?.children || trip.children || 0,
       infants: s.travelers?.infants || trip.infants || 0,
-      tripType: s.tripType === 'oneWay' ? 'oneWay' : 'roundTrip',
-    });
+      tripType: (s.tripType === 'oneWay' ? 'oneWay' : 'roundTrip') as 'roundTrip' | 'oneWay',
+    };
+
+    // Store in sessionStorage so plan page can pick it up even if context hasn't committed
+    try { sessionStorage.setItem('pendingAIPlan', JSON.stringify(tripData)); } catch {}
+
+    // Set context state
+    trip.buildFullTrip(tripData);
 
     onClose();
-    // Navigate after state has committed — prevents plan page seeing empty context
-    setTimeout(() => router.replace('/plan'), 0);
+    router.replace('/plan');
   };
 
   const handleClose = () => {

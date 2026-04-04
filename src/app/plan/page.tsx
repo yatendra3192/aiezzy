@@ -267,8 +267,22 @@ function PlanPageContent() {
     if (trip.fromAddress) setEditingFrom(false);
   }, [trip.fromAddress]);
 
-  // Restore trip from URL param, context, or sessionStorage on page reload
+  // Restore trip from URL param, context, sessionStorage, or pending AI plan
   useEffect(() => {
+    // Check for pending AI plan (from AISuggestModal on my-trips page)
+    try {
+      const pending = sessionStorage.getItem('pendingAIPlan');
+      if (pending) {
+        sessionStorage.removeItem('pendingAIPlan');
+        const data = JSON.parse(pending);
+        if (data.destinations?.length > 0) {
+          data.tripType = data.tripType === 'oneWay' ? 'oneWay' : 'roundTrip';
+          trip.buildFullTrip(data as Parameters<typeof trip.buildFullTrip>[0]);
+          return;
+        }
+      }
+    } catch {}
+
     if (trip.destinations.length > 0 || trip.userPlaces.length > 0) return; // Already have data in context
 
     const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
