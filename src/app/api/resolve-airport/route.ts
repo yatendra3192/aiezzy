@@ -154,12 +154,17 @@ export async function GET(req: NextRequest) {
       : allCommercial;
     const pool = sameCountry.length >= 3 ? sameCountry : allCommercial;
 
-    // Smart selection: always include closest 2 airports (any type — catches JMK for Mykonos)
-    // then fill with large airports for scraper compatibility
-    const closest = pool.slice(0, 2);
-    const largeAfter = pool.slice(2).filter(a => a.type === 'large_airport');
+    // Smart selection: closest airport + nearest large airport (major hub) + rest
+    // This ensures small cities near major hubs get flights (Agra→DEL, Byron Bay→BNE/SYD)
+    const closest = pool.slice(0, 1); // nearest airport (any type)
+    const nearestLarge = pool.find(a => a.type === 'large_airport' && a.iata_code !== closest[0]?.iata_code);
     const seen = new Set(closest.map(a => a.iata_code));
-    const remaining = largeAfter.filter(a => !seen.has(a.iata_code));
+    if (nearestLarge && !seen.has(nearestLarge.iata_code)) {
+      closest.push(nearestLarge);
+      seen.add(nearestLarge.iata_code);
+    }
+    // Fill remaining with closest airports not yet included
+    const remaining = pool.filter(a => !seen.has(a.iata_code)).slice(0, 8);
     const commercial = [...closest, ...remaining];
 
     // Cache the result
