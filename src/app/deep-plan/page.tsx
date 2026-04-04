@@ -373,17 +373,16 @@ function DeepPlanPageContent() {
   const [autoFillProgress, setAutoFillProgress] = useState<{ total: number; done: number; current: string; cities: Array<{ name: string; done: boolean }> } | null>(null);
   const autoFillRanRef = useRef(false);
 
-  // On mount / trip load: auto-fetch AI activities for ALL cities that need them
+  // On mount / trip load: auto-fetch AI activities ONLY for cities with NO cached data
   useEffect(() => {
     if (trip.destinations.length === 0 || autoFillRanRef.current) return;
-    // Collect cities that need AI activities
+    // Collect cities that need AI activities — only cities with ZERO cached activities
     const citiesNeeded: Array<{ cityName: string; country: string; days: number; userPlaces: string[]; hotel?: string; timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }> }> = [];
     for (const dest of trip.destinations) {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
       const cachedCount = trip.deepPlanData?.cityActivities?.[cityName]?.length || 0;
-      const targetCount = Math.max(1, dest.nights) * 7 + 3;
-      if (cachedCount >= targetCount * 0.7) continue;
+      if (cachedCount > 0) continue; // Already has activities — don't regenerate
       if (dest.nights < 1) continue;
       const exploreDays = Math.max(1, dest.nights);
       const userPlaces = dest.places?.map(p => p.name) || [];
