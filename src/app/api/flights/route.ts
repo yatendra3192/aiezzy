@@ -256,7 +256,7 @@ interface AirportCandidate {
   countryCode?: string; // "IN", "FR", etc.
 }
 
-async function resolveToAirports(input: string, baseUrl: string): Promise<AirportCandidate[]> {
+async function resolveToAirports(input: string, _baseUrl?: string): Promise<AirportCandidate[]> {
   // Fast path: already an IATA code — look up name/city from catalog
   if (/^[A-Z]{3}$/.test(input)) {
     try {
@@ -276,21 +276,52 @@ async function resolveToAirports(input: string, baseUrl: string): Promise<Airpor
     return [{ code: input, name: '', city: '', distance: 0 }];
   }
 
-  // For city names: always try Supabase to get multiple nearby airports
-  // This enables parallel search (try IDR, UDR, BDQ simultaneously)
+  // For city names: resolve via Supabase PostGIS to get multiple nearby airports
   try {
-    const res = await fetch(`${baseUrl}/api/resolve-airport?city=${encodeURIComponent(input)}`);
-    const data = await res.json();
-    if (data.airports && data.airports.length > 0) {
-      return data.airports.map((a: any) => ({
-        code: a.iata_code,
-        name: a.name,
-        city: a.municipality || a.name?.split(' ')[0] || '',
-        distance: a.distance_km,
-        countryCode: a.country_code || '',
-      }));
+    const catalogUrl = process.env.CATALOG_SUPABASE_URL;
+    const catalogKey = process.env.CATALOG_SUPABASE_ANON_KEY;
+    const googleKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (catalogUrl && catalogKey && googleKey) {
+      // Geocode city name
+      const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(input + ' city')}&key=${googleKey}`, { signal: AbortSignal.timeout(10000) });
+      const geoData = await geoRes.json();
+      if (geoData.status === 'OK' && geoData.results?.[0]) {
+        const lat = geoData.results[0].geometry.location.lat;
+        const lng = geoData.results[0].geometry.location.lng;
+        // Query PostGIS for nearby airports
+        const rpcRes = await fetch(`${catalogUrl}/rest/v1/rpc/nearby_airports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` },
+          body: JSON.stringify({ lat, lng, radius_km: 1000 }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const allAirports = await rpcRes.json();
+        if (Array.isArray(allAirports) && allAirports.length > 0) {
+          const MILITARY_KEYWORDS = ['air force', 'air base', 'afb', 'military', 'naval air', 'army airfield', 'joint base'];
+          const commercial = allAirports
+            .filter((a: any) => a.iata_code && a.iata_code.length === 3 && (a.type === 'large_airport' || a.type === 'medium_airport') && !MILITARY_KEYWORDS.some(kw => (a.name || '').toLowerCase().includes(kw)))
+            .slice(0, 10);
+          // Ensure nearest large airport is included
+          const closest = commercial.slice(0, 1);
+          const nearestLarge = commercial.find((a: any) => a.type === 'large_airport' && a.iata_code !== closest[0]?.iata_code);
+          const seen = new Set(closest.map((a: any) => a.iata_code));
+          if (nearestLarge && !seen.has(nearestLarge.iata_code)) { closest.push(nearestLarge); seen.add(nearestLarge.iata_code); }
+          const rest = commercial.filter((a: any) => !seen.has(a.iata_code)).slice(0, 5);
+          const result = [...closest, ...rest];
+          if (result.length > 0) {
+            // Get municipality data
+            const codes = result.map((a: any) => `"${a.iata_code}"`).join(',');
+            try {
+              const muniRes = await fetch(`${catalogUrl}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code`, { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } });
+              const muniData = await muniRes.json();
+              const muniMap = new Map((Array.isArray(muniData) ? muniData : []).map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
+              return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: muniMap.get(a.iata_code)?.muni || '', distance: Math.round(a.distance_km || 0), countryCode: muniMap.get(a.iata_code)?.cc || '' }));
+            } catch { return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: '', distance: Math.round(a.distance_km || 0) })); }
+          }
+        }
+      }
     }
-  } catch {}
+  } catch (e) { console.error('[flights] Airport resolve error:', e); }
 
   // Fallback: static resolution (curated map + OpenFlights DB)
   const staticCode = resolveAirportCode(input);
