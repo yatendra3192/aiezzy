@@ -23,7 +23,7 @@ No test runner or linter configured.
 
 **Next.js 14 App Router** — all pages `"use client"`. Responsive: mobile (430px) → desktop (680-900px via `md:`).
 
-**Flow:** `/` (sign-in) → `/signup` → `/my-trips` (dashboard) → `/plan` (trip builder) → `/route` (transport/hotel selection) → `/deep-plan` (day-by-day itinerary). Additional pages: `/settings`, `/admin`, `/shared/[token]`, `/auth/*`.
+**Flow:** `/` (sign-in) → `/signup` → `/my-trips` (dashboard) → `/plan` (trip builder) → `/route` (transport/hotel selection) → `/deep-plan` (day-by-day itinerary). Additional pages: `/settings`, `/admin`, `/shared/[token]` (SSR with `generateMetadata` for OG tags), `/auth/*`.
 
 **Trip IDs in URLs:** All trip pages use `?id=xxx` query params. Pages use `useSearchParams()` wrapped in `<Suspense>` boundaries. Priority: URL param > context tripId > sessionStorage.
 
@@ -39,7 +39,7 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 
 **ALL API routes require `getServerSession`** — returns 401 for unauthenticated requests. This includes `/api/flights`, `/api/trains`, `/api/nearby`, `/api/places`, `/api/weather`, `/api/resolve-airport`, `/api/directions`, `/api/place-photo`, all AI routes, and trip CRUD. Exception: `/api/weather` allows unauthenticated access when `?shareToken=` param is present (for shared trip pages).
 
-**Rate limiting** (`src/lib/rateLimit.ts`): In-memory sliding-window rate limiter on all auth endpoints. Limits: signup 5/hr/IP, forgot-password 3/hr/email + 10/hr/IP, change-password 5/15min/user, reset-password 5/15min/IP, resend-verification 3/hr/email. Resets on deploy. For scale, swap to `@upstash/ratelimit` with Redis.
+**Rate limiting** (`src/lib/rateLimit.ts`): In-memory fixed-window rate limiter on all auth endpoints. Limits: signup 5/hr/IP, forgot-password 3/hr/email + 10/hr/IP, change-password 5/15min/user, reset-password 5/15min/IP, resend-verification 3/hr/email. Resets on deploy. For scale, swap to `@upstash/ratelimit` with Redis.
 
 **Password policy** (`src/lib/validatePassword.ts`): Min 10 chars, 1 uppercase, 1 lowercase, 1 number. Used in signup, change-password, reset-password (both server API and client-side forms in `/signup`, `/settings`, `/auth/reset-callback`).
 
@@ -59,17 +59,24 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 
 **Supabase Storage**: `booking-docs` bucket for uploaded booking PDFs/images. Path: `userId/tripId/timestamp-filename`. Signed URLs (1-year expiry). Auto-creates bucket on first upload via service role.
 
-**JSONB embedding pattern (no-migration):** Extra data stored inside existing JSONB columns:
+**Dedicated columns:** `trips.deep_plan_data` and `trips.booking_docs` (JSONB) store deep plan and booking data separately from `from_city`. Run `POST /api/admin/migrate` to create these columns.
+
+**JSONB embedding pattern (legacy + current):** Extra data stored inside existing JSONB columns:
 - `places` → `_places` inside `trip_destinations.city` JSONB
 - `additionalHotels` → `_additionalHotels` inside `trip_destinations.selected_hotel` JSONB
 - `resolvedAirports` → `_resolvedAirports` inside `trip_transport_legs.selected_flight` JSONB
-- `bookingDocs` → `_bookingDocs` inside `trips.from_city` JSONB
-- `deepPlanData` → `_deepPlanData` inside `trips.from_city` JSONB
-On save, API embeds; on load, extracts and returns separately. **Always null-safe** — old trips without new fields must not crash (use `|| {}`, `|| []`, `?.`).
+- ~~`bookingDocs`/`deepPlanData` were embedded in `trips.from_city`~~ — now use dedicated columns. On load, API checks dedicated columns first, falls back to `from_city` embedding for old trips.
+On save, API embeds remaining fields; on load, extracts and returns separately. **Always null-safe** — old trips without new fields must not crash (use `|| {}`, `|| []`, `?.`).
 
 ### State Management
 
-**TripContext** (`src/context/TripContext.tsx`): Core trip state with two data flows:
+**TripContext** (`src/context/TripContext.tsx`): Core trip state split into three React contexts for performance:
+- `TripActionsContext` — stable action functions (never re-renders). Access via `useTripActions()`.
+- `TripStateContext` — trip data (re-renders on change). Access via `useTripState()`.
+- `TripContext` — combined backward-compatible context. Access via `useTrip()` (re-renders on any change).
+All 34 action callbacks have `[]` deps and are `useMemo`'d into a stable actions object. Components that only need actions should use `useTripActions()` to avoid unnecessary re-renders.
+
+Two data flows:
 - **Places flow**: `userPlaces` → `addPlace`/`removePlace`/`reorderPlaces`/`updatePlaceNights` → `groupPlacesIntoCities()` auto-groups by `parentCity`
 - **Destinations flow** (templates/AI): `addDestination` directly adds cities with `places: []`
 - `groupPlacesIntoCities()` has two-pass normalization: normalizes parentCity from fullName when API fails, then cross-references against known city groups
@@ -80,7 +87,7 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
 - `deepPlanData: DeepPlanData` — custom activities, day notes, start times, AI city activities cache, day themes persisted via `_deepPlanData` JSONB embedding
 - **`saveTrip` concurrency safety:** Uses `stateRef` (always latest state) instead of `setState` hack. `saveMutexRef` queues saves sequentially via promise chain. `isDirty` only cleared if state hasn't changed during the network round-trip. Checks `tripId` staleness to prevent overwriting a different trip loaded mid-save.
-- **`moveDestination`/`removeDestination` sync transport legs:** Moving destinations swaps the corresponding transport legs and clears their selections (from/to cities changed). Removing a destination clears the adjacent leg's selections that now spans a different city pair.
+- **Destination reorder/move/remove syncs transport legs:** `moveDestination` swaps corresponding legs + clears the adjacent leg after the swap pair. `removeDestination` clears the leg that slides into the gap. `reorderDestinations` clears ALL transport leg selections (every city pair changes). All three prevent stale flight/train data from persisting on wrong city pairs.
 
 **CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
 
@@ -148,7 +155,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Meal blocks:** Orange pill/chip design with distinct emojis (coffee=breakfast, plate=lunch, moon=dinner) and contextual hints. Warning boxes (red) for "Leave by" and "Board" time-sensitive notes.
 
-**Sidebar (desktop):** Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
+**Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx`. Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
 
 **City cards:** White card with gradient visual panel (city code watermark), hotel rating+price, action buttons (View on map, Explore suggestions), activity/day count stats.
 
