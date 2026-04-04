@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
@@ -20,6 +22,9 @@ const NEARBY_CACHE_TTL = 60 * 60 * 1000; // 1 hour
  *   currency  - currency code (default INR)
  */
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ places: [], error: 'Unauthorized' }, { status: 401 });
+
   const location = req.nextUrl.searchParams.get('location') || '';
   const radius = req.nextUrl.searchParams.get('radius') || '5000';
   const checkIn = req.nextUrl.searchParams.get('checkIn') || '';

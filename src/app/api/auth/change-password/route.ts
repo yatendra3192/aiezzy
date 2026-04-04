@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/rateLimit';
+import { validatePassword } from '@/lib/validatePassword';
 
 /** POST /api/auth/change-password - Change user password */
 export async function POST(req: NextRequest) {
@@ -15,6 +17,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No user ID' }, { status: 401 });
   }
 
+  // Rate limit: 5 password change attempts per user per 15 minutes
+  const rl = rateLimit(`changepw:${userId}`, 5, 15 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Too many attempts. Please try again later.' }, { status: 429 });
+  }
+
   const body = await req.json();
   const { currentPassword, newPassword } = body;
 
@@ -22,8 +30,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Both current and new passwords are required' }, { status: 400 });
   }
 
-  if (newPassword.length < 8) {
-    return NextResponse.json({ error: 'New password must be at least 8 characters' }, { status: 400 });
+  const pwError = validatePassword(newPassword);
+  if (pwError) {
+    return NextResponse.json({ error: pwError }, { status: 400 });
   }
 
   const supabase = createServiceClient();
@@ -49,7 +58,8 @@ export async function POST(req: NextRequest) {
   });
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    console.error('[change-password] updateUser error:', updateError.message);
+    return NextResponse.json({ error: 'Failed to update password. Please try again.' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

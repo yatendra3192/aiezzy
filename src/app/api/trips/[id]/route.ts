@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
+import { validateTripPayload } from '@/lib/tripValidation';
 
 /** GET /api/trips/[id] - Load a single trip with all data */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -79,7 +80,12 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const body = await req.json();
+  const raw = await req.json();
+  const validation = validateTripPayload(raw);
+  if (!validation.success) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+  const body = validation.data;
   const supabase = createServiceClient();
 
   // Verify trip belongs to user
@@ -106,7 +112,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     ? `${tripPrefix} · ${depDate} · ${fromName} to ${lastDest}`
     : `${tripPrefix} · ${depDate}`;
 
-  // 1. Update trip metadata
+  // 1. Update trip metadata (scoped to user_id for defense-in-depth)
   const { error: updateError } = await supabase
     .from('trips')
     .update({
@@ -119,12 +125,21 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       infants: body.infants || 0,
       trip_type: body.tripType || 'roundTrip',
     })
-    .eq('id', params.id);
+    .eq('id', params.id)
+    .eq('user_id', userId);
 
-  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
+  if (updateError) {
+    console.error('[trip-update] metadata error:', updateError.message);
+    return NextResponse.json({ error: 'Failed to update trip' }, { status: 500 });
+  }
 
-  // 2. Replace destinations (delete all, re-insert)
-  await supabase.from('trip_destinations').delete().eq('trip_id', params.id);
+  // 2. Replace destinations (delete all, re-insert) — check errors on each step
+  const { error: delDestError } = await supabase.from('trip_destinations').delete().eq('trip_id', params.id);
+  if (delDestError) {
+    console.error('[trip-update] delete destinations error:', delDestError.message);
+    return NextResponse.json({ error: 'Failed to update destinations' }, { status: 500 });
+  }
+
   if (body.destinations?.length > 0) {
     const destRows = body.destinations.map((d: any, i: number) => ({
       trip_id: params.id,
@@ -133,11 +148,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       nights: d.nights ?? 2,
       selected_hotel: d.selectedHotel ? { ...d.selectedHotel, _additionalHotels: d.additionalHotels || [] } : null,
     }));
-    await supabase.from('trip_destinations').insert(destRows);
+    const { error: insDestError } = await supabase.from('trip_destinations').insert(destRows);
+    if (insDestError) {
+      console.error('[trip-update] insert destinations error:', insDestError.message);
+      return NextResponse.json({ error: 'Failed to save destinations' }, { status: 500 });
+    }
   }
 
-  // 3. Replace transport legs
-  await supabase.from('trip_transport_legs').delete().eq('trip_id', params.id);
+  // 3. Replace transport legs — check errors on each step
+  const { error: delLegError } = await supabase.from('trip_transport_legs').delete().eq('trip_id', params.id);
+  if (delLegError) {
+    console.error('[trip-update] delete transport legs error:', delLegError.message);
+    return NextResponse.json({ error: 'Failed to update transport' }, { status: 500 });
+  }
+
   if (body.transportLegs?.length > 0) {
     const legRows = body.transportLegs.map((l: any, i: number) => ({
       trip_id: params.id,
@@ -150,13 +174,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       selected_flight: l.selectedFlight || null,
       selected_train: l.selectedTrain || null,
     }));
-    await supabase.from('trip_transport_legs').insert(legRows);
+    const { error: insLegError } = await supabase.from('trip_transport_legs').insert(legRows);
+    if (insLegError) {
+      console.error('[trip-update] insert transport legs error:', insLegError.message);
+      return NextResponse.json({ error: 'Failed to save transport' }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ id: params.id, updated: true });
 }
 
-/** DELETE /api/trips/[id] - Delete a trip */
+/** DELETE /api/trips/[id] - Delete a trip and clean up storage files */
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -164,13 +192,30 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const userId = (session.user as any).supabaseUserId;
   const supabase = createServiceClient();
 
+  // Clean up booking documents in storage before deleting the trip
+  try {
+    const { data: files } = await supabase.storage
+      .from('booking-docs')
+      .list(`${userId}/${params.id}`);
+    if (files && files.length > 0) {
+      const paths = files.map(f => `${userId}/${params.id}/${f.name}`);
+      await supabase.storage.from('booking-docs').remove(paths);
+    }
+  } catch {
+    // Storage cleanup is best-effort — don't block trip deletion
+    console.error('[trip-delete] storage cleanup failed for', params.id);
+  }
+
   const { error } = await supabase
     .from('trips')
     .delete()
     .eq('id', params.id)
     .eq('user_id', userId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[trip-delete] error:', error.message);
+    return NextResponse.json({ error: 'Failed to delete trip' }, { status: 500 });
+  }
 
   return NextResponse.json({ deleted: true });
 }

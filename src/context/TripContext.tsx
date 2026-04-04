@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { City, Destination, TransportLeg, Hotel, HotelStay, Flight, TrainOption, Place, CITIES, DEFAULT_TRANSPORT_LEGS } from '@/data/mockData';
 
 export interface BookingDoc {
@@ -135,6 +135,13 @@ function dirty(s: TripState): TripState {
 export function TripProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<TripState>(defaultState);
 
+  // Ref always holds the latest state — used by saveTrip to avoid stale closures
+  const stateRef = useRef<TripState>(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
+
+  // Mutex: queues saves sequentially so concurrent calls don't race
+  const saveMutexRef = useRef<Promise<string | null>>(Promise.resolve(null));
+
   const setFrom = useCallback((city: City) => setState(s => dirty({ ...s, from: city })), []);
   const setFromAddress = useCallback((address: string) => setState(s => dirty({ ...s, fromAddress: address })), []);
 
@@ -171,7 +178,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       if (idx < 0) return s;
       const newDests = s.destinations.filter(d => d.id !== id);
       const newLegs = [...s.transportLegs];
-      if (idx < newLegs.length) newLegs.splice(idx, 1);
+      if (idx < newLegs.length) {
+        newLegs.splice(idx, 1);
+        // The leg that now occupies position idx has wrong from/to cities — clear its selections
+        if (idx < newLegs.length) {
+          newLegs[idx] = { ...newLegs[idx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
+        }
+      }
       return dirty({ ...s, destinations: newDests, transportLegs: newLegs });
     });
   }, []);
@@ -187,7 +200,15 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       if (swapIdx < 0 || swapIdx >= s.destinations.length) return s;
       const newDests = [...s.destinations];
       [newDests[idx], newDests[swapIdx]] = [newDests[swapIdx], newDests[idx]];
-      return dirty({ ...s, destinations: newDests });
+      // Swap corresponding transport legs and clear their selections (cities changed)
+      const newLegs = [...s.transportLegs];
+      if (idx < newLegs.length && swapIdx < newLegs.length) {
+        [newLegs[idx], newLegs[swapIdx]] = [newLegs[swapIdx], newLegs[idx]];
+        // Clear selections on swapped legs since their from/to cities are now different
+        newLegs[idx] = { ...newLegs[idx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
+        newLegs[swapIdx] = { ...newLegs[swapIdx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
+      }
+      return dirty({ ...s, destinations: newDests, transportLegs: newLegs });
     });
   }, []);
 
@@ -487,58 +508,77 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Save trip to database ──────────────────────────────────────────────────
   const saveTrip = useCallback(async (): Promise<string | null> => {
-    // Get the LATEST state using a ref-like pattern via setState
-    let currentState: TripState | null = null;
-    setState(s => { currentState = s; return { ...s, isSaving: true }; });
+    const doSave = async (): Promise<string | null> => {
+      // Read the latest state from ref — no stale closure or setState hack needed
+      const s = stateRef.current;
+      const saveTripId = s.tripId; // Capture tripId at save start for staleness check
 
-    // Wait a tick for setState to complete
-    await new Promise(r => setTimeout(r, 0));
+      setState(prev => ({ ...prev, isSaving: true }));
 
-    if (!currentState) return null;
-    const s = currentState as TripState;
+      const hasDeepPlanData = Object.keys(s.deepPlanData.customActivities || {}).length > 0 || Object.keys(s.deepPlanData.dayNotes || {}).length > 0 || Object.keys(s.deepPlanData.dayStartTimes || {}).length > 0 || Object.keys(s.deepPlanData.cityActivities || {}).length > 0 || Object.keys(s.deepPlanData.mealCosts || {}).length > 0 || Object.keys(s.deepPlanData.localTransport || {}).length > 0 || Object.keys(s.deepPlanData.removedActivities || {}).length > 0 || Object.keys(s.deepPlanData.editedTimes || {}).length > 0 || Object.keys(s.deepPlanData.activityOrder || {}).length > 0 || Object.keys(s.deepPlanData.dayThemes || {}).length > 0;
 
-    const payload = {
-      from: {
-        ...s.from,
-        _bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
-        _deepPlanData: (Object.keys(s.deepPlanData.customActivities || {}).length > 0 || Object.keys(s.deepPlanData.dayNotes || {}).length > 0 || Object.keys(s.deepPlanData.dayStartTimes || {}).length > 0 || Object.keys(s.deepPlanData.cityActivities || {}).length > 0 || Object.keys(s.deepPlanData.mealCosts || {}).length > 0 || Object.keys(s.deepPlanData.localTransport || {}).length > 0 || Object.keys(s.deepPlanData.removedActivities || {}).length > 0 || Object.keys(s.deepPlanData.editedTimes || {}).length > 0 || Object.keys(s.deepPlanData.activityOrder || {}).length > 0) ? s.deepPlanData : undefined,
-      },
-      fromAddress: s.fromAddress,
-      destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, additionalHotels: d.additionalHotels || [], notes: d.notes, places: d.places || [] })),
-      transportLegs: s.transportLegs.map(l => ({
-        type: l.type, duration: l.duration, distance: l.distance,
-        departureTime: l.departureTime, arrivalTime: l.arrivalTime,
-        selectedFlight: l.selectedFlight ? { ...l.selectedFlight, _resolvedAirports: l.resolvedAirports || undefined } : null,
-        selectedTrain: l.selectedTrain,
-      })),
-      departureDate: s.departureDate,
-      adults: s.adults,
-      children: s.children,
-      infants: s.infants,
-      tripType: s.tripType,
+      const payload = {
+        from: {
+          ...s.from,
+          _bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
+          _deepPlanData: hasDeepPlanData ? s.deepPlanData : undefined,
+        },
+        fromAddress: s.fromAddress,
+        destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, additionalHotels: d.additionalHotels || [], notes: d.notes, places: d.places || [] })),
+        transportLegs: s.transportLegs.map(l => ({
+          type: l.type, duration: l.duration, distance: l.distance,
+          departureTime: l.departureTime, arrivalTime: l.arrivalTime,
+          selectedFlight: l.selectedFlight ? { ...l.selectedFlight, _resolvedAirports: l.resolvedAirports || undefined } : null,
+          selectedTrain: l.selectedTrain,
+        })),
+        departureDate: s.departureDate,
+        adults: s.adults,
+        children: s.children,
+        infants: s.infants,
+        tripType: s.tripType,
+      };
+
+      try {
+        const method = s.tripId ? 'PUT' : 'POST';
+        const url = s.tripId ? `/api/trips/${s.tripId}` : '/api/trips';
+        const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Save failed');
+
+        const tripId = data.id || s.tripId;
+        setState(prev => {
+          // If a different trip was loaded while we were saving, don't overwrite it
+          if (prev.tripId && saveTripId && prev.tripId !== saveTripId) {
+            return { ...prev, isSaving: false };
+          }
+          // Only clear isDirty if state hasn't changed since we started saving
+          const stateChangedDuringSave = stateRef.current !== s;
+          return {
+            ...prev,
+            tripId,
+            isSaving: false,
+            isDirty: stateChangedDuringSave ? prev.isDirty : false,
+            lastSavedAt: new Date(),
+          };
+        });
+        try { sessionStorage.setItem('currentTripId', tripId); } catch {}
+        return tripId;
+      } catch (e) {
+        setState(prev => ({ ...prev, isSaving: false }));
+        console.error('Save trip failed:', e);
+        return null;
+      }
     };
 
-    try {
-      const method = s.tripId ? 'PUT' : 'POST';
-      const url = s.tripId ? `/api/trips/${s.tripId}` : '/api/trips';
-      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      const data = await res.json();
-
-      if (!res.ok) throw new Error(data.error || 'Save failed');
-
-      const tripId = data.id || s.tripId;
-      setState(prev => ({ ...prev, tripId, isSaving: false, isDirty: false, lastSavedAt: new Date() }));
-      try { sessionStorage.setItem('currentTripId', tripId); } catch {}
-      return tripId;
-    } catch (e) {
-      setState(prev => ({ ...prev, isSaving: false }));
-      console.error('Save trip failed:', e);
-      return null;
-    }
+    // Mutex: queue saves sequentially — prevents concurrent save races
+    saveMutexRef.current = saveMutexRef.current.then(doSave, doSave);
+    return saveMutexRef.current;
   }, []);
 
   // ─── Load trip from database ────────────────────────────────────────────────
   const loadTrip = useCallback(async (tripId: string) => {
+    removedReturnLegRef.current = null; // Clear stale ref from previous trip
     const res = await fetch(`/api/trips/${tripId}`);
     if (!res.ok) throw new Error('Failed to load trip');
     const data = await res.json();
@@ -605,6 +645,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Reset to new trip ──────────────────────────────────────────────────────
   const resetTrip = useCallback(() => {
+    removedReturnLegRef.current = null; // Clear stale ref
     setState({
       ...defaultState,
       destinations: [],

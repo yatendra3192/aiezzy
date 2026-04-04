@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const CATALOG_URL = process.env.CATALOG_SUPABASE_URL || '';
@@ -28,6 +30,9 @@ interface NearbyAirport {
  * The flights route then tries the top 3 in parallel.
  */
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ airports: [], error: 'Unauthorized' }, { status: 401 });
+
   const city = req.nextUrl.searchParams.get('city') || '';
 
   if (!city || !GOOGLE_API_KEY || !CATALOG_URL) {

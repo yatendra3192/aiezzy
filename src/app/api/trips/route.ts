@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { createServiceClient } from '@/lib/supabase/server';
+import { validateTripPayload } from '@/lib/tripValidation';
 
 /** GET /api/trips - List user's trips */
 export async function GET() {
@@ -86,7 +87,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No user ID' }, { status: 401 });
   }
 
-  const body = await req.json();
+  const raw = await req.json();
+  const validation = validateTripPayload(raw);
+  if (!validation.success) {
+    return NextResponse.json({ error: validation.error }, { status: 400 });
+  }
+  const body = validation.data;
   const supabase = createServiceClient();
 
   // Generate title: "Trip 4 · 26 Jan · Mumbai to Paris"

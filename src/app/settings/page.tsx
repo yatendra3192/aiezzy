@@ -89,12 +89,12 @@ export default function SettingsPage() {
       setPasswordMsg({ type: 'error', text: 'Enter your current password' });
       return;
     }
-    if (newPassword.length < 8) {
-      setPasswordMsg({ type: 'error', text: 'New password must be at least 8 characters' });
+    if (newPassword.length < 10) {
+      setPasswordMsg({ type: 'error', text: 'New password must be at least 10 characters' });
       return;
     }
-    if (!/^(?=.*[a-zA-Z])(?=.*[0-9])/.test(newPassword)) {
-      setPasswordMsg({ type: 'error', text: 'Password must contain letters and numbers' });
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setPasswordMsg({ type: 'error', text: 'Password must contain uppercase, lowercase, and a number' });
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -278,10 +278,10 @@ export default function SettingsPage() {
                     value={newPassword}
                     onChange={e => { setNewPassword(e.target.value); setPasswordMsg(null); }}
                     className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all input-glow focus:border-accent-cyan"
-                    placeholder="At least 8 characters"
+                    placeholder="At least 10 characters"
                   />
-                  {newPassword.length > 0 && newPassword.length < 8 && (
-                    <p className="text-red-500 text-[10px] font-body mt-1">Must be at least 8 characters</p>
+                  {newPassword.length > 0 && newPassword.length < 10 && (
+                    <p className="text-red-500 text-[10px] font-body mt-1">Must be at least 10 characters</p>
                   )}
                 </div>
                 <div>

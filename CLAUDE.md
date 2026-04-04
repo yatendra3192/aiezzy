@@ -27,9 +27,27 @@ No test runner or linter configured.
 
 **Trip IDs in URLs:** All trip pages use `?id=xxx` query params. Pages use `useSearchParams()` wrapped in `<Suspense>` boundaries. Priority: URL param > context tripId > sessionStorage.
 
-### Auth
+### Auth & Security
 
 NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + GoogleProvider. Signup via `POST /api/auth/signup`.
+
+**Middleware** (`src/middleware.ts`): Server-side route protection for `/my-trips`, `/plan`, `/route`, `/deep-plan`, `/settings`. Redirects unauthenticated users to `/`.
+
+**Security headers** in `next.config.mjs`: X-Frame-Options DENY, HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, Content-Security-Policy (whitelists Google Maps/Places, Supabase, Open-Meteo, Amadeus, GA, Sentry).
+
+**Admin routes** use session-based auth with email whitelist (`ADMIN_EMAILS` array), NOT query-param secrets.
+
+**ALL API routes require `getServerSession`** — returns 401 for unauthenticated requests. This includes `/api/flights`, `/api/trains`, `/api/nearby`, `/api/places`, `/api/weather`, `/api/resolve-airport`, `/api/directions`, `/api/place-photo`, all AI routes, and trip CRUD. Exception: `/api/weather` allows unauthenticated access when `?shareToken=` param is present (for shared trip pages).
+
+**Rate limiting** (`src/lib/rateLimit.ts`): In-memory sliding-window rate limiter on all auth endpoints. Limits: signup 5/hr/IP, forgot-password 3/hr/email + 10/hr/IP, change-password 5/15min/user, reset-password 5/15min/IP, resend-verification 3/hr/email. Resets on deploy. For scale, swap to `@upstash/ratelimit` with Redis.
+
+**Password policy** (`src/lib/validatePassword.ts`): Min 10 chars, 1 uppercase, 1 lowercase, 1 number. Used in signup, change-password, reset-password (both server API and client-side forms in `/signup`, `/settings`, `/auth/reset-callback`).
+
+**Input validation** (`src/lib/tripValidation.ts`): Zod schema validates trip create/update payloads — caps `destinations` at 50, `transportLegs` at 51, `adults` 1-20, enforces YYYY-MM-DD date format, string length limits. Applied to both `POST /api/trips` and `PUT /api/trips/[id]`.
+
+**Env validation** (`src/instrumentation.ts`): Validates required env vars at server startup, warns about weak `NEXTAUTH_SECRET`.
+
+**Error boundaries:** Route-level `error.tsx` files in `/route`, `/deep-plan`, `/plan`, `/my-trips`, `/settings` — each with page-specific messaging and navigation. Uses `reportError()` from `src/lib/errorReporter.ts`.
 
 ### Database
 
@@ -53,12 +71,14 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - **Places flow**: `userPlaces` → `addPlace`/`removePlace`/`reorderPlaces`/`updatePlaceNights` → `groupPlacesIntoCities()` auto-groups by `parentCity`
 - **Destinations flow** (templates/AI): `addDestination` directly adds cities with `places: []`
 - `groupPlacesIntoCities()` has two-pass normalization: normalizes parentCity from fullName when API fails, then cross-references against known city groups
-- `setTripType` preserves removed return leg in `removedReturnLegRef` for restoration when toggling back to round trip
+- `setTripType` preserves removed return leg in `removedReturnLegRef` for restoration when toggling back to round trip. **Ref is cleared on `loadTrip`/`resetTrip`** to prevent cross-trip contamination.
 - Transport pricing: adults + children pay full fare, infants pay 15% on **flights only**. Trains: `price × (adults + children)` (no infant surcharge). Deep plan summary uses same formula.
 - Hotel rooms: `Math.ceil((adults + children) / 2)` rooms per hotel
 - `buildFullTrip()` creates entire trip (destinations + transport + hotels) in one atomic `setState` — avoids React batching issues with sequential `addDestination` calls
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
 - `deepPlanData: DeepPlanData` — custom activities, day notes, start times, AI city activities cache, day themes persisted via `_deepPlanData` JSONB embedding
+- **`saveTrip` concurrency safety:** Uses `stateRef` (always latest state) instead of `setState` hack. `saveMutexRef` queues saves sequentially via promise chain. `isDirty` only cleared if state hasn't changed during the network round-trip. Checks `tripId` staleness to prevent overwriting a different trip loaded mid-save.
+- **`moveDestination`/`removeDestination` sync transport legs:** Moving destinations swaps the corresponding transport legs and clears their selections (from/to cities changed). Removing a destination clears the adjacent leg's selections that now spans a different city pair.
 
 **CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
 
@@ -69,14 +89,14 @@ On save, API embeds; on load, extracts and returns separately. **Always null-saf
 - `/api/nearby` — Google Hotels scraper + Google Places Photos enrichment. Hotels without scraper images get photos from Places API (up to 10 hotels, 3 photos each). Cleans description field (removes USD prices, deal text). Returns deal badges, amenities, hotel class.
 - `/api/places` — Google Places Autocomplete (New v1) + Details; `scope=cities|all`.
 - `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. Searches "city" appended first to avoid location-biased results (e.g., "Barcelona city" → Spain, not "North Barcelona" apartment in Mumbai). Returns all large airports within 1000km (no cap).
-- `/api/trips` — CRUD with JSONB embedding for places/additionalHotels.
+- `/api/trips` — CRUD with JSONB embedding for places/additionalHotels. Zod-validated payloads. PUT handler checks errors on all 4 DB operations (delete/insert destinations + legs) — never silent failures. DELETE cleans up booking docs from Supabase Storage. Auth endpoints: `/api/auth/signup`, `/api/auth/change-password`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/resend-verification`, `/api/auth/delete-account` (cleans up all user storage files).
 - `/api/weather` — Open-Meteo API (free). 1-hour cache. Only works ≤16 days out.
 - `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). Extracts origin city, departure date, travelers (adults/children/infants), and trip type from user prompt. System prompt for travel expertise.
 - `/api/ai/extract-booking` — GPT-4.1-mini vision extracts hotel booking details (name, address, price, nights) from PDF/image.
 - `/api/ai/extract-transport` — GPT-4.1-mini vision extracts flight/train details (carrier, number, times, airports/stations, IATA codes, duration, passengers, total price). Timezone-aware duration.
 - `/api/ai/extract-trip` — Bulk extraction: all uploaded files → complete trip structure (origin, destinations, hotels, transport segments, travelers). Returns `fileDescriptions` for document mapping.
 - `/api/ai/classify-doc` — Lightweight single-file classifier: returns `{type, from, to, city}`. Used to tag uploaded docs with correct cities/type. Each file gets its own AI call (parallel) for reliable mapping.
-- `/api/ai/itinerary-activities` — GPT-4.1-mini generates city activities with durations, categories, opening hours, ticket prices. Multi-day aware: assigns `dayIndex` per activity + `dayThemes` for logical day progression (e.g., "Historic", "Outdoor"). Static fallback for no-API-key scenarios. Response cached in `deepPlanData.cityActivities`.
+- `/api/ai/itinerary-activities` — GPT-4.1-mini generates city activities with durations, categories, opening hours, ticket prices. Multi-day aware: assigns `dayIndex` per activity + `dayThemes` for logical day progression (e.g., "Historic", "Outdoor"). Static fallback for no-API-key scenarios. Response cached in `deepPlanData.cityActivities`. Requests 7 activities per day + 3 extras. `max_tokens: 4096` to avoid truncation with many activities. **All AI routes require authentication** (`getServerSession`).
 - `/api/booking-docs` — Upload/delete/refresh-URLs for booking documents in Supabase Storage.
 - `/api/admin/migrate` — DB migrations.
 
@@ -92,7 +112,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 ### Route Page (`/route`) — Key Behaviors
 
-- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster. Waits for `trip.from.name` to load before running (prevents empty city → no results). Resets via `prevTripIdRef` when trip changes. **Same-airport detection:** If from/to resolve to the same airport code (e.g., Goa intra-city = GOI), auto-selects drive/cab instead of flights.
+- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster. Waits for `trip.from.name` to load before running (prevents empty city → no results). Resets via `prevTripIdRef` when trip changes. **Same-airport detection:** If from/to resolve to the same airport code (e.g., Goa intra-city = GOI), auto-selects drive/cab instead of flights. **AbortController:** All fetch calls use `signal` from `autoSelectAbortRef` — aborted on cleanup/re-run. Callbacks check `signal.aborted` before applying state.
 - **Local stay detection:** `isLocalStay` flag detects when all destinations are in the same city as origin (checks `parentCity`, `name`, `fullName`, `fromAddress`). Hides home stops, transport legs, and arrival info. Shows green "Local Stay — no transport needed" banner with Deep Plan shortcut. Deep plan filters out travel/departure days for local stays (only explore days).
 - **Same-city transport:** Dedicated `useEffect` replaces same-city flight/train selections with "Local Transfer" (~15 min). Runs on every trip change, checks both city names and `fromAddress` contents.
 - **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, flight/train/hotel IDs+prices, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). Must include selection IDs in dependency array — otherwise replacing a flight (same count) won't trigger save.
@@ -114,13 +134,13 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Layout:** 2-column desktop (itinerary 65% + sticky sidebar 35%). Single column on mobile. Sticky day navigation chips at top. Trip overview card with stats grid (days, cities, budget, travelers).
 
-**Day types:** Travel Day (blue), Explore Day (green), Departure Day (orange), Arrival & Explore (violet — travel day with free time to explore). A day is a day — 24 hours. Same-date arrival + explore days merge into a single card.
+**Day types:** Travel Day (blue), Explore Day (green), Departure Day (orange), Arrival (violet — separate card with evening activities + dinner + sleep). Arrival days are NEVER merged with explore days — they always get their own card. Explore days start the next calendar day.
 
 **Day cards:** Collapsible (multiple can be open simultaneously). Collapsed state shows: activity count, travel time, activity preview names. Expanded shows full timeline. Action buttons (+, refresh) in day header. Print auto-expands all days via `beforeprint`/`afterprint` events.
 
 **Smart itinerary generation:** Explore days use AI-generated activities with real durations instead of hardcoded 2-hour blocks. Activity source priority: user places (90min default) → AI-cached `cityActivities` → static `CITY_ATTRACTIONS` (typed with durations) → generic fallback. Activities scheduled into morning (start→12:30) and afternoon (13:15→18:30) blocks with 30min travel gaps, respecting `bestTime` preference and `durationMin`. Multi-day trips get themed days via `dayIndex` assignment.
 
-**Activity cards:** Three-dot action menu with: View on map, Directions, Save activity, Book tickets, Move up/down, Remove. Category-colored cards with photo thumbnails. Drag-to-reorder on explore AND arrival days via HTML5 drag-and-drop. Pin/save promotes AI activities to custom (survives refreshes).
+**Activity cards:** Three-dot action menu with: View on map, Directions, Save activity, Book tickets, Move up/down, Remove. Category-colored cards with photo thumbnails. Drag-to-reorder on explore AND arrival days via **Framer Motion `Reorder.Group`/`Reorder.Item`** (same as plan page). `Reorder.Item` must only render inside `Reorder.Group` (days with 2+ activities) — single-activity days use regular divs to avoid "Cannot destructure property 'axis'" crash. Pin/save promotes AI activities to custom (survives refreshes).
 
 **Transport cards:** Vertical route stepper (DEP dot → journey line → ARR dot) for flights and trains. Color-coded: blue (flight), amber (train), orange (bus), slate (drive). Booking status badges (Booked/Pending) matched by city names in `bookingDocs`. "Replace" button opens full `TransportCompareModal` (same as route page).
 
@@ -132,11 +152,17 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Start time adjustment:** Changing start time re-runs the full scheduling algorithm (not a flat offset). Activities are re-sorted and re-fit into morning/afternoon blocks based on new start time.
 
-**Overnight flight handling:** Detects flights with `arrH < depH` (crossed midnight) or 24h+ duration. Creates "In Transit" days for genuinely multi-day flights. Same-day long flights (timezone gains where `arrH > depH`) stay on one card with full arrival timeline. Same-date arrival + explore days are merged automatically.
+**Overnight flight handling:** Detects flights with `arrH < depH` (crossed midnight) or `durHrs >= 24`. Do NOT use `durHrs >= 12` — cross-timezone flights (e.g., BOM→AMS 12h20m) arrive same day due to timezone gain. Scraper `isNextDay` is unreliable for cross-timezone flights — use hour-based detection only. Creates "In Transit" days for genuinely multi-day flights (36h+).
 
-**Day merge logic:** After all days are built, consecutive days with same `day` number and `date` are merged. Duplicate meals are skipped, sleep/overnight is repositioned to end, costs are summed, type prefers explore > arrival > travel.
+**Arrival day separation:** Arrival days ALWAYS get their own card with dinner + sleep. `dayNum` is incremented after every arrival day so explore days start the next calendar day. This prevents confusing 24h+ merged cards where 7 PM dinner flows into 9 AM breakfast.
 
-**Inter-activity travel times:** Real walk/transit/drive times fetched via Google Directions between consecutive stops on all day types. Dropdown (z-50) lets user switch modes; "Directions" link opens Google Maps with selected mode. On travel/departure days, changing mode recalculates "Leave by X to reach on time" note.
+**Arrival day activities:** Fill as many activities as fit in free time (no cap). Track used activities in `usedArrivalActivities` set — explore days exclude these to prevent repeats across days in the same city.
+
+**Auto-fill on mount:** When deep plan loads, auto-detects all cities needing AI activities and fetches them in **parallel** (Promise.all). Shows progress overlay with per-city checklist. Includes 1-night arrival-only destinations (not just 2+ nights). **Staleness guard:** Captures `effectTripId` at start; callbacks skip state updates if `cancelled` flag is set (cleanup sets it). Post-fill save only fires if the same `tripId` is still loaded.
+
+**Day merge logic:** After all days are built, consecutive days with same `day` number and `date` are merged. Duplicate meals are skipped, sleep/overnight is repositioned to end, costs are summed. Since arrival days always increment dayNum, merges now only happen for edge cases.
+
+**Inter-activity travel times:** Real walk/transit/drive times fetched via Google Directions between consecutive stops on all day types. Dropdown (z-50) lets user switch modes; "Directions" link opens Google Maps with selected mode. On travel/departure days, changing mode recalculates "Leave by X to reach on time" note. **City context for directions:** stops before the transport leg use `departureCity`, stops after use `day.city` (destination). The cascade code accounts for activity durations: `departureMin = stopStartTime + durationMin` for attractions (not just `stopStartTime`). When activities are reordered, new stop pairs trigger fresh direction lookups (dependency includes stop names). Failed fetches show "N/A" via `_fetched` marker instead of infinite "Loading...".
 
 **Empty states:** Travel days with free time show "Auto-plan this day" card. Explore days with no attractions show "Add places" + "Auto-plan" buttons.
 
@@ -149,7 +175,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 - **Price display:** All prices in INR. `formatPrice(amountINR, currency)`. Live rates from `open.er-api.com` cached 1 hour. PDF uses ASCII-safe `Rs.` instead of `₹`.
 - **Price calculation for custom transport:** Total price entered → divided by trip's passenger formula. Flights: `total / (adults + children + infants×0.15)`. Trains: `total / adults`. Route page multiplies back.
 - **PDF export:** `exportTripPDFFromData()` — structured jsPDF (not html2canvas). Text truncation, right-aligned price columns.
-- **TypeScript gotchas:** Don't use `for...of` on `Set` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` instead.
+- **TypeScript gotchas:** Don't use `for...of` on `Set` or `Map` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` or `Array.from(map.keys())` instead.
 - **Null safety for new fields:** `bookingDocs` and `deepPlanData` may be undefined on trips saved before these features. Always use `trip.bookingDocs?.length`, `trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} }`. `cityActivities` and `dayThemes` inside `deepPlanData` are also optional.
 - **Hotel `address`/`lat`/`lng`:** Optional fields on `Hotel` interface. Custom stays and Google hotels store address for accurate distance calculations via Google Directions.
 - **City name display:** Always use `city.parentCity || city.name` for display — never parse `fullName` by commas (e.g., "Jaipur, Rajasthan, India" would give "Rajasthan" not "Jaipur").
@@ -183,4 +209,6 @@ NEXT_PUBLIC_SENTRY_DSN        # Optional: Sentry
 
 ### Deployment
 
-GitHub: `yatendra3192/aiezzy` branch `dev`. Railway auto-deploys on push. Main branch has coming-soon page. Scraper API: `yatendra3192/google-travel-api` on Railway.
+GitHub: `yatendra3192/aiezzy` branch `dev`. Railway auto-deploys on push (Railpack builder — use `"node": "20.x"` in engines, NOT `>=18.0.0` ranges). Main branch has coming-soon page. Scraper API: `yatendra3192/google-travel-api` on Railway.
+
+**Scraper `isNextDay` bug:** The Google Flights scraper returns unreliable arrival dates for cross-timezone flights. The flights API now uses hour-based detection (`arrH < depH && durHrs > 2 || durHrs >= 24`) instead of trusting scraper date comparisons. Do NOT add `durHrs >= 12` as a shortcut — westbound flights gain timezone hours and arrive same day even at 12h+ duration.

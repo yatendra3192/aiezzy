@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -15,6 +17,8 @@ const TRAIN_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  *   time    - departure time HH:MM (optional)
  */
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const from = req.nextUrl.searchParams.get('from') || '';
   const to = req.nextUrl.searchParams.get('to') || '';
   const date = req.nextUrl.searchParams.get('date') || '';

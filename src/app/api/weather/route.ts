@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 // Map WMO weather codes to descriptions
 const WEATHER_DESCRIPTIONS: Record<number, string> = {
@@ -37,6 +39,13 @@ const cache = new Map<string, { data: any; ts: number }>();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export async function GET(req: NextRequest) {
+  // Allow authenticated users OR shared-trip access via token param
+  const shareToken = req.nextUrl.searchParams.get('shareToken');
+  if (!shareToken) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const city = req.nextUrl.searchParams.get('city');
   const date = req.nextUrl.searchParams.get('date');
 

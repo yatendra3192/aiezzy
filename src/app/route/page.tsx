@@ -273,6 +273,7 @@ function RoutePageContent() {
 
   // Auto-select cheapest flight and hotel for each leg/destination on first load
   const autoSelectedRef = useRef(false);
+  const autoSelectAbortRef = useRef<AbortController | null>(null);
   const [autoSelectLoading, setAutoSelectLoading] = useState(false);
   const [autoSelectStep, setAutoSelectStep] = useState('');
   const [autoSelectDone, setAutoSelectDone] = useState(0);
@@ -408,6 +409,12 @@ function RoutePageContent() {
     if (!trip.from.name && !trip.fromAddress) return;
     autoSelectedRef.current = true;
 
+    // Abort any previous auto-select in-flight requests
+    if (autoSelectAbortRef.current) autoSelectAbortRef.current.abort();
+    const abortController = new AbortController();
+    autoSelectAbortRef.current = abortController;
+    const signal = abortController.signal;
+
     // Ensure return leg exists for round trips
     if (trip.tripType === 'roundTrip') {
       const expectedLegs = trip.destinations.length + 1;
@@ -502,12 +509,13 @@ function RoutePageContent() {
       setAutoSelectStep(`Searching ${transportLabel}...`);
 
       // Fetch BOTH flights and trains in parallel, pick the best option
-      const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+      const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`, { signal })
         .then(r => r.json()).catch(() => ({ flights: [] }));
-      const trainP = fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
+      const trainP = fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`, { signal })
         .then(r => r.json()).catch(() => ({ trains: [] }));
 
       Promise.all([flightP, trainP]).then(([flightData, trainData]) => {
+        if (signal.aborted) return;
         const flights = flightData.flights || [];
         const trains = trainData.trains || [];
 
@@ -674,24 +682,29 @@ function RoutePageContent() {
         return false;
       };
       // Try with dates first, retry without dates if empty, then retry with just city name
-      fetch(`/api/nearby?location=${cityQuery}${dateParams}`)
+      fetch(`/api/nearby?location=${cityQuery}${dateParams}`, { signal })
         .then(r => r.json())
         .then(data => {
+          if (signal.aborted) return;
           const hotelLabel = `Hotel in ${dest.city.parentCity || dest.city.name}`;
           if (selectHotel(data.places || [])) { trackPending(-1, hotelLabel); return; }
           if (dateParams) {
-            return fetch(`/api/nearby?location=${cityQuery}`).then(r => r.json()).then(data2 => {
+            return fetch(`/api/nearby?location=${cityQuery}`, { signal }).then(r => r.json()).then(data2 => {
+              if (signal.aborted) return;
               if (selectHotel(data2.places || [])) { trackPending(-1, hotelLabel); return; }
               const simpleName = encodeURIComponent(dest.city.parentCity || dest.city.name);
-              return fetch(`/api/nearby?location=${simpleName}`).then(r => r.json()).then(data3 => {
+              return fetch(`/api/nearby?location=${simpleName}`, { signal }).then(r => r.json()).then(data3 => {
+                if (signal.aborted) return;
                 selectHotel(data3.places || []);
                 trackPending(-1, hotelLabel);
               });
             });
           }
           trackPending(-1, hotelLabel);
-        }).catch(() => trackPending(-1, `Hotel in ${dest.city.parentCity || dest.city.name}`));
+        }).catch(() => { if (!signal.aborted) trackPending(-1, `Hotel in ${dest.city.parentCity || dest.city.name}`); });
     });
+
+    return () => { abortController.abort(); };
   }, [trip.destinations.length, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Toast notification for flight updates

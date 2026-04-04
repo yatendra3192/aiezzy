@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { GLOBAL_CITY_AIRPORTS } from '@/data/airports';
 
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
@@ -21,6 +23,8 @@ const FLIGHT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
  *   adults  - number of adults (default 1)
  */
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const from = req.nextUrl.searchParams.get('from') || '';
   const to = req.nextUrl.searchParams.get('to') || '';
   const date = req.nextUrl.searchParams.get('date') || '';

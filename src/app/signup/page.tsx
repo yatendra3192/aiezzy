@@ -19,8 +19,10 @@ export default function SignUpPage() {
     setError('');
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return; }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
-    if (!/^(?=.*[a-zA-Z])(?=.*[0-9])/.test(password)) { setError('Password must be alphanumeric'); return; }
+    if (password.length < 10) { setError('Password must be at least 10 characters'); return; }
+    if (!/[A-Z]/.test(password)) { setError('Password must contain an uppercase letter'); return; }
+    if (!/[a-z]/.test(password)) { setError('Password must contain a lowercase letter'); return; }
+    if (!/[0-9]/.test(password)) { setError('Password must contain a number'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match'); return; }
 
     setLoading(true);
@@ -90,7 +92,7 @@ export default function SignUpPage() {
             <div>
               <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)}
                 className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan" />
-              <p className="text-text-muted text-xs mt-1.5 ml-1 font-body">Min 8 characters, alphanumeric</p>
+              <p className="text-text-muted text-xs mt-1.5 ml-1 font-body">Min 10 characters, uppercase + lowercase + number</p>
             </div>
             <input type="password" placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
               className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan" />

@@ -455,9 +455,14 @@ function DeepPlanPageContent() {
     const cities = citiesNeeded.map(c => ({ name: c.cityName, done: false }));
     setAutoFillProgress({ total: citiesNeeded.length, done: 0, current: 'All cities', cities });
 
+    // Track the tripId at effect start to detect staleness
+    const effectTripId = trip.tripId;
+    let cancelled = false;
+
     // Fire all requests in parallel
     const promises = citiesNeeded.map((c, i) =>
       fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces, c.hotel, c.timeWindows).then(() => {
+        if (cancelled) return;
         setAutoFillProgress(prev => {
           if (!prev) return null;
           const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
@@ -468,10 +473,14 @@ function DeepPlanPageContent() {
       })
     );
     Promise.all(promises).then(() => {
+      if (cancelled) return;
       setTimeout(() => setAutoFillProgress(null), 800);
       // Force immediate save so activities persist on reload (don't wait for 3s debounce)
-      setTimeout(() => { if (trip.tripId) trip.saveTrip().catch(() => {}); }, 1500);
+      // Only save if the same trip is still loaded
+      setTimeout(() => { if (!cancelled && trip.tripId && trip.tripId === effectTripId) trip.saveTrip().catch(() => {}); }, 1500);
     });
+
+    return () => { cancelled = true; };
   }, [trip.destinations.length, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh AI suggestions for a specific city

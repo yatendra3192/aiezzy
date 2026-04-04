@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -7,6 +9,8 @@ const photoCache = new Map<string, { url: string | null; ts: number }>();
 const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ url: null, error: 'Unauthorized' }, { status: 401 });
   const query = req.nextUrl.searchParams.get('q') || '';
   if (!query || !API_KEY) {
     return NextResponse.json({ url: null });

@@ -32,8 +32,12 @@ export default function ResetCallbackPage() {
     e.preventDefault();
     setError('');
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.length < 10) {
+      setError('Password must be at least 10 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('Password must contain uppercase, lowercase, and a number');
       return;
     }
 
@@ -182,7 +186,7 @@ export default function ResetCallbackPage() {
                   onChange={e => setPassword(e.target.value)}
                   className="w-full bg-bg-card border border-border-subtle rounded-xl px-4 py-3.5 text-text-primary placeholder:text-text-muted text-sm font-body outline-none transition-all duration-200 input-glow focus:border-accent-cyan"
                 />
-                <p className="text-text-muted text-xs mt-1.5 ml-1 font-body">Min 8 characters</p>
+                <p className="text-text-muted text-xs mt-1.5 ml-1 font-body">Min 10 characters, uppercase + lowercase + number</p>
               </div>
               <input
                 type="password"
