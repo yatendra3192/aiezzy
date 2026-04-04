@@ -478,6 +478,8 @@ function DeepPlanPageContent() {
     );
     Promise.all(promises).then(() => {
       setTimeout(() => setAutoFillProgress(null), 800);
+      // Force immediate save so activities persist on reload (don't wait for 3s debounce)
+      setTimeout(() => { if (trip.tripId) trip.saveTrip().catch(() => {}); }, 1500);
     });
   }, [trip.destinations.length, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
 
