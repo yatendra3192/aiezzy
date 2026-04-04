@@ -1606,7 +1606,13 @@ function DeepPlanPageContent() {
         const selData = td[mode as 'transit' | 'drive'];
         if (!selData) continue;
         if (mode === 'transit' && lt) {
-          total += (lt.metroSingleRide || lt.busSingleRide || 2) * rate * pax;
+          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
+          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+          const rides = distKm < 5 ? 1 : distKm < 15 ? 2 : 3;
+          const perRide = lt.metroSingleRide || lt.busSingleRide || 2;
+          const rideCost = rides * perRide;
+          const cost = lt.dailyPass && lt.dailyPass < rideCost ? lt.dailyPass : rideCost;
+          total += cost * rate * pax;
         } else if (mode === 'drive' && lt) {
           const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
           const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
@@ -2852,9 +2858,17 @@ function DeepPlanPageContent() {
                                                 if (!lt) return null;
                                                 const rate = convRates[lt.currency?.toUpperCase()] || 1;
                                                 if (selMode === 'walk') return <span className="text-emerald-500 ml-1">Free</span>;
-                                                if (selMode === 'transit') return <span className="text-violet-500 ml-1">~{formatPrice(Math.round((lt.metroSingleRide || lt.busSingleRide || 2) * rate), currency)}</span>;
                                                 const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
                                                 const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+                                                if (selMode === 'transit') {
+                                                  // Scale transit: 1 ride for <5km, 2 for 5-15km, 3 for 15km+
+                                                  const rides = distKm < 5 ? 1 : distKm < 15 ? 2 : 3;
+                                                  const perRide = lt.metroSingleRide || lt.busSingleRide || 2;
+                                                  // If daily pass is cheaper than rides, suggest it
+                                                  const rideCost = rides * perRide;
+                                                  const cost = lt.dailyPass && lt.dailyPass < rideCost ? lt.dailyPass : rideCost;
+                                                  return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(cost * rate), currency)}</span>;
+                                                }
                                                 return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(distKm * (lt.taxiPerKm || 2) * rate), currency)}</span>;
                                               })()}
                                             </span>
