@@ -114,21 +114,25 @@ export async function GET(req: NextRequest) {
           ? fetchScraperFlights(fromAp.code, toAp.code, date, adults).catch(() => null)
             .then(async r => {
               if (r && r.length > 0) return r;
-              // Retry with city names for better coverage on international routes
-              const fromCity = fromAp.city || from;
-              const toCity = toAp.city || to;
-              if (fromCity !== fromAp.code || toCity !== toAp.code) {
-                return fetchScraperFlights(fromCity, toCity, date, adults).catch(() => null);
+              // Retry with original city names from the search query (e.g., "Byron Bay" not "Ballina")
+              const fromCity = from.length > 3 ? from : (fromAp.city || from);
+              const toCity = to.length > 3 ? to : (toAp.city || to);
+              const r2 = await fetchScraperFlights(fromCity, toCity, date, adults).catch(() => null);
+              if (r2 && r2.length > 0) return r2;
+              // Also try catalog city name if different from original query
+              if (toAp.city && toAp.city !== toCity) {
+                return fetchScraperFlights(fromCity, toAp.city, date, adults).catch(() => null);
               }
               return null;
             })
           : Promise.resolve(null),
       ]);
 
-      // Filter scraper results to only keep flights arriving at the target airport
-      // (Google Flights returns nearby airport suggestions like AMD when searching IDR)
+      // Filter scraper results — keep flights to target airport OR any airport for this city
+      // (allows BNK for Byron Bay even if resolved as different code)
+      const validToCodes = new Set(toCandidates.map(c => c.code));
       const filteredScraper = scraperResult?.filter((f: any) =>
-        f.arrAirportCode === toAp.code || !f.arrAirportCode
+        !f.arrAirportCode || validToCodes.has(f.arrAirportCode) || f.arrAirportCode === toAp.code
       ) || [];
 
       // Merge and dedup
