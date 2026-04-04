@@ -278,6 +278,7 @@ function RoutePageContent() {
   const [autoSelectDone, setAutoSelectDone] = useState(0);
   const [autoSelectTotal, setAutoSelectTotal] = useState(0);
   const [autoSelectCompletedSteps, setAutoSelectCompletedSteps] = useState<string[]>([]);
+  const pendingStepDescsRef = useRef<Map<string, string>>(new Map());
   // Cache flight results per leg so the modal doesn't re-fetch
   const flightCacheRef = useRef<Record<number, any[]>>({});
   // Cache resolved airport info per leg (codes, names, cities, distances)
@@ -351,6 +352,10 @@ function RoutePageContent() {
     if (delta < 0 && completedLabel) {
       setAutoSelectDone(prev => prev + 1);
       setAutoSelectCompletedSteps(prev => [...prev, completedLabel]);
+      // Remove from pending and update step text to next pending task
+      pendingStepDescsRef.current.delete(completedLabel);
+      const remaining = Array.from(pendingStepDescsRef.current.values());
+      setAutoSelectStep(remaining.length > 0 ? remaining[0] : '');
     }
     if (pendingCountRef.current <= 0) {
       pendingCountRef.current = 0;
@@ -360,6 +365,7 @@ function RoutePageContent() {
       setAutoSelectDone(0);
       setAutoSelectTotal(0);
       setAutoSelectCompletedSteps([]);
+      pendingStepDescsRef.current.clear();
     }
   };
 
@@ -421,6 +427,7 @@ function RoutePageContent() {
       setAutoSelectLoading(true);
       setAutoSelectDone(0);
       setAutoSelectTotal(flightCount + hotelCount);
+      pendingStepDescsRef.current.clear();
       setAutoSelectCompletedSteps([]);
       setAutoSelectStep(needsFlights ? 'Searching flights and trains...' : 'Finding hotels...');
     }
@@ -490,7 +497,9 @@ function RoutePageContent() {
 
       pendingCountRef.current++;
       totalPendingRef.current++;
-      setAutoSelectStep(`Searching ${fromName} → ${toName}...`);
+      const transportLabel = `${fromName} → ${toName}`;
+      pendingStepDescsRef.current.set(transportLabel, `Searching ${transportLabel}...`);
+      setAutoSelectStep(`Searching ${transportLabel}...`);
 
       // Fetch BOTH flights and trains in parallel, pick the best option
       const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
@@ -554,8 +563,7 @@ function RoutePageContent() {
           }).catch(() => {
             trip.updateTransportLeg(legId, { type: 'drive', selectedFlight: null, selectedTrain: null, duration: '~', distance: '~', departureTime: null, arrivalTime: null });
           });
-          pendingCountRef.current--;
-          if (pendingCountRef.current <= 0) { autoSelectLoadingRef.current = false; setAutoSelectLoading(false); }
+          trackPending(-1, transportLabel);
           return;
         }
 
@@ -626,6 +634,8 @@ function RoutePageContent() {
       if (dest.selectedHotel || dest.nights === 0) return;
       pendingCountRef.current++;
       totalPendingRef.current++;
+      const hotelLabel = `Hotel in ${dest.city.parentCity || dest.city.name}`;
+      pendingStepDescsRef.current.set(hotelLabel, `Finding hotels in ${dest.city.parentCity || dest.city.name}...`);
       setAutoSelectStep(`Finding hotels in ${dest.city.parentCity || dest.city.name}...`);
       // Calculate proper check-in/check-out dates for this destination
       let hotelCheckInOffset = 0;
