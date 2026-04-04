@@ -1624,9 +1624,11 @@ function DeepPlanPageContent() {
     for (const day of adjustedDays) {
       const meals = day.stops.filter(s => s.mealType);
       if (meals.length === 0) continue;
-      // Find meal costs for this day's city
-      const cityKey = day.city;
-      const mc = cityMealCosts[cityKey];
+      // Find meal costs — try day.city, departureCity, then match by destination parentCity
+      const mc = cityMealCosts[day.city] || cityMealCosts[day.departureCity || ''] || (() => {
+        const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
+        return dest ? cityMealCosts[dest.city.parentCity || dest.city.name] : undefined;
+      })();
       if (!mc) continue; // no AI data yet
       const rate = convRates[mc.currency?.toUpperCase()] || convRates[mc.currency] || 1;
       for (const meal of meals) {
@@ -1643,8 +1645,11 @@ function DeepPlanPageContent() {
     const cityTransportData = trip.deepPlanData?.localTransport || {};
     let total = 0;
     for (const day of adjustedDays) {
-      const cityKey = day.city;
-      const lt = cityTransportData[cityKey];
+      // Try day.city, departureCity, then match by destination parentCity
+      const lt = cityTransportData[day.city] || cityTransportData[day.departureCity || ''] || (() => {
+        const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
+        return dest ? cityTransportData[dest.city.parentCity || dest.city.name] : undefined;
+      })();
       const rate = lt ? (convRates[lt.currency?.toUpperCase()] || convRates[lt.currency] || 1) : 1;
       for (const stop of day.stops) {
         if (!stop.transport || stop.legIndex !== undefined) continue;
@@ -2381,7 +2386,7 @@ function DeepPlanPageContent() {
                   const activityIds = isDraggableDay ? day.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).map(s => s.id) : [];
                   // All stop IDs for Reorder.Group values (includes non-draggable items with dragListener=false)
                   const allStopIds = isDraggableDay ? day.stops.map(s => s.id) : [];
-                  const useReorder = isDraggableDay && activityIds.length > 1;
+                  const useReorder = isDraggableDay && activityIds.length >= 1;
 
                   const stopsContent = day.stops.map((stop, si) => {
                     const hasTransport = stop.transport !== null;
@@ -2422,8 +2427,13 @@ function DeepPlanPageContent() {
                                   <span className="text-xs">{stop.mealType === 'breakfast' ? '\u2615' : stop.mealType === 'dinner' ? '\uD83C\uDF19' : '\uD83C\uDF7D\uFE0F'}</span> {stop.name}
                                 </span>
                                 {(() => {
-                                  const cityKey = day.city;
-                                  const mc = (trip.deepPlanData?.mealCosts || {})[cityKey];
+                                  const mealCosts = trip.deepPlanData?.mealCosts || {};
+                                  // Try day.city, then departureCity, then match by destination parentCity
+                                  const mc = mealCosts[day.city] || mealCosts[day.departureCity || ''] || (() => {
+                                    const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
+                                    const key = dest ? (dest.city.parentCity || dest.city.name) : '';
+                                    return mealCosts[key];
+                                  })();
                                   if (!mc || !stop.mealType) return null;
                                   const cost = mc[stop.mealType as 'breakfast' | 'lunch' | 'dinner'];
                                   if (!cost) return null;
