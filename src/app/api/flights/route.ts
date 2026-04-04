@@ -97,29 +97,33 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Try nearest arrival airport first, then fallback to next
-    // Both Amadeus + scraper run in parallel for each airport
+    // Try departure × arrival airport combinations
+    // For small airports with no flights, try larger nearby airports
+    const fromTrials = exactAirport ? [fromAp] : fromCandidates.slice(0, 3);
     let allFlights: any[] = [];
     let resolvedFromAp = fromAp;
     let resolvedToAp = toCandidates[0];
+    let foundFlights = false;
 
+    for (const tryFromAp of fromTrials) {
+      if (foundFlights) break;
     for (const toAp of toCandidates) {
+      if (foundFlights) break;
       // Run Amadeus + scraper in parallel for this airport pair
       // Scraper: try IATA code first, then city name as fallback (works better for international)
       const [amadeusResult, scraperResult] = await Promise.all([
         (AMADEUS_API_KEY && AMADEUS_API_SECRET)
-          ? fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null)
+          ? fetchAmadeusFlights(tryFromAp.code, toAp.code, date, parseInt(adults)).catch(() => null)
           : Promise.resolve(null),
         (FLIGHTS_API_URL && FLIGHTS_API_KEY)
-          ? fetchScraperFlights(fromAp.code, toAp.code, date, adults).catch(() => null)
+          ? fetchScraperFlights(tryFromAp.code, toAp.code, date, adults).catch(() => null)
             .then(async r => {
               if (r && r.length > 0) return r;
-              // Retry with original city names from the search query (e.g., "Byron Bay" not "Ballina")
-              const fromCity = from.length > 3 ? from : (fromAp.city || from);
+              // Retry with original city names from the search query
+              const fromCity = from.length > 3 ? from : (tryFromAp.city || from);
               const toCity = to.length > 3 ? to : (toAp.city || to);
               const r2 = await fetchScraperFlights(fromCity, toCity, date, adults).catch(() => null);
               if (r2 && r2.length > 0) return r2;
-              // Also try catalog city name if different from original query
               if (toAp.city && toAp.city !== toCity) {
                 return fetchScraperFlights(fromCity, toAp.city, date, adults).catch(() => null);
               }
@@ -149,7 +153,9 @@ export async function GET(req: NextRequest) {
 
       if (merged.length > 0) {
         allFlights = merged;
+        resolvedFromAp = tryFromAp;
         resolvedToAp = toAp;
+        foundFlights = true;
 
         // Also search other airports within 50km (same metro area, e.g., CDG+ORY for Paris)
         // but skip airports in different cities (e.g., BHO for Indore)
@@ -161,7 +167,7 @@ export async function GET(req: NextRequest) {
           const metroResults = await Promise.allSettled(
             sameMetroAirports.map(metroAp => Promise.all([
               (AMADEUS_API_KEY && AMADEUS_API_SECRET)
-                ? fetchAmadeusFlights(fromAp.code, metroAp.code, date, parseInt(adults)).catch(() => null)
+                ? fetchAmadeusFlights(tryFromAp.code, metroAp.code, date, parseInt(adults)).catch(() => null)
                 : Promise.resolve(null),
               (FLIGHTS_API_URL && FLIGHTS_API_KEY)
                 ? fetchScraperFlights(fromAp.code, metroAp.code, date, adults).then(r =>
@@ -186,9 +192,10 @@ export async function GET(req: NextRequest) {
           }
         }
 
-        break; // Found flights — stop trying other airports
+        break; // Found flights — stop trying other arrival airports
       }
-    }
+    } // end toCandidates loop
+    } // end fromTrials loop
 
     // Sort by price (cheapest first)
     allFlights.sort((a, b) => a.price - b.price);
