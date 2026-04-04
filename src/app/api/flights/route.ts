@@ -119,11 +119,14 @@ export async function GET(req: NextRequest) {
           ? fetchScraperFlights(tryFromAp.code, toAp.code, date, adults).catch(() => null)
             .then(async r => {
               if (r && r.length > 0) return r;
-              // Retry with original city names from the search query
-              const fromCity = from.length > 3 ? from : (tryFromAp.city || from);
+              // Retry with city names — use trial airport's city when it differs from original query
+              // e.g., if trying AKL for "Bay of Islands", search "Auckland" not "Bay of Islands"
+              const fromCity = tryFromAp.city && tryFromAp.code !== from.toUpperCase()
+                ? tryFromAp.city : (from.length > 3 ? from : (tryFromAp.city || from));
               const toCity = to.length > 3 ? to : (toAp.city || to);
               const r2 = await fetchScraperFlights(fromCity, toCity, date, adults).catch(() => null);
               if (r2 && r2.length > 0) return r2;
+              // Also try with airport's city name if different
               if (toAp.city && toAp.city !== toCity) {
                 return fetchScraperFlights(fromCity, toAp.city, date, adults).catch(() => null);
               }
