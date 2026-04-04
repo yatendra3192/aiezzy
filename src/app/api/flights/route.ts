@@ -5,8 +5,8 @@ const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
 const AMADEUS_API_KEY = process.env.AMADEUS_API_KEY || '';
 const AMADEUS_API_SECRET = process.env.AMADEUS_API_SECRET || '';
-// NOTE: Default is Amadeus test/sandbox. Set AMADEUS_BASE_URL=https://api.amadeus.com for production
-const AMADEUS_BASE_URL = process.env.AMADEUS_BASE_URL || 'https://test.api.amadeus.com';
+// Production Amadeus API — test sandbox has very limited routes (no long-haul international)
+const AMADEUS_BASE_URL = process.env.AMADEUS_BASE_URL || 'https://api.amadeus.com';
 
 const flightCache = new Map<string, { data: any; ts: number }>();
 const FLIGHT_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -105,12 +105,23 @@ export async function GET(req: NextRequest) {
 
     for (const toAp of toCandidates) {
       // Run Amadeus + scraper in parallel for this airport pair
+      // Scraper: try IATA code first, then city name as fallback (works better for international)
       const [amadeusResult, scraperResult] = await Promise.all([
         (AMADEUS_API_KEY && AMADEUS_API_SECRET)
           ? fetchAmadeusFlights(fromAp.code, toAp.code, date, parseInt(adults)).catch(() => null)
           : Promise.resolve(null),
         (FLIGHTS_API_URL && FLIGHTS_API_KEY)
           ? fetchScraperFlights(fromAp.code, toAp.code, date, adults).catch(() => null)
+            .then(async r => {
+              if (r && r.length > 0) return r;
+              // Retry with city names for better coverage on international routes
+              const fromCity = fromAp.city || from;
+              const toCity = toAp.city || to;
+              if (fromCity !== fromAp.code || toCity !== toAp.code) {
+                return fetchScraperFlights(fromCity, toCity, date, adults).catch(() => null);
+              }
+              return null;
+            })
           : Promise.resolve(null),
       ]);
 
