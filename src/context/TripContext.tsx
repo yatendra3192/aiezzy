@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { City, Destination, TransportLeg, Hotel, HotelStay, Flight, TrainOption, Place, CITIES, DEFAULT_TRANSPORT_LEGS } from '@/data/mockData';
 
 export interface BookingDoc {
@@ -63,7 +63,7 @@ interface TripState {
   lastSavedAt: Date | null;
 }
 
-interface TripContextType extends TripState {
+interface TripActions {
   setFrom: (city: City) => void;
   setFromAddress: (address: string) => void;
   addDestination: (city: City, nights?: number, hotel?: Hotel, transport?: { flight?: Flight; train?: TrainOption; resolvedAirports?: any }) => void;
@@ -107,6 +107,9 @@ interface TripContextType extends TripState {
   clearTripId: () => void;
 }
 
+// Combined type for backward compatibility with useTrip()
+interface TripContextType extends TripState, TripActions {}
+
 const defaultState: TripState = {
   tripId: null,
   from: { name: '', country: '', fullName: '' },
@@ -126,6 +129,10 @@ const defaultState: TripState = {
   lastSavedAt: null,
 };
 
+// Split into two contexts: state changes frequently, actions are stable references
+const TripStateContext = createContext<TripState | null>(null);
+const TripActionsContext = createContext<TripActions | null>(null);
+// Legacy combined context for backward compatibility
 const TripContext = createContext<TripContextType | null>(null);
 
 function dirty(s: TripState): TripState {
@@ -664,26 +671,52 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     try { sessionStorage.removeItem('currentTripId'); } catch {}
   }, []);
 
+  // Memoize actions object — all callbacks have [] deps so this never changes
+  const actions = useMemo<TripActions>(() => ({
+    setFrom, setFromAddress, addDestination, removeDestination, updateNights,
+    updateDestinationNotes,
+    addPlace, removePlace, reorderPlaces, updatePlaceNights, groupPlacesIntoCities,
+    setDepartureDate, setAdults, setChildren, setInfants, setTripType,
+    updateTransportLeg, changeTransportType, selectFlight, selectTrain,
+    updateDestinationHotel, addAdditionalHotel, removeAdditionalHotel, updateAdditionalHotelNights,
+    moveDestination, reorderDestinations,
+    addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData, buildFullTrip,
+    saveTrip, loadTrip, resetTrip, clearTripId,
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Combined value for backward-compatible useTrip()
+  const combined = useMemo<TripContextType>(() => ({ ...state, ...actions }), [state, actions]);
+
   return (
-    <TripContext.Provider value={{
-      ...state,
-      setFrom, setFromAddress, addDestination, removeDestination, updateNights,
-      updateDestinationNotes,
-      addPlace, removePlace, reorderPlaces, updatePlaceNights, groupPlacesIntoCities,
-      setDepartureDate, setAdults, setChildren, setInfants, setTripType,
-      updateTransportLeg, changeTransportType, selectFlight, selectTrain,
-      updateDestinationHotel, addAdditionalHotel, removeAdditionalHotel, updateAdditionalHotelNights,
-      moveDestination, reorderDestinations,
-      addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData, buildFullTrip,
-      saveTrip, loadTrip, resetTrip, clearTripId,
-    }}>
-      {children}
-    </TripContext.Provider>
+    <TripActionsContext.Provider value={actions}>
+      <TripStateContext.Provider value={state}>
+        <TripContext.Provider value={combined}>
+          {children}
+        </TripContext.Provider>
+      </TripStateContext.Provider>
+    </TripActionsContext.Provider>
   );
 }
 
+/** Returns both state + actions (re-renders on any state change). Backward compatible. */
 export function useTrip() {
   const ctx = useContext(TripContext);
   if (!ctx) throw new Error('useTrip must be used within TripProvider');
   return ctx;
 }
+
+/** Returns only trip state (re-renders on state change). Use when you don't need actions. */
+export function useTripState() {
+  const ctx = useContext(TripStateContext);
+  if (!ctx) throw new Error('useTripState must be used within TripProvider');
+  return ctx;
+}
+
+/** Returns only trip actions (never re-renders). Use for callbacks/handlers that don't read state. */
+export function useTripActions() {
+  const ctx = useContext(TripActionsContext);
+  if (!ctx) throw new Error('useTripActions must be used within TripProvider');
+  return ctx;
+}
+
+export type { TripState, TripActions };
