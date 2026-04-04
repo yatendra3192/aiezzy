@@ -2328,12 +2328,24 @@ function DeepPlanPageContent() {
                       return (
                         <div key={stop.id} className="relative">
                           <div className="flex items-center gap-3 py-1 pl-4">
-                            {/* Timeline dot for meals */}
                             <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-orange-200" />
                             <div className="inline-flex flex-col">
                               <div className="inline-flex items-center gap-1.5 bg-orange-50/60 border border-orange-100/60 rounded-full px-3 py-0.5">
                                 {stop.time && (
-                                  <span className="text-orange-400 text-[10px] font-mono">{formatTime12(parseTime(stop.time))}</span>
+                                  <input
+                                    type="time"
+                                    value={stop.time}
+                                    onChange={e => {
+                                      const newTime = e.target.value;
+                                      if (!newTime) return;
+                                      setCustomActivities(prev => {
+                                        const key = `_meal_${day.day}_${stop.mealType}`;
+                                        return { ...prev, [key]: [{ name: stop.name, time: newTime }] };
+                                      });
+                                    }}
+                                    className="text-orange-400 text-[10px] font-mono bg-transparent border-none outline-none w-[52px] cursor-pointer hover:text-orange-600 p-0"
+                                    title="Click to change time"
+                                  />
                                 )}
                                 <span className="text-orange-600 text-[11px] font-body font-medium flex items-center gap-1">
                                   <span className="text-xs">{stop.mealType === 'breakfast' ? '\u2615' : stop.mealType === 'dinner' ? '\uD83C\uDF19' : '\uD83C\uDF7D\uFE0F'}</span> {stop.name}
@@ -2387,12 +2399,30 @@ function DeepPlanPageContent() {
                               {/* Time + Name */}
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                  {stop.time && (
-                                    <span className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0">
-                                      {formatTime12(parseTime(stop.time))}
-                                      {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
-                                    </span>
-                                  )}
+                                  {stop.time && (() => {
+                                    const isEditableTime = stop.name === 'Rest / Sleep' || stop.name === 'Return to hotel' || stop.name === 'Overnight';
+                                    return isEditableTime ? (
+                                      <input
+                                        type="time"
+                                        value={stop.time}
+                                        onChange={e => {
+                                          const newTime = e.target.value;
+                                          if (!newTime) return;
+                                          setCustomActivities(prev => {
+                                            const key = `_time_${day.day}_${stop.name.replace(/\s+/g, '_')}`;
+                                            return { ...prev, [key]: [{ name: stop.name, time: newTime }] };
+                                          });
+                                        }}
+                                        className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[60px] cursor-pointer hover:text-accent-cyan/70 p-0 flex-shrink-0"
+                                        title="Click to change time"
+                                      />
+                                    ) : (
+                                      <span className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0">
+                                        {formatTime12(parseTime(stop.time))}
+                                        {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
+                                      </span>
+                                    );
+                                  })()}
                                   <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : stop.name}</h3>
                                 </div>
                               </div>
