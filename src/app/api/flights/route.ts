@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
     let resolvedToAp = toCandidates[0];
     let foundFlights = false;
 
+    console.log(`[flights] Searching ${from}→${to} (${date}): ${fromTrials.length} from × ${toCandidates.length} to airports`);
     for (const tryFromAp of fromTrials) {
       if (foundFlights) break;
     for (const toAp of toCandidates) {
@@ -421,7 +422,10 @@ async function getAmadeusToken(): Promise<string | null> {
       amadeusToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
       return data.access_token;
     }
-  } catch {}
+    console.error('[flights] Amadeus token error:', data.error_description || data.error);
+  } catch (e) {
+    console.error('[flights] Amadeus token fetch failed:', e);
+  }
   return null;
 }
 
@@ -441,10 +445,13 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
 
     const res = await fetch(`${AMADEUS_BASE_URL}/v2/shopping/flight-offers?${params}`, {
       headers: { 'Authorization': `Bearer ${token}` },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(25000),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`[flights] Amadeus ${from}→${to}: HTTP ${res.status}`);
+      return null;
+    }
     const data = await res.json();
     const offers = data.data || [];
     if (offers.length === 0) return null;
