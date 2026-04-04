@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { rateLimit, getClientIp } from '@/lib/rateLimit';
 import { validatePassword } from '@/lib/validatePassword';
+import { verifyTurnstile } from '@/lib/turnstile';
+
+// Email verification mode: true when Supabase SMTP is configured
+const EMAIL_VERIFY_ENABLED = process.env.EMAIL_VERIFY_ENABLED === 'true';
 
 /** POST /api/auth/signup - Create account with email/password via Supabase Auth */
 export async function POST(req: NextRequest) {
@@ -12,7 +16,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Too many signup attempts. Please try again later.' }, { status: 429 });
   }
 
-  const { email, password, name } = await req.json();
+  const { email, password, name, turnstileToken } = await req.json();
 
   if (!email || !password) {
     return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
@@ -22,11 +26,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: pwError }, { status: 400 });
   }
 
+  // Verify Turnstile CAPTCHA (skips if not configured)
+  const captchaValid = await verifyTurnstile(turnstileToken || '', ip);
+  if (!captchaValid) {
+    return NextResponse.json({ error: 'CAPTCHA verification failed. Please try again.' }, { status: 400 });
+  }
+
   const supabase = createServiceClient();
 
-  // Use admin.createUser for reliable, fast account creation
-  // email_confirm: true auto-confirms so user can sign in immediately
-  // TODO: When SMTP is configured, switch to supabase.auth.signUp() for email verification flow
+  if (EMAIL_VERIFY_ENABLED) {
+    // Email verification mode: use signUp() which sends a verification email
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { full_name: name || email.split('@')[0] },
+        emailRedirectTo: `${process.env.NEXTAUTH_URL}/auth/verify-callback`,
+      },
+    });
+
+    if (error) {
+      if (error.message.includes('already')) {
+        return NextResponse.json({ error: 'Account already exists with this email' }, { status: 409 });
+      }
+      console.error('[signup] signUp error:', error.message);
+      return NextResponse.json({ error: 'Account creation failed. Please try again.' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      id: data.user?.id,
+      email: data.user?.email,
+      needsVerification: true,
+    }, { status: 201 });
+  }
+
+  // Auto-confirm mode: use admin.createUser for instant access (no SMTP needed)
   const { data, error } = await supabase.auth.admin.createUser({
     email,
     password,
