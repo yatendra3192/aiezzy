@@ -622,20 +622,38 @@ function RoutePageContent() {
         } catch { /* invalid date — fetch without dates */ }
       }
       const dateParams = checkInStr && checkOutStr ? `&checkIn=${checkInStr}&checkOut=${checkOutStr}` : '';
-      fetch(`/api/nearby?location=${encodeURIComponent(dest.city.fullName || dest.city.name)}${dateParams}`)
+      const cityQuery = encodeURIComponent(dest.city.fullName || dest.city.name);
+      const selectHotel = (places: any[]) => {
+        if (places.length > 0) {
+          const h = places[0];
+          const hotel = {
+            id: `auto-${h.id || i}`,
+            name: h.displayName?.text || h.name || 'Hotel',
+            rating: h.rating || h.overall_rating || 0,
+            pricePerNight: h.rateExtracted || (4000 + Math.abs((dest.city.name.charCodeAt(0) * 137) % 5000)),
+            ratingColor: (h.rating || 0) >= 4 ? '#22c55e' : '#eab308',
+          };
+          trip.updateDestinationHotel(dest.id, hotel);
+          return true;
+        }
+        return false;
+      };
+      // Try with dates first, retry without dates if empty, then retry with just city name
+      fetch(`/api/nearby?location=${cityQuery}${dateParams}`)
         .then(r => r.json())
         .then(data => {
-          const places = data.places || [];
-          if (places.length > 0) {
-            const h = places[0];
-            const hotel = {
-              id: `auto-${h.id || i}`,
-              name: h.displayName?.text || h.name || 'Hotel',
-              rating: h.rating || h.overall_rating || 0,
-              pricePerNight: h.rateExtracted || (4000 + Math.abs((dest.city.name.charCodeAt(0) * 137) % 5000)),
-              ratingColor: (h.rating || 0) >= 4 ? '#22c55e' : '#eab308',
-            };
-            trip.updateDestinationHotel(dest.id, hotel);
+          if (selectHotel(data.places || [])) { trackPending(-1); return; }
+          // Retry without dates
+          if (dateParams) {
+            return fetch(`/api/nearby?location=${cityQuery}`).then(r => r.json()).then(data2 => {
+              if (selectHotel(data2.places || [])) { trackPending(-1); return; }
+              // Retry with simpler city name (no country suffix)
+              const simpleName = encodeURIComponent(dest.city.parentCity || dest.city.name);
+              return fetch(`/api/nearby?location=${simpleName}`).then(r => r.json()).then(data3 => {
+                selectHotel(data3.places || []);
+                trackPending(-1);
+              });
+            });
           }
           trackPending(-1);
         }).catch(() => trackPending(-1));
