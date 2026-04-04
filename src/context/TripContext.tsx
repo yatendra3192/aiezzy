@@ -501,7 +501,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       from: {
         ...s.from,
         _bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
-        _deepPlanData: (Object.keys(s.deepPlanData.customActivities).length > 0 || Object.keys(s.deepPlanData.dayNotes).length > 0 || Object.keys(s.deepPlanData.dayStartTimes).length > 0) ? s.deepPlanData : undefined,
+        _deepPlanData: (Object.keys(s.deepPlanData.customActivities || {}).length > 0 || Object.keys(s.deepPlanData.dayNotes || {}).length > 0 || Object.keys(s.deepPlanData.dayStartTimes || {}).length > 0 || Object.keys(s.deepPlanData.cityActivities || {}).length > 0 || Object.keys(s.deepPlanData.mealCosts || {}).length > 0 || Object.keys(s.deepPlanData.localTransport || {}).length > 0 || Object.keys(s.deepPlanData.removedActivities || {}).length > 0 || Object.keys(s.deepPlanData.editedTimes || {}).length > 0 || Object.keys(s.deepPlanData.activityOrder || {}).length > 0) ? s.deepPlanData : undefined,
       },
       fromAddress: s.fromAddress,
       destinations: s.destinations.map(d => ({ city: d.city, nights: d.nights, selectedHotel: d.selectedHotel, additionalHotels: d.additionalHotels || [], notes: d.notes, places: d.places || [] })),
