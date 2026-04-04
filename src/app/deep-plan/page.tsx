@@ -2474,8 +2474,8 @@ function DeepPlanPageContent() {
                                         Save activity
                                       </button>
                                     )}
-                                    {/* Book */}
-                                    {isAttractionCard && (
+                                    {/* Book — hide for free activities */}
+                                    {isAttractionCard && !(stop.ticketPrice && stop.ticketPrice.toLowerCase().includes('free')) && (
                                       <a href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(stop.name + ' ' + day.city)}`} target="_blank" rel="noopener noreferrer"
                                         onClick={() => setOpenActivityMenu(null)}
                                         className="flex items-center gap-2.5 px-3 py-2 text-[12px] font-body text-accent-cyan hover:bg-bg-card transition-colors">
@@ -2540,7 +2540,7 @@ function DeepPlanPageContent() {
                                     {stop.ticketPrice}
                                   </span>
                                 ) : null}
-                                {isAttractionCard && (
+                                {isAttractionCard && !(stop.ticketPrice && stop.ticketPrice.toLowerCase().includes('free')) && (
                                   <a
                                     href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(stop.name + ' ' + day.city)}`}
                                     target="_blank"
