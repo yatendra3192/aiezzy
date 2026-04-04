@@ -38,16 +38,19 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
 
   const transportLegs = (trip.trip_transport_legs || [])
     .sort((a: any, b: any) => a.position - b.position)
-    .map((l: any) => ({
-      id: l.id,
-      type: l.transport_type,
-      duration: l.duration,
-      distance: l.distance,
-      departureTime: l.departure_time,
-      arrivalTime: l.arrival_time,
-      selectedFlight: l.selected_flight,
-      selectedTrain: l.selected_train,
-    }));
+    .map((l: any) => {
+      const { _resolvedAirports, ...flightData } = l.selected_flight || {};
+      return {
+        id: l.id,
+        type: l.transport_type,
+        duration: l.duration,
+        distance: l.distance,
+        departureTime: l.departure_time,
+        arrivalTime: l.arrival_time,
+        selectedFlight: l.selected_flight ? flightData : null,
+        selectedTrain: l.selected_train,
+      };
+    });
 
   // Calculate costs
   const flightCost = transportLegs

@@ -211,16 +211,25 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       const newLegs = [...s.transportLegs];
       if (idx < newLegs.length && swapIdx < newLegs.length) {
         [newLegs[idx], newLegs[swapIdx]] = [newLegs[swapIdx], newLegs[idx]];
-        // Clear selections on swapped legs since their from/to cities are now different
-        newLegs[idx] = { ...newLegs[idx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
-        newLegs[swapIdx] = { ...newLegs[swapIdx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
+        // Clear selections on swapped legs + the adjacent leg after the pair (its "from" city changed)
+        const clearLeg = (i: number) => { if (i >= 0 && i < newLegs.length) newLegs[i] = { ...newLegs[i], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' }; };
+        clearLeg(idx);
+        clearLeg(swapIdx);
+        clearLeg(Math.max(idx, swapIdx) + 1);
       }
       return dirty({ ...s, destinations: newDests, transportLegs: newLegs });
     });
   }, []);
 
   const reorderDestinations = useCallback((newOrder: Destination[]) => {
-    setState(s => dirty({ ...s, destinations: newOrder }));
+    setState(s => {
+      // Clear all transport leg selections — city pairs changed after reorder
+      const clearedLegs = s.transportLegs.map(l => ({
+        ...l, selectedFlight: null, selectedTrain: null,
+        departureTime: null, arrivalTime: null, duration: '~', distance: '~',
+      }));
+      return dirty({ ...s, destinations: newOrder, transportLegs: clearedLegs });
+    });
   }, []);
 
   // ─── Booking Documents ──────────────────────────────────────────────────
