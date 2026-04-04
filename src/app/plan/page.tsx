@@ -306,12 +306,13 @@ function PlanPageContent() {
   const tripFileInputRef = useRef<HTMLInputElement>(null);
 
   // After groupPlacesIntoCities populates destinations, trigger route optimization
+  const destIds = trip.destinations.map(d => d.id).join(',');
   useEffect(() => {
     if (pendingOptimize && trip.destinations.length > 0) {
       setPendingOptimize(false);
       optimizeRoute();
     }
-  }, [pendingOptimize, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingOptimize, trip.destinations.length, destIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save trip to DB before navigating to /route (prevents data loss on page refresh)
   // Returns the tripId so callers can include it in the URL
