@@ -2232,7 +2232,7 @@ function DeepPlanPageContent() {
                 })()}
                 {/* Day header — click to expand/collapse */}
                 <div
-                  className={`bg-bg-surface border rounded-xl shadow-sm transition-colors overflow-hidden ${isDayExpanded(day.day) ? 'border-accent-cyan/30' : 'border-border-subtle hover:border-accent-cyan/20'}`}
+                  className={`bg-bg-surface border rounded-xl shadow-sm transition-colors overflow-visible ${isDayExpanded(day.day) ? 'border-accent-cyan/30' : 'border-border-subtle hover:border-accent-cyan/20'}`}
                 >
                   <div className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleDay(day.day)}>
                   <div className="flex items-center justify-between gap-2">
@@ -2379,6 +2379,8 @@ function DeepPlanPageContent() {
                 {(() => {
                   const isDraggableDay = day.type === 'explore' || String(day.type) === 'arrival' || day.costLabel === 'Arrival' || (DAY_TYPE_STYLES as any)[day.type]?.label === 'Arrival & Explore';
                   const activityIds = isDraggableDay ? day.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).map(s => s.id) : [];
+                  // All stop IDs for Reorder.Group values (includes non-draggable items with dragListener=false)
+                  const allStopIds = isDraggableDay ? day.stops.map(s => s.id) : [];
                   const useReorder = isDraggableDay && activityIds.length > 1;
 
                   const stopsContent = day.stops.map((stop, si) => {
@@ -2419,6 +2421,15 @@ function DeepPlanPageContent() {
                                 <span className="text-orange-600 text-[11px] font-body font-medium flex items-center gap-1">
                                   <span className="text-xs">{stop.mealType === 'breakfast' ? '\u2615' : stop.mealType === 'dinner' ? '\uD83C\uDF19' : '\uD83C\uDF7D\uFE0F'}</span> {stop.name}
                                 </span>
+                                {(() => {
+                                  const cityKey = day.city;
+                                  const mc = (trip.deepPlanData?.mealCosts || {})[cityKey];
+                                  if (!mc || !stop.mealType) return null;
+                                  const cost = mc[stop.mealType as 'breakfast' | 'lunch' | 'dinner'];
+                                  if (!cost) return null;
+                                  const rate = convRates[mc.currency?.toUpperCase()] || convRates[mc.currency] || 1;
+                                  return <span className="text-orange-400 text-[10px] font-mono ml-1">~{formatPrice(Math.round(cost * rate), currency)}/person</span>;
+                                })()}
                               </div>
                               {mealHint && <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5">{mealHint}</span>}
                             </div>
@@ -2983,7 +2994,7 @@ function DeepPlanPageContent() {
                       </>
                     );
 
-                    if (isDraggableActivity && useReorder) {
+                    if (useReorder && isDraggableActivity) {
                       return (
                         <Reorder.Item
                           key={stop.id}
@@ -2997,14 +3008,34 @@ function DeepPlanPageContent() {
                       );
                     }
 
+                    // Non-draggable stops inside Reorder.Group: wrap as static Reorder.Item so layout tracking works
+                    if (useReorder && !isDraggableActivity) {
+                      return (
+                        <Reorder.Item
+                          key={stop.id}
+                          value={stop.id}
+                          as="div"
+                          className="relative"
+                          dragListener={false}
+                          style={{ cursor: 'default' }}
+                        >
+                          {stopContent}
+                        </Reorder.Item>
+                      );
+                    }
+
                     return <div key={stop.id} className="relative">{stopContent}</div>;
                   });
 
                   return useReorder ? (
                     <Reorder.Group
                       axis="y"
-                      values={activityIds}
-                      onReorder={(newOrder: string[]) => handleActivityReorder(day.day, newOrder)}
+                      values={allStopIds}
+                      onReorder={(newOrder: string[]) => {
+                        // Filter to only activity IDs for persistence (non-draggable items stay in place)
+                        const reorderedActivities = newOrder.filter(id => activityIds.includes(id));
+                        handleActivityReorder(day.day, reorderedActivities);
+                      }}
                       as="div"
                       className={`ml-4 border-l-2 ${dayStyle.line} pl-0 mt-2`}
                     >
@@ -3087,9 +3118,9 @@ function DeepPlanPageContent() {
                 {(day.type === 'explore' || day.type === 'arrival') && showActivityInput[day.day] && (() => {
                   const suggestions = placeSuggestions[day.day] || [];
                   return (
-                  <div className="print-hide ml-4 pl-4 mt-2">
-                    <div className="flex items-center gap-2 flex-wrap bg-bg-card border border-accent-cyan/30 rounded-xl p-2.5 relative">
-                      <div className="flex-1 min-w-[120px] relative">
+                  <div className="print-hide ml-4 pl-4 mt-2 overflow-visible">
+                    <div className="flex items-center gap-2 flex-wrap bg-bg-card border border-accent-cyan/30 rounded-xl p-2.5 relative overflow-visible">
+                      <div className="flex-1 min-w-[120px] relative overflow-visible">
                         <input
                           type="text"
                           placeholder="Search places..."
@@ -3118,7 +3149,7 @@ function DeepPlanPageContent() {
                           autoFocus
                         />
                         {suggestions.length > 0 && (
-                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-border-subtle rounded-lg shadow-xl z-50 overflow-hidden">
+                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-border-subtle rounded-lg shadow-2xl z-[100] overflow-hidden">
                             {suggestions.map((s: any, i: number) => (
                               <button key={i} onClick={() => {
                                 setActivityInputText(prev => ({ ...prev, [day.day]: s.name }));
