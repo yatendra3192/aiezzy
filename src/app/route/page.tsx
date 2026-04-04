@@ -275,6 +275,9 @@ function RoutePageContent() {
   const autoSelectedRef = useRef(false);
   const [autoSelectLoading, setAutoSelectLoading] = useState(false);
   const [autoSelectStep, setAutoSelectStep] = useState('');
+  const [autoSelectDone, setAutoSelectDone] = useState(0);
+  const [autoSelectTotal, setAutoSelectTotal] = useState(0);
+  const [autoSelectCompletedSteps, setAutoSelectCompletedSteps] = useState<string[]>([]);
   // Cache flight results per leg so the modal doesn't re-fetch
   const flightCacheRef = useRef<Record<number, any[]>>({});
   // Cache resolved airport info per leg (codes, names, cities, distances)
@@ -342,15 +345,21 @@ function RoutePageContent() {
   }, [trip.transportLegs.length, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalPendingRef = useRef(0);
-  const trackPending = (delta: number, stepLabel?: string) => {
+  const trackPending = (delta: number, completedLabel?: string) => {
     pendingCountRef.current += delta;
     if (delta > 0) totalPendingRef.current += delta;
-    if (stepLabel) setAutoSelectStep(stepLabel);
+    if (delta < 0 && completedLabel) {
+      setAutoSelectDone(prev => prev + 1);
+      setAutoSelectCompletedSteps(prev => [...prev, completedLabel]);
+    }
     if (pendingCountRef.current <= 0) {
       pendingCountRef.current = 0;
       totalPendingRef.current = 0;
       autoSelectLoadingRef.current = false;
       setAutoSelectLoading(false);
+      setAutoSelectDone(0);
+      setAutoSelectTotal(0);
+      setAutoSelectCompletedSteps([]);
     }
   };
 
@@ -406,9 +415,14 @@ function RoutePageContent() {
     const needsHotels = trip.destinations.some(d => !d.selectedHotel && d.nights > 0);
 
     if (needsFlights || needsHotels) {
+      const flightCount = trip.transportLegs.filter(l => !l.selectedFlight && !l.selectedTrain).length;
+      const hotelCount = trip.destinations.filter(d => !d.selectedHotel && d.nights > 0).length;
       autoSelectLoadingRef.current = true;
       setAutoSelectLoading(true);
-      setAutoSelectStep(needsFlights ? 'Searching flights and trains...' : 'Finding hotels for each city...');
+      setAutoSelectDone(0);
+      setAutoSelectTotal(flightCount + hotelCount);
+      setAutoSelectCompletedSteps([]);
+      setAutoSelectStep(needsFlights ? 'Searching flights and trains...' : 'Finding hotels...');
     }
 
     // Auto-select best transport for each leg (flight OR train, whichever is cheaper/better)
@@ -603,8 +617,8 @@ function RoutePageContent() {
           };
           trip.selectFlight(leg.id, flight);
         }
-        trackPending(-1);
-      }).catch(() => trackPending(-1));
+        trackPending(-1, `${fromName} → ${toName}`);
+      }).catch(() => trackPending(-1, `${fromName} → ${toName}`));
     });
 
     // Auto-select cheapest hotel for destinations without one
@@ -653,21 +667,20 @@ function RoutePageContent() {
       fetch(`/api/nearby?location=${cityQuery}${dateParams}`)
         .then(r => r.json())
         .then(data => {
-          if (selectHotel(data.places || [])) { trackPending(-1); return; }
-          // Retry without dates
+          const hotelLabel = `Hotel in ${dest.city.parentCity || dest.city.name}`;
+          if (selectHotel(data.places || [])) { trackPending(-1, hotelLabel); return; }
           if (dateParams) {
             return fetch(`/api/nearby?location=${cityQuery}`).then(r => r.json()).then(data2 => {
-              if (selectHotel(data2.places || [])) { trackPending(-1); return; }
-              // Retry with simpler city name (no country suffix)
+              if (selectHotel(data2.places || [])) { trackPending(-1, hotelLabel); return; }
               const simpleName = encodeURIComponent(dest.city.parentCity || dest.city.name);
               return fetch(`/api/nearby?location=${simpleName}`).then(r => r.json()).then(data3 => {
                 selectHotel(data3.places || []);
-                trackPending(-1);
+                trackPending(-1, hotelLabel);
               });
             });
           }
-          trackPending(-1);
-        }).catch(() => trackPending(-1));
+          trackPending(-1, hotelLabel);
+        }).catch(() => trackPending(-1, `Hotel in ${dest.city.parentCity || dest.city.name}`));
     });
   }, [trip.destinations.length, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1941,30 +1954,43 @@ function RoutePageContent() {
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-2xl shadow-xl p-6 text-center max-w-[360px] w-full"
+            className="bg-white rounded-2xl shadow-xl p-6 max-w-[380px] w-full"
           >
-            <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-accent-cyan/10 flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <div className="text-center mb-4">
+              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-accent-cyan/10 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+              </div>
+              <h3 className="font-display text-lg font-bold text-text-primary">Setting Up Your Trip</h3>
+              <p className="text-accent-cyan text-[13px] font-body mt-1 flex items-center justify-center gap-2">
+                <span className="w-3 h-3 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                {autoSelectStep || 'Finding the best options...'}
+              </p>
             </div>
-            <p className="font-display font-bold text-text-primary text-lg mb-1">Setting Up Your Trip</p>
-            <p className="text-text-muted text-xs font-body mb-4">{autoSelectStep || 'Finding the best options for you...'}</p>
-            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-3">
-              <div className="h-full bg-accent-cyan rounded-full animate-pulse" style={{ width: '60%' }} />
+            {/* Real progress bar */}
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <motion.div
+                className="h-full bg-accent-cyan rounded-full"
+                initial={{ width: '5%' }}
+                animate={{ width: autoSelectTotal > 0 ? `${Math.max(5, Math.round((autoSelectDone / autoSelectTotal) * 100))}%` : '30%' }}
+                transition={{ duration: 0.4 }}
+              />
             </div>
-            <div className="flex items-center justify-center gap-4 text-[10px] text-text-muted font-body">
-              <span className="flex items-center gap-1">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Flights
-              </span>
-              <span className="flex items-center gap-1">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 0 0-8 0v2"/></svg>
-                Hotels
-              </span>
-              <span className="flex items-center gap-1">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 17h14v-5H5z"/><path d="M3 12V8l2-4h14l2 4v4"/></svg>
-                Trains
-              </span>
-            </div>
+            {/* Completed steps with checkmarks */}
+            {autoSelectCompletedSteps.length > 0 && (
+              <div className="space-y-1.5 mb-3 max-h-[120px] overflow-y-auto">
+                {autoSelectCompletedSteps.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[12px] font-body">
+                    <div className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span className="text-text-muted">{step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-text-muted font-body text-center">
+              {autoSelectTotal > 0 ? `${autoSelectDone} of ${autoSelectTotal} completed` : 'Searching...'}
+            </p>
           </motion.div>
         </div>
       )}
