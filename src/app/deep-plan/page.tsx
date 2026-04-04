@@ -229,6 +229,7 @@ function DeepPlanPageContent() {
   const [activityInputText, setActivityInputText] = useState<Record<number, string>>({});
   const [activityInputTime, setActivityInputTime] = useState<Record<number, string>>({});
   const [placeSuggestions, setPlaceSuggestions] = useState<Record<number, Array<{ name: string; description: string }>>>({});
+  const [editingTimeKey, setEditingTimeKey] = useState<string | null>(null);
   const [showDayNotes, setShowDayNotes] = useState<Record<number, boolean>>({});
   // Collapsible days: Record<dayNumber, boolean> — multiple can be open
   const [expandedDays, setExpandedDays] = useState<Record<number, boolean>>({ 1: true });
@@ -2393,19 +2394,22 @@ function DeepPlanPageContent() {
                             <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-orange-200" />
                             <div className="inline-flex flex-col">
                               <div className="inline-flex items-center gap-1.5 bg-orange-50/60 border border-orange-100/60 rounded-full px-3 py-0.5">
-                                {stop.time && (
-                                  <input
-                                    type="time"
-                                    value={editedTimes[`day_${day.day}_${stop.mealType}`] || stop.time}
-                                    onChange={e => {
-                                      const newTime = e.target.value;
-                                      if (!newTime) return;
-                                      setEditedTimes(prev => ({ ...prev, [`day_${day.day}_${stop.mealType}`]: newTime }));
-                                    }}
-                                    className="text-orange-400 text-[10px] font-mono bg-transparent border-none outline-none w-[52px] cursor-pointer hover:text-orange-600 p-0"
-                                    title="Click to change time"
-                                  />
-                                )}
+                                {stop.time && (() => {
+                                  const timeKey = `day_${day.day}_${stop.mealType}`;
+                                  const displayTime = editedTimes[timeKey] || stop.time;
+                                  const isEditing = editingTimeKey === timeKey;
+                                  return isEditing ? (
+                                    <input type="time" autoFocus value={displayTime}
+                                      onChange={e => { if (e.target.value) setEditedTimes(prev => ({ ...prev, [timeKey]: e.target.value })); }}
+                                      onBlur={() => setEditingTimeKey(null)}
+                                      className="text-orange-400 text-[10px] font-mono bg-transparent border-none outline-none w-[60px] p-0"
+                                    />
+                                  ) : (
+                                    <button onClick={() => setEditingTimeKey(timeKey)} className="text-orange-400 text-[10px] font-mono hover:text-orange-600 cursor-pointer" title="Click to change time">
+                                      {formatTime12(parseTime(displayTime))}
+                                    </button>
+                                  );
+                                })()}
                                 <span className="text-orange-600 text-[11px] font-body font-medium flex items-center gap-1">
                                   <span className="text-xs">{stop.mealType === 'breakfast' ? '\u2615' : stop.mealType === 'dinner' ? '\uD83C\uDF19' : '\uD83C\uDF7D\uFE0F'}</span> {stop.name}
                                 </span>
@@ -2460,19 +2464,23 @@ function DeepPlanPageContent() {
                                 <div className="flex items-center gap-2">
                                   {stop.time && (() => {
                                     const isEditableTime = stop.name === 'Rest / Sleep' || stop.name === 'Return to hotel' || stop.name === 'Overnight';
-                                    return isEditableTime ? (
-                                      <input
-                                        type="time"
-                                        value={editedTimes[`day_${day.day}_${stop.name.replace(/\s+/g, '_')}`] || stop.time}
-                                        onChange={e => {
-                                          const newTime = e.target.value;
-                                          if (!newTime) return;
-                                          setEditedTimes(prev => ({ ...prev, [`day_${day.day}_${stop.name.replace(/\s+/g, '_')}`]: newTime }));
-                                        }}
-                                        className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[60px] cursor-pointer hover:text-accent-cyan/70 p-0 flex-shrink-0"
-                                        title="Click to change time"
-                                      />
-                                    ) : (
+                                    if (isEditableTime) {
+                                      const timeKey = `day_${day.day}_${stop.name.replace(/\s+/g, '_')}`;
+                                      const displayTime = editedTimes[timeKey] || stop.time;
+                                      const isEditing = editingTimeKey === timeKey;
+                                      return isEditing ? (
+                                        <input type="time" autoFocus value={displayTime}
+                                          onChange={e => { if (e.target.value) setEditedTimes(prev => ({ ...prev, [timeKey]: e.target.value })); }}
+                                          onBlur={() => setEditingTimeKey(null)}
+                                          className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[70px] p-0 flex-shrink-0"
+                                        />
+                                      ) : (
+                                        <button onClick={() => setEditingTimeKey(timeKey)} className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0 hover:text-accent-cyan/70 cursor-pointer" title="Click to change time">
+                                          {formatTime12(parseTime(displayTime))}
+                                        </button>
+                                      );
+                                    }
+                                    return (
                                       <span className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0">
                                         {formatTime12(parseTime(stop.time))}
                                         {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
