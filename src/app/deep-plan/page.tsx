@@ -1359,7 +1359,7 @@ function DeepPlanPageContent() {
         });
 
         if (changed) {
-          const newStops = [...day.stops];
+          let newStops = [...day.stops];
           // Apply updates in reverse order so index shifts don't matter
           for (const siStr of Object.keys(updatedTransport).sort((a, b) => Number(b) - Number(a))) {
             const si = Number(siStr);
@@ -1416,8 +1416,86 @@ function DeepPlanPageContent() {
               }
             }
           }
+          // For arrival days: also inject custom activities and apply reorder
+          if (day.type === 'arrival') {
+            const customs = customActivities[day.day] || [];
+            if (customs.length > 0) {
+              const dinnerIdx = newStops.findIndex(s => s.mealType === 'dinner');
+              const insertIdx = dinnerIdx >= 0 ? dinnerIdx : newStops.length - 1;
+              const baseAiNames = new Set(newStops.filter(s => s.type === 'attraction' && !s.mealType).map(s => s.name.trim().toLowerCase()));
+              const customStops: DeepStop[] = customs.map((activity, ci) => ({
+                id: `custom-${day.day}-${ci}`,
+                name: activity.name,
+                type: 'attraction' as const,
+                time: activity.time,
+                transport: { icon: 'walk', duration: '', distance: '' },
+                isPinned: baseAiNames.has(activity.name.trim().toLowerCase()),
+              }));
+              newStops.splice(insertIdx, 0, ...customStops);
+            }
+            // Apply drag-reorder for arrival days
+            const userOrder = activityOrder[day.day];
+            if (userOrder && userOrder.length > 0) {
+              const actStops = newStops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time'));
+              const nonActStops = newStops.filter(s => !(s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')));
+              const ordered: DeepStop[] = [];
+              for (const id of userOrder) {
+                const found = actStops.find(s => s.id === id);
+                if (found) ordered.push(found);
+              }
+              for (const s of actStops) {
+                if (!userOrder.includes(s.id)) ordered.push(s);
+              }
+              // Re-insert activities before dinner
+              const dinnerIdx2 = nonActStops.findIndex(s => s.mealType === 'dinner');
+              const insertIdx2 = dinnerIdx2 >= 0 ? dinnerIdx2 : nonActStops.length - 1;
+              nonActStops.splice(insertIdx2, 0, ...ordered);
+              newStops = nonActStops;
+            }
+          }
           return { ...day, stops: newStops };
         }
+
+        // For arrival days without transport changes, still inject custom activities and apply reorder
+        if (day.type === 'arrival') {
+          let newStops = [...day.stops];
+          const customs = customActivities[day.day] || [];
+          if (customs.length > 0) {
+            const dinnerIdx = newStops.findIndex(s => s.mealType === 'dinner');
+            const insertIdx = dinnerIdx >= 0 ? dinnerIdx : newStops.length - 1;
+            const baseAiNames = new Set(newStops.filter(s => s.type === 'attraction' && !s.mealType).map(s => s.name.trim().toLowerCase()));
+            const customStops: DeepStop[] = customs.map((activity, ci) => ({
+              id: `custom-${day.day}-${ci}`,
+              name: activity.name,
+              type: 'attraction' as const,
+              time: activity.time,
+              transport: { icon: 'walk', duration: '', distance: '' },
+              isPinned: baseAiNames.has(activity.name.trim().toLowerCase()),
+            }));
+            newStops.splice(insertIdx, 0, ...customStops);
+          }
+          // Apply drag-reorder for arrival days
+          const userOrder = activityOrder[day.day];
+          if (userOrder && userOrder.length > 0) {
+            const actStops = newStops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time'));
+            const nonActStops = newStops.filter(s => !(s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')));
+            const ordered: DeepStop[] = [];
+            for (const id of userOrder) {
+              const found = actStops.find(s => s.id === id);
+              if (found) ordered.push(found);
+            }
+            for (const s of actStops) {
+              if (!userOrder.includes(s.id)) ordered.push(s);
+            }
+            const dinnerIdx2 = nonActStops.findIndex(s => s.mealType === 'dinner');
+            const insertIdx2 = dinnerIdx2 >= 0 ? dinnerIdx2 : nonActStops.length - 1;
+            nonActStops.splice(insertIdx2, 0, ...ordered);
+            newStops = nonActStops;
+          }
+          if (customs.length > 0 || (userOrder && userOrder.length > 0)) return { ...day, stops: newStops };
+          return day;
+        }
+
         return day;
       }
 
