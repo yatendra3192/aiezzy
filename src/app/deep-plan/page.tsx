@@ -2911,7 +2911,10 @@ function DeepPlanPageContent() {
                                           {selData ? (
                                             <span className="text-[11px] font-mono">{selData.duration} &middot; {selData.distance}
                                               {(() => {
-                                                const cityKey = day.city;
+                                                // Use correct city: pre-transport stops use departureCity, post-transport use day.city
+                                                const transportIdx = day.stops.findIndex(s => s.legIndex !== undefined);
+                                                const isBeforeTransport = transportIdx >= 0 && si < transportIdx;
+                                                const cityKey = isBeforeTransport ? (day.departureCity || day.city) : day.city;
                                                 const lt = (trip.deepPlanData?.localTransport || {})[cityKey];
                                                 if (!lt) return null;
                                                 const rate = convRates[lt.currency?.toUpperCase()] || 1;
