@@ -106,12 +106,14 @@ export async function GET(req: NextRequest) {
     }
 
     // Step 3: Filter to commercial airports with IATA codes
-    // Return a smart mix: closest airports + spread to cover major hubs
+    // Exclude military bases, air force bases, and restricted airports
+    const MILITARY_KEYWORDS = ['air force', 'air base', 'afb', 'military', 'naval air', 'army airfield', 'joint base'];
     const allCommercial = allAirports
       .filter((a: any) =>
         a.iata_code &&
         a.iata_code.length === 3 &&
-        (a.type === 'large_airport' || a.type === 'medium_airport')
+        (a.type === 'large_airport' || a.type === 'medium_airport') &&
+        !MILITARY_KEYWORDS.some(kw => (a.name || '').toLowerCase().includes(kw))
       )
       .map((a: any) => ({
         iata_code: a.iata_code,
