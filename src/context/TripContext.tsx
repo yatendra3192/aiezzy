@@ -533,7 +533,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
 
       const hasDeepPlanData = Object.keys(s.deepPlanData.customActivities || {}).length > 0 || Object.keys(s.deepPlanData.dayNotes || {}).length > 0 || Object.keys(s.deepPlanData.dayStartTimes || {}).length > 0 || Object.keys(s.deepPlanData.cityActivities || {}).length > 0 || Object.keys(s.deepPlanData.mealCosts || {}).length > 0 || Object.keys(s.deepPlanData.localTransport || {}).length > 0 || Object.keys(s.deepPlanData.removedActivities || {}).length > 0 || Object.keys(s.deepPlanData.editedTimes || {}).length > 0 || Object.keys(s.deepPlanData.activityOrder || {}).length > 0 || Object.keys(s.deepPlanData.dayThemes || {}).length > 0;
 
-      const payload = {
+      const payload: Record<string, any> = {
         from: s.from,
         fromAddress: s.fromAddress,
         bookingDocs: s.bookingDocs.length > 0 ? s.bookingDocs : undefined,
@@ -551,6 +551,10 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         infants: s.infants,
         tripType: s.tripType,
       };
+      // Optimistic locking: send last known server timestamp to detect multi-tab conflicts
+      if (s.tripId && s.lastSavedAt) {
+        payload.expectedUpdatedAt = s.lastSavedAt instanceof Date ? s.lastSavedAt.toISOString() : s.lastSavedAt;
+      }
 
       try {
         const method = s.tripId ? 'PUT' : 'POST';
@@ -558,9 +562,18 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const data = await res.json();
 
+        // Handle stale save conflict (another tab saved first)
+        if (res.status === 409) {
+          console.warn('[saveTrip] Stale save detected — another tab modified this trip');
+          setState(prev => ({ ...prev, isSaving: false, isDirty: true }));
+          return saveTripId;
+        }
+
         if (!res.ok) throw new Error(data.error || 'Save failed');
 
         const tripId = data.id || s.tripId;
+        // Use server timestamp for optimistic locking (not local clock)
+        const serverUpdatedAt = data.updatedAt ? new Date(data.updatedAt) : new Date();
         setState(prev => {
           // If a different trip was loaded while we were saving, don't overwrite it
           if (prev.tripId && saveTripId && prev.tripId !== saveTripId) {
@@ -573,7 +586,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
             tripId,
             isSaving: false,
             isDirty: stateChangedDuringSave ? prev.isDirty : false,
-            lastSavedAt: new Date(),
+            lastSavedAt: serverUpdatedAt,
           };
         });
         try { sessionStorage.setItem('currentTripId', tripId); } catch {}

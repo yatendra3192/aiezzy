@@ -88,6 +88,17 @@ export const authOptions: NextAuthOptions = {
         }
         token.name = user.name;
         token.picture = user.image;
+        token.profileCheckedAt = Date.now();
+      } else if (!token.profileCheckedAt || Date.now() - (token.profileCheckedAt as number) > 3600_000) {
+        // Re-verify Supabase user ID every hour (guards against stale ID after profile deletion/recreation)
+        try {
+          const supabase = createServiceClient();
+          const { data: profile } = await supabase.from('profiles').select('id').eq('email', token.email).maybeSingle();
+          if (profile) token.supabaseUserId = profile.id;
+          token.profileCheckedAt = Date.now();
+        } catch {
+          // Non-critical — keep existing ID if lookup fails
+        }
       }
       return token;
     },

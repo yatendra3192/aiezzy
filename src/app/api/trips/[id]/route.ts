@@ -81,7 +81,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   });
 }
 
-/** PUT /api/trips/[id] - Update trip (replace all destinations and legs) */
+/** PUT /api/trips/[id] - Update trip atomically (single DB transaction) */
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -95,26 +95,33 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   const body = validation.data;
   const supabase = await createUserClient(userId);
 
-  // Verify trip belongs to user
+  // Verify trip belongs to user (needed for title generation + optimistic locking)
   const { data: existing } = await supabase
     .from('trips')
-    .select('id, title')
+    .select('id, title, updated_at')
     .eq('id', params.id)
     .eq('user_id', userId)
     .single();
 
   if (!existing) return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
 
+  // Optimistic locking: reject if another tab/session modified the trip since last load
+  if (raw.expectedUpdatedAt && existing.updated_at) {
+    const expected = new Date(raw.expectedUpdatedAt).getTime();
+    const actual = new Date(existing.updated_at).getTime();
+    // Allow 2s tolerance for clock drift
+    if (actual > expected + 2000) {
+      return NextResponse.json({ error: 'Trip was modified in another tab. Please reload.', stale: true }, { status: 409 });
+    }
+  }
+
   // Generate title: keep existing trip number if present, update route info
   const destNames = (body.destinations || []).map((d: any) => d.city?.name).filter(Boolean);
   const fromName = body.fromAddress?.split(',')[0] || 'Home';
   const lastDest = destNames[destNames.length - 1] || '';
   const depDate = body.departureDate ? new Date(body.departureDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
-
-  // Extract trip number from existing title if present (e.g., "Trip 3 · ...")
   const existingNum = existing.title?.match(/^Trip (\d+)/)?.[1] || '';
   const tripPrefix = existingNum ? `Trip ${existingNum}` : 'Trip';
-
   const title = lastDest
     ? `${tripPrefix} · ${depDate} · ${fromName} to ${lastDest}`
     : `${tripPrefix} · ${depDate}`;
@@ -122,7 +129,71 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   // Strip _deepPlanData and _bookingDocs from from_city (now stored in dedicated columns)
   const { _deepPlanData, _bookingDocs, ...cleanFrom } = (body.from || {}) as any;
 
-  // 1. Update trip metadata (scoped to user_id for defense-in-depth)
+  // Build destination rows for the atomic function
+  const destRows = (body.destinations || []).map((d: any, i: number) => ({
+    position: i,
+    city: { ...(d.city || {}), _places: d.places || [] },
+    nights: d.nights ?? 2,
+    selected_hotel: d.selectedHotel ? { ...d.selectedHotel, _additionalHotels: d.additionalHotels || [] } : null,
+  }));
+
+  // Build transport leg rows for the atomic function
+  const legRows = (body.transportLegs || []).map((l: any, i: number) => ({
+    position: i,
+    transport_type: l.type || 'drive',
+    duration: l.duration || null,
+    distance: l.distance || null,
+    departure_time: l.departureTime || null,
+    arrival_time: l.arrivalTime || null,
+    selected_flight: l.selectedFlight || null,
+    selected_train: l.selectedTrain || null,
+  }));
+
+  // Try atomic RPC first (single transaction — all or nothing)
+  const { data: rpcResult, error: rpcError } = await supabase.rpc('update_trip_atomic', {
+    p_trip_id: params.id,
+    p_user_id: userId,
+    p_title: title,
+    p_from_city: cleanFrom,
+    p_from_address: body.fromAddress || '',
+    p_departure_date: body.departureDate,
+    p_adults: body.adults || 1,
+    p_children: body.children || 0,
+    p_infants: body.infants || 0,
+    p_trip_type: body.tripType || 'roundTrip',
+    p_deep_plan_data: body.deepPlanData !== undefined ? body.deepPlanData : null,
+    p_booking_docs: body.bookingDocs !== undefined ? body.bookingDocs : null,
+    p_destinations: destRows,
+    p_legs: legRows,
+  });
+
+  if (!rpcError) {
+    // Fetch server timestamp for optimistic locking on next save
+    const { data: ts } = await supabase.from('trips').select('updated_at').eq('id', params.id).single();
+    return NextResponse.json({ id: params.id, updated: true, updatedAt: ts?.updated_at });
+  }
+
+  // RPC function may not exist yet (pre-migration) — fall back to sequential operations
+  if (rpcError.message?.includes('update_trip_atomic') || rpcError.code === '42883') {
+    console.warn('[trip-update] atomic RPC not available, falling back to sequential operations');
+    return updateTripSequential(supabase, params.id, userId, title, cleanFrom, body, destRows, legRows);
+  }
+
+  // Handle specific errors from the atomic function
+  if (rpcError.message?.includes('TRIP_NOT_FOUND')) {
+    return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
+  }
+
+  console.error('[trip-update] atomic error:', rpcError.message);
+  return NextResponse.json({ error: 'Failed to update trip' }, { status: 500 });
+}
+
+/** Fallback: sequential update for pre-migration databases (non-atomic) */
+async function updateTripSequential(
+  supabase: any, tripId: string, userId: string, title: string,
+  cleanFrom: any, body: any, destRows: any[], legRows: any[]
+) {
+  // 1. Update trip metadata
   const updatePayload: Record<string, any> = {
     title,
     from_city: cleanFrom,
@@ -133,70 +204,48 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     infants: body.infants || 0,
     trip_type: body.tripType || 'roundTrip',
   };
-  // Write deepPlanData and bookingDocs to dedicated columns if provided
   if (body.deepPlanData !== undefined) updatePayload.deep_plan_data = body.deepPlanData;
   if (body.bookingDocs !== undefined) updatePayload.booking_docs = body.bookingDocs;
 
   const { error: updateError } = await supabase
-    .from('trips')
-    .update(updatePayload)
-    .eq('id', params.id)
-    .eq('user_id', userId);
-
+    .from('trips').update(updatePayload).eq('id', tripId).eq('user_id', userId);
   if (updateError) {
     console.error('[trip-update] metadata error:', updateError.message);
     return NextResponse.json({ error: 'Failed to update trip' }, { status: 500 });
   }
 
-  // 2. Replace destinations (delete all, re-insert) — check errors on each step
-  const { error: delDestError } = await supabase.from('trip_destinations').delete().eq('trip_id', params.id);
+  // 2. Replace destinations
+  const { error: delDestError } = await supabase.from('trip_destinations').delete().eq('trip_id', tripId);
   if (delDestError) {
     console.error('[trip-update] delete destinations error:', delDestError.message);
     return NextResponse.json({ error: 'Failed to update destinations' }, { status: 500 });
   }
-
-  if (body.destinations?.length > 0) {
-    const destRows = body.destinations.map((d: any, i: number) => ({
-      trip_id: params.id,
-      position: i,
-      city: { ...(d.city || {}), _places: d.places || [] },
-      nights: d.nights ?? 2,
-      selected_hotel: d.selectedHotel ? { ...d.selectedHotel, _additionalHotels: d.additionalHotels || [] } : null,
-    }));
-    const { error: insDestError } = await supabase.from('trip_destinations').insert(destRows);
+  if (destRows.length > 0) {
+    const rows = destRows.map(d => ({ ...d, trip_id: tripId }));
+    const { error: insDestError } = await supabase.from('trip_destinations').insert(rows);
     if (insDestError) {
       console.error('[trip-update] insert destinations error:', insDestError.message);
       return NextResponse.json({ error: 'Failed to save destinations' }, { status: 500 });
     }
   }
 
-  // 3. Replace transport legs — check errors on each step
-  const { error: delLegError } = await supabase.from('trip_transport_legs').delete().eq('trip_id', params.id);
+  // 3. Replace transport legs
+  const { error: delLegError } = await supabase.from('trip_transport_legs').delete().eq('trip_id', tripId);
   if (delLegError) {
-    console.error('[trip-update] delete transport legs error:', delLegError.message);
+    console.error('[trip-update] delete legs error:', delLegError.message);
     return NextResponse.json({ error: 'Failed to update transport' }, { status: 500 });
   }
-
-  if (body.transportLegs?.length > 0) {
-    const legRows = body.transportLegs.map((l: any, i: number) => ({
-      trip_id: params.id,
-      position: i,
-      transport_type: l.type || 'drive',
-      duration: l.duration || null,
-      distance: l.distance || null,
-      departure_time: l.departureTime || null,
-      arrival_time: l.arrivalTime || null,
-      selected_flight: l.selectedFlight || null,
-      selected_train: l.selectedTrain || null,
-    }));
-    const { error: insLegError } = await supabase.from('trip_transport_legs').insert(legRows);
+  if (legRows.length > 0) {
+    const rows = legRows.map(l => ({ ...l, trip_id: tripId }));
+    const { error: insLegError } = await supabase.from('trip_transport_legs').insert(rows);
     if (insLegError) {
-      console.error('[trip-update] insert transport legs error:', insLegError.message);
+      console.error('[trip-update] insert legs error:', insLegError.message);
       return NextResponse.json({ error: 'Failed to save transport' }, { status: 500 });
     }
   }
 
-  return NextResponse.json({ id: params.id, updated: true });
+  const { data: ts } = await supabase.from('trips').select('updated_at').eq('id', tripId).single();
+  return NextResponse.json({ id: tripId, updated: true, updatedAt: ts?.updated_at });
 }
 
 /** DELETE /api/trips/[id] - Delete a trip and clean up storage files */

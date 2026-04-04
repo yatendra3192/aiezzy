@@ -17,7 +17,16 @@ npm run restart    # Kill port 3000 and restart dev server (safe for Claude Code
 
 **Production build check:** Always run `npx next build` before pushing to git. Railway deploys fail silently on TypeScript errors (e.g., `Set` iteration without `downlevelIteration`, `parseInt` on number types).
 
-No test runner or linter configured.
+**Testing:**
+
+```bash
+npm test           # Run all Playwright e2e tests
+npm run test:smoke # Run smoke tests only (16 tests: pages, auth guards, NextAuth)
+```
+
+Playwright with Chromium. Tests in `e2e/`. Config in `playwright.config.ts`. CI runs automatically via `.github/workflows/ci.yml` on push to `dev`/`main` (TypeScript build check + smoke tests).
+
+No linter configured.
 
 ## Architecture
 
@@ -52,14 +61,16 @@ NextAuth v4 JWT in `src/lib/auth.ts`. CredentialsProvider (Supabase Auth) + Goog
 ### Database
 
 **App Supabase** (`NEXT_PUBLIC_SUPABASE_URL`): `profiles`, `trips`, `trip_destinations`, `trip_transport_legs`. JSONB for City/Flight/Train/Hotel. RLS on all. Two Supabase client modes in `src/lib/supabase/server.ts`:
-- `createUserClient(userId)` — signs a short-lived JWT with the user's ID via `jose`, creates a Supabase client that enforces RLS (`auth.uid() = user_id`). Used for trip CRUD, profile, share routes. Falls back to service client if `SUPABASE_JWT_SECRET` is not set.
+- `createUserClient(userId)` — signs a short-lived JWT (5min) with the user's ID via `jose`, creates a Supabase client that enforces RLS (`auth.uid() = user_id`). Used for trip CRUD, profile, share routes. **Requires `SUPABASE_JWT_SECRET`** — throws if not set (no silent fallback to service client).
 - `createServiceClient()` — service role key, bypasses RLS. Used ONLY for admin ops, auth (signup/password), storage (booking-docs), shared trip public access, and NextAuth callbacks.
 
 **Catalog Supabase** (`CATALOG_SUPABASE_URL`): 47,830 airports with PostGIS. Used via `nearby_airports(lat, lng, radius_km)` RPC.
 
 **Supabase Storage**: `booking-docs` bucket for uploaded booking PDFs/images. Path: `userId/tripId/timestamp-filename`. Signed URLs (1-year expiry). Auto-creates bucket on first upload via service role.
 
-**Dedicated columns:** `trips.deep_plan_data` and `trips.booking_docs` (JSONB) store deep plan and booking data separately from `from_city`. Run `POST /api/admin/migrate` to create these columns.
+**Dedicated columns:** `trips.deep_plan_data` and `trips.booking_docs` (JSONB) store deep plan and booking data separately from `from_city`. Run `POST /api/admin/migrate` to create these columns and the atomic trip functions.
+
+**Atomic trip functions:** `update_trip_atomic()` and `create_trip_atomic()` are PL/pgSQL functions that wrap trip create/update in real PostgreSQL transactions (DELETE destinations + INSERT destinations + DELETE legs + INSERT legs — all or nothing). SQL in `supabase/migrations/atomic_trip_functions.sql`. API routes call via `.rpc()` with automatic fallback to sequential operations if the functions haven't been deployed yet.
 
 **JSONB embedding pattern (legacy + current):** Extra data stored inside existing JSONB columns:
 - `places` → `_places` inside `trip_destinations.city` JSONB
@@ -74,7 +85,7 @@ On save, API embeds remaining fields; on load, extracts and returns separately. 
 - `TripActionsContext` — stable action functions (never re-renders). Access via `useTripActions()`.
 - `TripStateContext` — trip data (re-renders on change). Access via `useTripState()`.
 - `TripContext` — combined backward-compatible context. Access via `useTrip()` (re-renders on any change).
-All 34 action callbacks have `[]` deps and are `useMemo`'d into a stable actions object. Components that only need actions should use `useTripActions()` to avoid unnecessary re-renders.
+All 34 action callbacks have `[]` deps and are `useMemo`'d into a stable actions object. Components that only need actions should use `useTripActions()` to avoid unnecessary re-renders. **Current usage:** `my-trips` uses `useTripActions()` only (action-only page), `AISuggestModal` uses both `useTripState()` + `useTripActions()`. The heavy pages (`route`, `deep-plan`, `plan`) still use `useTrip()` because they need both state and actions at the page level — the split only helps when extracting sub-components.
 
 Two data flows:
 - **Places flow**: `userPlaces` → `addPlace`/`removePlace`/`reorderPlaces`/`updatePlaceNights` → `groupPlacesIntoCities()` auto-groups by `parentCity`
@@ -86,7 +97,7 @@ Two data flows:
 - `buildFullTrip()` creates entire trip (destinations + transport + hotels) in one atomic `setState` — avoids React batching issues with sequential `addDestination` calls
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
 - `deepPlanData: DeepPlanData` — custom activities, day notes, start times, AI city activities cache, day themes persisted via `_deepPlanData` JSONB embedding
-- **`saveTrip` concurrency safety:** Uses `stateRef` (always latest state) instead of `setState` hack. `saveMutexRef` queues saves sequentially via promise chain. `isDirty` only cleared if state hasn't changed during the network round-trip. Checks `tripId` staleness to prevent overwriting a different trip loaded mid-save.
+- **`saveTrip` concurrency safety:** Uses `stateRef` (always latest state) instead of `setState` hack. `saveMutexRef` queues saves sequentially via promise chain. `isDirty` only cleared if state hasn't changed during the network round-trip. Checks `tripId` staleness to prevent overwriting a different trip loaded mid-save. **Optimistic locking:** Sends `expectedUpdatedAt` (server timestamp) with PUT requests; API returns 409 if another tab saved in between (2s tolerance). Client keeps `isDirty: true` on conflict so next auto-save retries. All save responses include `updatedAt` from the server.
 - **Destination reorder/move/remove syncs transport legs:** `moveDestination` swaps corresponding legs + clears the adjacent leg after the swap pair. `removeDestination` clears the leg that slides into the gap. `reorderDestinations` clears ALL transport leg selections (every city pair changes). All three prevent stale flight/train data from persisting on wrong city pairs.
 
 **CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
@@ -98,14 +109,14 @@ Two data flows:
 - `/api/nearby` — Google Hotels scraper + Google Places Photos enrichment. Hotels without scraper images get photos from Places API (up to 10 hotels, 3 photos each). Cleans description field (removes USD prices, deal text). Returns deal badges, amenities, hotel class.
 - `/api/places` — Google Places Autocomplete (New v1) + Details; `scope=cities|all`.
 - `/api/resolve-airport` — Geocodes city → finds IATA codes via PostGIS. Searches "city" appended first to avoid location-biased results (e.g., "Barcelona city" → Spain, not "North Barcelona" apartment in Mumbai). Returns all large airports within 1000km (no cap).
-- `/api/trips` — CRUD with JSONB embedding for places/additionalHotels. Zod-validated payloads. PUT handler checks errors on all 4 DB operations (delete/insert destinations + legs) — never silent failures. DELETE cleans up booking docs from Supabase Storage. Auth endpoints: `/api/auth/signup`, `/api/auth/change-password`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/resend-verification`, `/api/auth/delete-account` (cleans up all user storage files).
+- `/api/trips` — CRUD with JSONB embedding for places/additionalHotels. Zod-validated payloads. **Atomic saves:** POST/PUT call `create_trip_atomic`/`update_trip_atomic` Postgres functions via `.rpc()` (single transaction). Falls back to sequential operations if RPC not available. PUT supports optimistic locking via `expectedUpdatedAt` — returns 409 on stale saves. DELETE cleans up booking docs from Supabase Storage. Auth endpoints: `/api/auth/signup`, `/api/auth/change-password`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/resend-verification`, `/api/auth/delete-account` (cleans up all user storage files).
 - `/api/weather` — Open-Meteo API (free). 1-hour cache. Only works ≤16 days out.
-- `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). Extracts origin city, departure date, travelers (adults/children/infants), and trip type from user prompt. System prompt for travel expertise.
+- `/api/ai/suggest` — **OpenAI GPT-4.1-mini (primary)**, Anthropic Claude (fallback), templates (last resort). Per-provider 15s timeout via AbortController. Extracts origin city, departure date, travelers (adults/children/infants), and trip type from user prompt. System prompt for travel expertise.
 - `/api/ai/extract-booking` — GPT-4.1-mini vision extracts hotel booking details (name, address, price, nights) from PDF/image.
 - `/api/ai/extract-transport` — GPT-4.1-mini vision extracts flight/train details (carrier, number, times, airports/stations, IATA codes, duration, passengers, total price). Timezone-aware duration.
 - `/api/ai/extract-trip` — Bulk extraction: all uploaded files → complete trip structure (origin, destinations, hotels, transport segments, travelers). Returns `fileDescriptions` for document mapping.
 - `/api/ai/classify-doc` — Lightweight single-file classifier: returns `{type, from, to, city}`. Used to tag uploaded docs with correct cities/type. Each file gets its own AI call (parallel) for reliable mapping.
-- `/api/ai/itinerary-activities` — GPT-4.1-mini generates city activities with durations, categories, opening hours, ticket prices. Multi-day aware: assigns `dayIndex` per activity + `dayThemes` for logical day progression (e.g., "Historic", "Outdoor"). Static fallback for no-API-key scenarios. Response cached in `deepPlanData.cityActivities`. Requests 7 activities per day + 3 extras. `max_tokens: 4096` to avoid truncation with many activities. **All AI routes require authentication** (`getServerSession`).
+- `/api/ai/itinerary-activities` — GPT-4.1-mini generates city activities with durations, categories, opening hours, ticket prices. Per-provider 20s timeout via AbortController. Multi-day aware: assigns `dayIndex` per activity + `dayThemes` for logical day progression (e.g., "Historic", "Outdoor"). Static fallback for no-API-key scenarios. Response cached in `deepPlanData.cityActivities`. Requests 7 activities per day + 3 extras. `max_tokens: 4096` to avoid truncation with many activities. **All AI routes require authentication** (`getServerSession`).
 - `/api/booking-docs` — Upload/delete/refresh-URLs for booking documents in Supabase Storage.
 - `/api/admin/migrate` — DB migrations.
 
@@ -121,7 +132,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 ### Route Page (`/route`) — Key Behaviors
 
-- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. Picks train if cheaper OR within 30% price and faster. Waits for `trip.from.name` to load before running (prevents empty city → no results). Resets via `prevTripIdRef` when trip changes. **Same-airport detection:** If from/to resolve to the same airport code (e.g., Goa intra-city = GOI), auto-selects drive/cab instead of flights. **AbortController:** All fetch calls use `signal` from `autoSelectAbortRef` — aborted on cleanup/re-run. Callbacks check `signal.aborted` before applying state.
+- **Auto-select:** Fetches flights AND trains in parallel using city names (not airport codes) for better nearby-airport coverage. **Concurrency limited** to 3 parallel transport fetches via inline semaphore (prevents API rate-limit cascades on 6+ leg trips). Picks train if cheaper OR within 30% price and faster. Waits for `trip.from.name` to load before running (prevents empty city → no results). Resets via `prevTripIdRef` when trip changes. **Same-airport detection:** If from/to resolve to the same airport code (e.g., Goa intra-city = GOI), auto-selects drive/cab instead of flights. **AbortController:** All fetch calls use `signal` from `autoSelectAbortRef` — aborted on cleanup/re-run. Callbacks check `signal.aborted` before applying state.
 - **Local stay detection:** `isLocalStay` flag detects when all destinations are in the same city as origin (checks `parentCity`, `name`, `fullName`, `fromAddress`). Hides home stops, transport legs, and arrival info. Shows green "Local Stay — no transport needed" banner with Deep Plan shortcut. Deep plan filters out travel/departure days for local stays (only explore days).
 - **Same-city transport:** Dedicated `useEffect` replaces same-city flight/train selections with "Local Transfer" (~15 min). Runs on every trip change, checks both city names and `fromAddress` contents.
 - **Auto-save:** 5s debounced after selection changes. Watches `selectedCount`, flight/train/hotel IDs+prices, `nights`, `adults`, `children`, `infants`, `departureDate`, `tripType`. Blocked until `tripStableRef` is true (500ms after trip loads). Must include selection IDs in dependency array — otherwise replacing a flight (same count) won't trigger save.
@@ -155,7 +166,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Meal blocks:** Orange pill/chip design with distinct emojis (coffee=breakfast, plate=lunch, moon=dinner) and contextual hints. Warning boxes (red) for "Leave by" and "Board" time-sensitive notes.
 
-**Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx`. Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
+**Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx` (wrapped in `React.memo`). Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
 
 **City cards:** White card with gradient visual panel (city code watermark), hotel rating+price, action buttons (View on map, Explore suggestions), activity/day count stats.
 
@@ -167,7 +178,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Arrival day activities:** Fill as many activities as fit in free time (no cap). Track used activities in `usedArrivalActivities` set — explore days exclude these to prevent repeats across days in the same city.
 
-**Auto-fill on mount:** When deep plan loads, auto-detects all cities needing AI activities and fetches them in **parallel** (Promise.all). Shows progress overlay with per-city checklist. Includes 1-night arrival-only destinations (not just 2+ nights). **Staleness guard:** Captures `effectTripId` at start; callbacks skip state updates if `cancelled` flag is set (cleanup sets it). Post-fill save only fires if the same `tripId` is still loaded.
+**Auto-fill on mount:** When deep plan loads, auto-detects all cities needing AI activities and fetches them in **parallel** (`Promise.allSettled`). Shows progress overlay with per-city checklist. Includes 1-night arrival-only destinations (not just 2+ nights). **Progressive save:** Each city's activities save individually as they complete (not after all cities finish). Failed cities update progress without blocking others. **Staleness guard:** Captures `effectTripId` at start; callbacks skip state updates if `cancelled` flag is set (cleanup sets it).
 
 **Day merge logic:** After all days are built, consecutive days with same `day` number and `date` are merged. Duplicate meals are skipped, sleep/overnight is repositioned to end, costs are summed. Since arrival days always increment dayNum, merges now only happen for edge cases.
 
@@ -191,6 +202,8 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 - **Transport type atomicity:** `changeTransportType()` clears both `selectedFlight` and `selectedTrain`. When selecting transport while also changing type (e.g., bus), use `updateTransportLeg()` with all fields in one call.
 - **OpenAI Responses API:** PDF-handling endpoints (`extract-trip`, `extract-booking`, `extract-transport`, `classify-doc`) use `/v1/responses` (not `/v1/chat/completions`). Content types: `input_text`, `input_file`, `input_image`. Response: `data.output[].content[].text`.
 - **From city on reload:** `loadTrip` extracts city name from `fromAddress` when `from_city.name` is empty (e.g., "42 Rue Jacob, Paris, France" → `parentCity: "Paris"`). Uses second-to-last comma-separated part.
+- **React.memo components:** `DeepPlanSidebar`, `WeatherBadge`, `PlacePhoto` are wrapped in `React.memo` to prevent unnecessary re-renders. When adding new components that render many times per page (e.g., per-activity, per-day), wrap in `memo` and ensure props are stable.
+- **Auth JWT revalidation:** NextAuth `jwt` callback re-verifies the Supabase profile ID every hour via `profileCheckedAt` timestamp. Guards against stale `supabaseUserId` after profile deletion/recreation.
 
 ### Styling
 
@@ -208,7 +221,7 @@ GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 AMADEUS_API_KEY / AMADEUS_API_SECRET / AMADEUS_BASE_URL
 OPENAI_API_KEY                # AI trip suggestions (primary)
 ANTHROPIC_API_KEY             # AI trip suggestions (fallback)
-SUPABASE_JWT_SECRET           # Optional: enables per-user RLS (Supabase Dashboard > Settings > API > JWT Secret)
+SUPABASE_JWT_SECRET           # Required: enables per-user RLS (Supabase Dashboard > Settings > API > JWT Secret)
 EMAIL_VERIFY_ENABLED          # Optional: set "true" to require email verification on signup
 NEXT_PUBLIC_TURNSTILE_SITE_KEY # Optional: Cloudflare Turnstile CAPTCHA site key
 TURNSTILE_SECRET_KEY          # Optional: Cloudflare Turnstile secret key

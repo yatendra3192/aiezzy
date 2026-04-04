@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatPrice } from '@/lib/currency';
 import { CurrencyCode } from '@/lib/currency';
@@ -94,7 +94,7 @@ interface SidebarProps {
   currency: CurrencyCode;
 }
 
-export default function DeepPlanSidebar({
+export default memo(function DeepPlanSidebar({
   adjustedDays, tripId, destinations, transportLegs, from, bookingDocs,
   totalNights, isLocalStay,
   flightCost, trainCost, hotelCost, attractionCost, foodCost, localTransportCost,
@@ -312,4 +312,4 @@ export default function DeepPlanSidebar({
       </div>
     </aside>
   );
-}
+});

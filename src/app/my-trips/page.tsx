@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { motion } from 'framer-motion';
-import { useTrip } from '@/context/TripContext';
+import { useTripActions } from '@/context/TripContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice } from '@/lib/currency';
 import ShareTripModal from '@/components/ShareTripModal';
@@ -35,7 +35,7 @@ interface TripSummary {
 export default function MyTripsPage() {
   const router = useRouter();
   const { data: session, status: authStatus } = useSession();
-  const trip = useTrip();
+  const { loadTrip, resetTrip, clearTripId, setFrom, setFromAddress, addDestination } = useTripActions();
   const { currency } = useCurrency();
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function MyTripsPage() {
 
   const handleLoadTrip = async (tripId: string) => {
     try {
-      await trip.loadTrip(tripId);
+      await loadTrip(tripId);
       router.push('/route');
     } catch (err) {
       console.error('Failed to load trip:', err);
@@ -98,16 +98,16 @@ export default function MyTripsPage() {
   };
 
   const handleNewTrip = () => {
-    trip.resetTrip();
+    resetTrip();
     router.push('/plan');
   };
 
   const handleDuplicateTrip = async (tripId: string) => {
     try {
-      await trip.loadTrip(tripId);
+      await loadTrip(tripId);
       // Small delay to ensure React processes loadTrip state update
       await new Promise(r => setTimeout(r, 50));
-      trip.clearTripId();
+      clearTripId();
       router.push('/plan');
     } catch (err) {
       console.error('Failed to duplicate trip:', err);
@@ -116,11 +116,11 @@ export default function MyTripsPage() {
   };
 
   const handleUseTemplate = (template: TripTemplate) => {
-    trip.resetTrip();
-    trip.setFrom(template.from);
-    trip.setFromAddress(template.from.fullName);
+    resetTrip();
+    setFrom(template.from);
+    setFromAddress(template.from.fullName);
     for (const dest of template.destinations) {
-      trip.addDestination(dest.city, dest.nights);
+      addDestination(dest.city, dest.nights);
     }
     router.push('/plan');
   };
@@ -240,7 +240,7 @@ export default function MyTripsPage() {
                       }`}>
                         {t.status.toUpperCase()}
                       </span>
-                      <button onClick={async () => { await trip.loadTrip(t.id); router.push(`/deep-plan?id=${t.id}`); }}
+                      <button onClick={async () => { await loadTrip(t.id); router.push(`/deep-plan?id=${t.id}`); }}
                         className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors">Edit</button>
                       <button onClick={() => setSharingTripId(t.id)}
                         className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1">

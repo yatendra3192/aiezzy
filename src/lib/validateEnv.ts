@@ -15,6 +15,7 @@ const SERVER_ENV: EnvCheck[] = [
   { key: 'NEXT_PUBLIC_SUPABASE_URL', required: true, label: 'Supabase project URL' },
   { key: 'NEXT_PUBLIC_SUPABASE_ANON_KEY', required: true, label: 'Supabase anon key' },
   { key: 'SUPABASE_SERVICE_ROLE_KEY', required: true, label: 'Supabase service role' },
+  { key: 'SUPABASE_JWT_SECRET', required: true, label: 'Supabase JWT secret (RLS enforcement)' },
   { key: 'NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', required: true, label: 'Google Maps API' },
   { key: 'OPENAI_API_KEY', required: false, label: 'OpenAI (AI features)' },
   { key: 'ANTHROPIC_API_KEY', required: false, label: 'Anthropic (AI fallback)' },

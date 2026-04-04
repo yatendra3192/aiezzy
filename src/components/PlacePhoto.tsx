@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 
 // Module-level cache: key → url (null = no photo, undefined = not fetched)
 const urlCache: Record<string, string | null | undefined> = {};
@@ -12,7 +12,7 @@ interface PlacePhotoProps {
   fallbackIcon?: string;
 }
 
-export default function PlacePhoto({ name, city, className = 'w-14 h-14', fallbackIcon }: PlacePhotoProps) {
+export default memo(function PlacePhoto({ name, city, className = 'w-14 h-14', fallbackIcon }: PlacePhotoProps) {
   const key = `${name}|${city}`;
   const cached = urlCache[key];
   const [url, setUrl] = useState<string | null | undefined>(cached);
@@ -74,4 +74,4 @@ export default function PlacePhoto({ name, city, className = 'w-14 h-14', fallba
   }
 
   return null;
-}
+});

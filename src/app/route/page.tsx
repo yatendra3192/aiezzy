@@ -439,6 +439,18 @@ function RoutePageContent() {
       setAutoSelectStep(needsFlights ? 'Searching flights and trains...' : 'Finding hotels...');
     }
 
+    // Concurrency limiter: max 3 parallel transport fetches to avoid API rate limits
+    const semaphore = { active: 0, queue: [] as (() => void)[] };
+    const acquireSemaphore = () => new Promise<void>(resolve => {
+      if (semaphore.active < 3) { semaphore.active++; resolve(); }
+      else semaphore.queue.push(resolve);
+    });
+    const releaseSemaphore = () => {
+      semaphore.active--;
+      const next = semaphore.queue.shift();
+      if (next) { semaphore.active++; next(); }
+    };
+
     // Auto-select best transport for each leg (flight OR train, whichever is cheaper/better)
     trip.transportLegs.forEach((leg, i) => {
       const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
@@ -508,7 +520,9 @@ function RoutePageContent() {
       pendingStepDescsRef.current.set(transportLabel, `Searching ${transportLabel}...`);
       setAutoSelectStep(`Searching ${transportLabel}...`);
 
-      // Fetch BOTH flights and trains in parallel, pick the best option
+      // Fetch BOTH flights and trains in parallel (throttled by semaphore to avoid rate limits)
+      acquireSemaphore().then(() => {
+      if (signal.aborted) { releaseSemaphore(); return; }
       const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`, { signal })
         .then(r => r.json()).catch(() => ({ flights: [] }));
       const trainP = fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`, { signal })
@@ -634,7 +648,8 @@ function RoutePageContent() {
           trip.selectFlight(leg.id, flight);
         }
         trackPending(-1, `${fromName} → ${toName}`);
-      }).catch(() => trackPending(-1, `${fromName} → ${toName}`));
+      }).catch(() => trackPending(-1, `${fromName} → ${toName}`)).finally(releaseSemaphore);
+      }); // end acquireSemaphore
     });
 
     // Auto-select cheapest hotel for destinations without one

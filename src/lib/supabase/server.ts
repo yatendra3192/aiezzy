@@ -25,9 +25,10 @@ export async function createUserClient(userId: string) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  // Fallback: if JWT secret not configured, use service client with manual user_id filtering
+  // JWT secret is required for RLS enforcement — service client fallback bypasses ALL row-level security
   if (!jwtSecret) {
-    return createServiceClient();
+    console.error('[supabase] SUPABASE_JWT_SECRET not set — RLS is NOT enforced. Set it in Supabase Dashboard > Settings > API > JWT Secret.');
+    throw new Error('SUPABASE_JWT_SECRET is required for secure database access. Set it in your environment variables.');
   }
 
   // Sign a short-lived JWT with the user's ID — Supabase reads `sub` as auth.uid()

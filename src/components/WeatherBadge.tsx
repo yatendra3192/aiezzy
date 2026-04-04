@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 
 interface WeatherBadgeProps {
   city: string;
@@ -20,7 +20,7 @@ function weatherEmoji(code: number): string {
   return '\u2600\uFE0F';
 }
 
-export default function WeatherBadge({ city, date }: WeatherBadgeProps) {
+export default memo(function WeatherBadge({ city, date }: WeatherBadgeProps) {
   const [weather, setWeather] = useState<{
     temp_max: number;
     temp_min: number;
@@ -84,4 +84,4 @@ export default function WeatherBadge({ city, date }: WeatherBadgeProps) {
       {weatherEmoji(weather.weathercode)} {Math.round(weather.temp_max)}&deg;/{Math.round(weather.temp_min)}&deg;
     </span>
   );
-}
+});

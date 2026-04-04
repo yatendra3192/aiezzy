@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTrip } from '@/context/TripContext';
+import { useTripState, useTripActions } from '@/context/TripContext';
 
 interface AISuggestModalProps {
   isOpen: boolean;
@@ -34,7 +34,8 @@ const EXAMPLE_PROMPTS = [
 
 export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps) {
   const router = useRouter();
-  const trip = useTrip();
+  const { departureDate, adults, children, infants } = useTripState();
+  const { buildFullTrip } = useTripActions();
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -94,10 +95,10 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
       fromAddress: `${originCity}, ${originCountry}`,
       destinations,
       transports,
-      departureDate: (s.departureDate && s.departureDate !== 'null') ? s.departureDate : trip.departureDate,
-      adults: s.travelers?.adults || trip.adults || 1,
-      children: s.travelers?.children || trip.children || 0,
-      infants: s.travelers?.infants || trip.infants || 0,
+      departureDate: (s.departureDate && s.departureDate !== 'null') ? s.departureDate : departureDate,
+      adults: s.travelers?.adults || adults || 1,
+      children: s.travelers?.children || children || 0,
+      infants: s.travelers?.infants || infants || 0,
       tripType: (s.tripType === 'oneWay' ? 'oneWay' : 'roundTrip') as 'roundTrip' | 'oneWay',
     };
 
@@ -105,7 +106,7 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
     try { sessionStorage.setItem('pendingAIPlan', JSON.stringify(tripData)); } catch {}
 
     // Set context state
-    trip.buildFullTrip(tripData);
+    buildFullTrip(tripData);
 
     onClose();
     router.replace('/plan');

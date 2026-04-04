@@ -463,7 +463,7 @@ function DeepPlanPageContent() {
     const effectTripId = trip.tripId;
     const cancelledRef = { current: false };
 
-    // Fire all requests in parallel — pass cancelledRef so fetchAiActivities skips state updates if trip changes
+    // Fire all requests in parallel — save progressively after each city completes (don't wait for all)
     const promises = citiesNeeded.map((c, i) =>
       fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces, c.hotel, c.timeWindows, cancelledRef).then(() => {
         if (cancelledRef.current) return;
@@ -474,14 +474,23 @@ function DeepPlanPageContent() {
           const nextPending = updated.find(city => !city.done);
           return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
         });
+        // Progressive save: persist each city's activities as soon as they arrive
+        if (trip.tripId && trip.tripId === effectTripId) trip.saveTrip().catch(() => {});
+      }).catch(() => {
+        // Update progress even on failure so the overlay doesn't hang
+        if (cancelledRef.current) return;
+        setAutoFillProgress(prev => {
+          if (!prev) return null;
+          const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
+          const doneCount = updated.filter(city => city.done).length;
+          const nextPending = updated.find(city => !city.done);
+          return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
+        });
       })
     );
-    Promise.all(promises).then(() => {
+    Promise.allSettled(promises).then(() => {
       if (cancelledRef.current) return;
       setTimeout(() => setAutoFillProgress(null), 800);
-      // Force immediate save so activities persist on reload (don't wait for 3s debounce)
-      // Only save if the same trip is still loaded
-      setTimeout(() => { if (!cancelledRef.current && trip.tripId && trip.tripId === effectTripId) trip.saveTrip().catch(() => {}); }, 1500);
     });
 
     return () => { cancelledRef.current = true; };

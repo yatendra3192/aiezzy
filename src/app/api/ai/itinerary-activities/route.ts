@@ -97,50 +97,68 @@ Rules:
     let text = '';
 
     if (openaiKey) {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
-          max_tokens: 4096,
-          temperature: 0.7,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      });
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 20_000);
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            max_tokens: 4096,
+            temperature: 0.7,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        text = data.choices?.[0]?.message?.content || '';
-      } else {
-        console.error('OpenAI itinerary-activities error:', response.status);
+        if (response.ok) {
+          const data = await response.json();
+          text = data.choices?.[0]?.message?.content || '';
+        } else {
+          console.error('OpenAI itinerary-activities error:', response.status);
+        }
+      } catch (e: any) {
+        console.error('OpenAI itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
     // Fallback to Anthropic
     if (!text && anthropicKey) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 4096,
-          messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
-        }),
-      });
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 20_000);
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 4096,
+            messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        text = data.content?.[0]?.text || '';
+        if (response.ok) {
+          const data = await response.json();
+          text = data.content?.[0]?.text || '';
+        }
+      } catch (e: any) {
+        console.error('Anthropic itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 

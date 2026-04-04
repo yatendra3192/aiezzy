@@ -55,55 +55,73 @@ Rules:
 - Include a mix of popular and offbeat destinations when possible
 - Tips should be specific and actionable, not generic`;
 
-  // Try OpenAI first, then Anthropic
+  // Try OpenAI first, then Anthropic (with per-provider timeouts)
   try {
     let text = '';
 
     if (openaiKey) {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
-          max_tokens: 1024,
-          temperature: 0.8,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      });
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 15_000);
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            max_tokens: 1024,
+            temperature: 0.8,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        text = data.choices?.[0]?.message?.content || '';
-      } else {
-        console.error('OpenAI API error:', response.status);
+        if (response.ok) {
+          const data = await response.json();
+          text = data.choices?.[0]?.message?.content || '';
+        } else {
+          console.error('OpenAI API error:', response.status);
+        }
+      } catch (e: any) {
+        console.error('OpenAI suggest timeout/error:', e.name === 'AbortError' ? 'timeout (15s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
     // Fallback to Anthropic if OpenAI failed
     if (!text && anthropicKey) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
-        }),
-      });
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 15_000);
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }],
+          }),
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        text = data.content?.[0]?.text || '';
+        if (response.ok) {
+          const data = await response.json();
+          text = data.content?.[0]?.text || '';
+        }
+      } catch (e: any) {
+        console.error('Anthropic suggest timeout/error:', e.name === 'AbortError' ? 'timeout (15s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
