@@ -42,6 +42,8 @@ export interface DeepPlanData {
   removedActivities?: Record<string, string[]>; // cityKey → list of removed activity names
   /** User-edited times for meals, return to hotel, overnight per day */
   editedTimes?: Record<string, string>; // "day_3_breakfast" | "day_3_dinner" | "day_3_Return_to_hotel" → "19:30"
+  /** Cache version — bumped when AI data format/quality changes to force regeneration */
+  cacheVersion?: number;
 }
 
 interface TripState {

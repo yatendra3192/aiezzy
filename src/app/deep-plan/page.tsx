@@ -389,7 +389,7 @@ function DeepPlanPageContent() {
         if (cancelledRef?.current) return;
         if (data.activities?.length > 0) {
           // updateDeepPlanData deep-merges nested Records, safe for parallel calls
-          const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities } };
+          const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities }, cacheVersion: 2 };
           if (data.dayThemes?.length > 0) updates.dayThemes = { [cityName]: data.dayThemes };
           if (data.mealCosts) updates.mealCosts = { [cityName]: data.mealCosts };
           if (data.localTransport) updates.localTransport = { [cityName]: data.localTransport };
@@ -416,8 +416,10 @@ function DeepPlanPageContent() {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
       const cached = trip.deepPlanData?.cityActivities?.[cityName] || [];
-      // Skip if has ANY cached activities — never regenerate saved data
-      if (cached.length > 0) continue;
+      // Skip if cached AND cache version is current (v2 = post-fix meal costs + scheduling)
+      const CACHE_VERSION = 2;
+      const cachedVersion = trip.deepPlanData?.cacheVersion || 0;
+      if (cached.length > 0 && cachedVersion >= CACHE_VERSION) continue;
       if (dest.nights < 1) continue;
       const exploreDays = Math.max(1, dest.nights);
       const userPlaces = dest.places?.map(p => p.name) || [];
