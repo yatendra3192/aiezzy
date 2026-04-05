@@ -1462,6 +1462,11 @@ function DeepPlanPageContent() {
               for (const s of actStops) {
                 if (!userOrder.includes(s.id)) ordered.push(s);
               }
+              // Recalculate times: use original times in new order
+              if (actStops.length > 0 && ordered.length > 0) {
+                const origTimes = actStops.map(s => s.time).filter(Boolean);
+                ordered.forEach((s, i) => { if (i < origTimes.length) s.time = origTimes[i]; });
+              }
               // Re-insert activities before dinner
               const dinnerIdx2 = nonActStops.findIndex(s => s.mealType === 'dinner');
               const insertIdx2 = dinnerIdx2 >= 0 ? dinnerIdx2 : nonActStops.length - 1;
@@ -1502,6 +1507,11 @@ function DeepPlanPageContent() {
             }
             for (const s of actStops) {
               if (!userOrder.includes(s.id)) ordered.push(s);
+            }
+            // Recalculate times: use original times in new order
+            if (actStops.length > 0 && ordered.length > 0) {
+              const origTimes = actStops.map(s => s.time).filter(Boolean);
+              ordered.forEach((s, i) => { if (i < origTimes.length) s.time = origTimes[i]; });
             }
             const dinnerIdx2 = nonActStops.findIndex(s => s.mealType === 'dinner');
             const insertIdx2 = dinnerIdx2 >= 0 ? dinnerIdx2 : nonActStops.length - 1;
