@@ -603,7 +603,7 @@ function DeepPlanPageContent() {
       const departureCityName = destIdx === 0 ? (trip.from.parentCity || trip.from.name) : (prevDest!.city.parentCity || prevDest!.city.name);
       const travelDay: DayPlan = {
         day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-        type: 'travel', city: toCity.name, departureCity: departureCityName, dayCost: travelDayCost, costLabel: travelCostLabel,
+        type: 'travel', city: toCity.parentCity || toCity.name, departureCity: departureCityName, dayCost: travelDayCost, costLabel: travelCostLabel,
       };
 
       if (leg) {
@@ -717,7 +717,7 @@ function DeepPlanPageContent() {
             // Create arrival day
             const arrivalDay: DayPlan = {
               day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-              type: 'travel', city: toCity.name, dayCost: 0, costLabel: 'Arrival',
+              type: 'travel', city: toCity.parentCity || toCity.name, dayCost: 0, costLabel: 'Arrival',
             };
 
             // Arrival terminal
@@ -1011,7 +1011,7 @@ function DeepPlanPageContent() {
         const hotelCostForNight = dest.selectedHotel ? dest.selectedHotel.pricePerNight * roomsNeeded : 0;
         const expDay: DayPlan = {
           day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-          type: 'explore', city: toCity.name, dayCost: hotelCostForNight, costLabel: 'Hotel',
+          type: 'explore', city: cityKey, dayCost: hotelCostForNight, costLabel: 'Hotel',
           exploreDayIndex: n,
         };
         const hotelName = dest.selectedHotel?.name || `Stay in ${toCity.name}`;
