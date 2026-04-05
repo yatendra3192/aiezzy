@@ -1017,11 +1017,11 @@ function DeepPlanPageContent() {
         const hotelName = dest.selectedHotel?.name || `Stay in ${toCity.name}`;
 
         // Distribute activities evenly across explore days
-        // Slice FIRST to get original day assignment, THEN filter removed — prevents backfill
+        // Include removed activities in scheduling so the layout stays stable
+        // They get filtered from rendered stops AFTER scheduling (below)
         const perDay = Math.max(1, Math.ceil(typedActivities.length / exploreDays));
         const startIdx = n * perDay;
-        let dayActivities: TypedActivity[] = typedActivities.slice(startIdx, startIdx + perDay)
-          .filter(a => !cityRemoved.has(a.name.toLowerCase()));
+        let dayActivities: TypedActivity[] = typedActivities.slice(startIdx, startIdx + perDay);
 
         // Smart scheduling: fit activities into morning + afternoon windows
         const dayStartMin = 9 * 60; // 09:00
@@ -1097,6 +1097,11 @@ function DeepPlanPageContent() {
             category: act.category, durationMin: act.durationMin,
             openingHours: act.openingHours, ticketPrice: act.ticketPrice,
           });
+        }
+
+        // Remove user-deleted activities from scheduled stops (keeps schedule stable — no backfill)
+        if (cityRemoved.size > 0) {
+          expDay.stops = expDay.stops.filter(s => s.type !== 'attraction' || s.mealType || !cityRemoved.has(s.name.toLowerCase()));
         }
 
         // Dinner meal slot
