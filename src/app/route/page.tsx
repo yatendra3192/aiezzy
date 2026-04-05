@@ -488,8 +488,9 @@ function RoutePageContent() {
       if (leg.selectedFlight || leg.selectedTrain) return; // Already selected
 
       // Use city names (not airport codes) so the API can do parallel nearby-airport search
-      let fc = fromC.name || fromC.fullName || findAirportCode(fromC);
-      let tc = toC.name || toC.fullName || findAirportCode(toC);
+      // Prefer parentCity (actual city name) over name (which may be a place/address like "Silver Oak Prestige residency")
+      let fc = fromC.parentCity || fromC.name || fromC.fullName || findAirportCode(fromC);
+      let tc = toC.parentCity || toC.name || toC.fullName || findAirportCode(toC);
 
       // For return leg (last leg in round trip going back to origin),
       // reuse the resolved airport from leg 0 so we get the same airport
@@ -502,8 +503,8 @@ function RoutePageContent() {
         fc = resolvedAirportsRef.current[i - 1].toCode;
       }
 
-      const fromName = fromC.name || fromC.fullName || fc;
-      const toName = toC.name || toC.fullName || tc;
+      const fromName = fromC.parentCity || fromC.name || fromC.fullName || fc;
+      const toName = toC.parentCity || toC.name || toC.fullName || tc;
       if (!fc || !tc || fc === tc) return;
 
       let dayOffset = 0;
@@ -992,7 +993,33 @@ function RoutePageContent() {
 
           {/* Title */}
           <div className="mb-6">
-            <h1 className="font-display text-lg font-bold text-text-primary">Plan Transport & Stay by City</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-lg font-bold text-text-primary">Plan Transport & Stay by City</h1>
+              {autoSaveStatus === 'pending' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-[9px] font-body text-text-muted">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse" />
+                  Saving...
+                </span>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-[9px] font-body text-green-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  Saved
+                </span>
+              )}
+              {autoSaveStatus === 'error' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-[9px] font-body text-red-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Save failed
+                </span>
+              )}
+              {autoSaveStatus === 'idle' && trip.lastSavedAt && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-[9px] font-body text-text-muted/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                  Saved
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <input
                 type="date"
@@ -1843,19 +1870,6 @@ function RoutePageContent() {
 
           {/* Action buttons */}
           <div className="mt-4 space-y-3">
-            {autoSaveStatus === 'pending' && (
-              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-text-muted py-1">Saving in a moment...</p>
-            )}
-            {autoSaveStatus === 'saved' && (
-              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-green-600 py-1">Auto-saved</p>
-            )}
-            {autoSaveStatus === 'error' && (
-              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-red-500 py-1">Save failed — try refreshing</p>
-            )}
-            {autoSaveStatus === 'idle' && trip.lastSavedAt && (
-              <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
-            )}
-
 
             {/* My Documents */}
             {trip.bookingDocs?.length > 0 && (
