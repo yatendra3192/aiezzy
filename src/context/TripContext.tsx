@@ -340,7 +340,13 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         // If parentCity equals place name (likely API fallback), try to extract
         // actual city from fullName (e.g., "Notre Dame, Paris, France" → "Paris")
         // But skip if the place itself IS a city (name matches first part of fullName)
-        if (pc === place.name && place.fullName) {
+        const pcLower = pc.toLowerCase();
+        const nameLower = place.name.toLowerCase();
+        // Also detect when parentCity contains the place name or vice versa
+        // e.g., parentCity="Louvre Museum" and name="Louvre", or parentCity="Louvre" and name="Louvre Museum"
+        const parentCityLooksLikePlaceName = pc === place.name ||
+          pcLower.includes(nameLower) || nameLower.includes(pcLower);
+        if (parentCityLooksLikePlaceName && place.fullName) {
           const parts = place.fullName.split(',').map(s => s.trim());
           const nameIsCity = parts[0]?.toLowerCase() === place.name.toLowerCase();
           if (parts.length >= 3 && !nameIsCity) {
