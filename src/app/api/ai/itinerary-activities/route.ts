@@ -187,20 +187,45 @@ Rules:
       ? parsed.dayThemes.map((t: any) => String(t))
       : undefined;
 
-    const mealCosts = parsed.mealCosts ? {
-      currency: String(parsed.mealCosts.currency || 'USD'),
-      breakfast: Number(parsed.mealCosts.breakfast) || 0,
-      lunch: Number(parsed.mealCosts.lunch) || 0,
-      dinner: Number(parsed.mealCosts.dinner) || 0,
-    } : undefined;
+    const mealCosts = parsed.mealCosts ? (() => {
+      const cur = String(parsed.mealCosts.currency || 'USD').toUpperCase();
+      let breakfast = Number(parsed.mealCosts.breakfast) || 0;
+      let lunch = Number(parsed.mealCosts.lunch) || 0;
+      let dinner = Number(parsed.mealCosts.dinner) || 0;
+      // Sanity check: AI sometimes returns USD values labeled as local currency
+      // Minimum reasonable lunch costs per currency (if below, values are likely in USD)
+      const minLunch: Record<string, number> = { THB: 50, JPY: 500, INR: 100, IDR: 15000, VND: 30000, KRW: 5000, CZK: 80, HUF: 1500, KHR: 3000, NPR: 200, LKR: 300, PHP: 100 };
+      const minVal = minLunch[cur];
+      if (minVal && lunch > 0 && lunch < minVal) {
+        // Values look like USD — convert using approximate USD-to-local rates
+        const usdRate: Record<string, number> = { THB: 35, JPY: 155, INR: 85, IDR: 16000, VND: 25000, KRW: 1400, CZK: 24, HUF: 380, KHR: 4100, NPR: 135, LKR: 320, PHP: 58 };
+        const r = usdRate[cur] || 1;
+        breakfast = Math.round(breakfast * r);
+        lunch = Math.round(lunch * r);
+        dinner = Math.round(dinner * r);
+      }
+      return { currency: cur, breakfast, lunch, dinner };
+    })() : undefined;
 
-    const localTransport = parsed.localTransport ? {
-      currency: String(parsed.localTransport.currency || 'USD'),
-      metroSingleRide: Number(parsed.localTransport.metroSingleRide) || 0,
-      busSingleRide: Number(parsed.localTransport.busSingleRide) || 0,
-      taxiPerKm: Number(parsed.localTransport.taxiPerKm) || 0,
-      dailyPass: Number(parsed.localTransport.dailyPass) || 0,
-    } : undefined;
+    const localTransport = parsed.localTransport ? (() => {
+      const cur = String(parsed.localTransport.currency || 'USD').toUpperCase();
+      let metroSingleRide = Number(parsed.localTransport.metroSingleRide) || 0;
+      let busSingleRide = Number(parsed.localTransport.busSingleRide) || 0;
+      let taxiPerKm = Number(parsed.localTransport.taxiPerKm) || 0;
+      let dailyPass = Number(parsed.localTransport.dailyPass) || 0;
+      // Sanity check: if taxi/km seems like USD but currency is local
+      const minTaxi: Record<string, number> = { THB: 5, JPY: 50, INR: 10, IDR: 2000, VND: 5000, KRW: 500, CZK: 10, HUF: 200, KHR: 500, PHP: 10 };
+      const minVal = minTaxi[cur];
+      if (minVal && taxiPerKm > 0 && taxiPerKm < minVal) {
+        const usdRate: Record<string, number> = { THB: 35, JPY: 155, INR: 85, IDR: 16000, VND: 25000, KRW: 1400, CZK: 24, HUF: 380, KHR: 4100, PHP: 58 };
+        const r = usdRate[cur] || 1;
+        metroSingleRide = Math.round(metroSingleRide * r);
+        busSingleRide = Math.round(busSingleRide * r);
+        taxiPerKm = Math.round(taxiPerKm * r * 10) / 10;
+        dailyPass = Math.round(dailyPass * r);
+      }
+      return { currency: cur, metroSingleRide, busSingleRide, taxiPerKm, dailyPass };
+    })() : undefined;
 
     return NextResponse.json({ activities, dayThemes, mealCosts, localTransport, source: 'ai' });
   } catch (err) {
