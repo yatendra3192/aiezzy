@@ -720,7 +720,7 @@ function DeepPlanPageContent() {
             // Create arrival day
             const arrivalDay: DayPlan = {
               day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
-              type: 'travel', city: toCity.parentCity || toCity.name, dayCost: 0, costLabel: 'Arrival',
+              type: 'arrival' as any, city: toCity.parentCity || toCity.name, dayCost: 0, costLabel: 'Arrival',
             };
 
             // Arrival terminal
@@ -2546,12 +2546,8 @@ function DeepPlanPageContent() {
                                 </span>
                                 {(() => {
                                   const mealCosts = trip.deepPlanData?.mealCosts || {};
-                                  // Try day.city, then departureCity, then match by destination parentCity
-                                  const mc = mealCosts[day.city] || mealCosts[day.departureCity || ''] || (() => {
-                                    const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
-                                    const key = dest ? (dest.city.parentCity || dest.city.name) : '';
-                                    return mealCosts[key];
-                                  })();
+                                  // day.city uses parentCity||name, same key as mealCosts storage
+                                  const mc = mealCosts[day.city] || mealCosts[day.departureCity || ''];
                                   if (!mc || !stop.mealType) return null;
                                   const cost = mc[stop.mealType as 'breakfast' | 'lunch' | 'dinner'];
                                   if (!cost) return null;
