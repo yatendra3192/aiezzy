@@ -332,12 +332,13 @@ function RoutePageContent() {
             resolvedAirportsRef.current[c.legIdx] = { fromCode: '', toCode: '', fromAirport: '', toAirport: '', fromCity: '', toCity: '', fromDistance: 0, toDistance: 0 };
           }
           const ref = resolvedAirportsRef.current[c.legIdx];
+          const airportCity = airport.municipality || airport.city || cityName;
           if (c.field === 'from') {
-            ref.fromCity = airport.city || airport.name || cityName;
-            ref.fromCode = airport.iata || '';
+            if (!ref.fromCity) ref.fromCity = airportCity;
+            if (!ref.fromCode) ref.fromCode = airport.iata_code || airport.iata || '';
           } else {
-            ref.toCity = airport.city || airport.name || cityName;
-            ref.toCode = airport.iata || '';
+            if (!ref.toCity) ref.toCity = airportCity;
+            if (!ref.toCode) ref.toCode = airport.iata_code || airport.iata || '';
           }
         });
         // Force re-render by updating a trivial state
@@ -1513,25 +1514,20 @@ function RoutePageContent() {
 
                             // Build route display: "Ahmedabad (AMD) - Amsterdam (AMS)"
                             let routeDisplay = leg.distance || '';
-                            if (leg.selectedFlight && info) {
-                              const fCity = info.fromCity || fromCity?.parentCity || fromCity?.name || info.fromCode;
-                              const tCity = info.toCity || toCity?.parentCity || toCity?.name || info.toCode;
-                              // If same airport (e.g., GOI-GOI), show city names only
-                              routeDisplay = info.fromCode === info.toCode
-                                ? `${fromCity?.parentCity || fromCity?.name || fCity} - ${toCity?.parentCity || toCity?.name || tCity}`
-                                : `${fCity} (${info.fromCode}) - ${tCity} (${info.toCode})`;
-                            } else if (leg.selectedFlight) {
-                              // Fallback: extract airport codes from saved route (e.g., "BOM-NRT")
-                              const route = leg.selectedFlight.route || '';
-                              const parts = route.split('-');
-                              if (parts.length === 2 && /^[A-Z]{3,4}$/.test(parts[0].trim()) && /^[A-Z]{3,4}$/.test(parts[1].trim())) {
-                                const fCode = parts[0].trim();
-                                const tCode = parts[1].trim();
-                                const fCity = fromCity?.parentCity || fCode;
-                                const tCity = toCity?.parentCity || tCode;
-                                routeDisplay = `${fCity} (${fCode}) - ${tCity} (${tCode})`;
+                            if (leg.selectedFlight) {
+                              // Get airport codes from resolved info or directly from the flight object
+                              const fCode = info?.fromCode || leg.selectedFlight.depAirportCode || '';
+                              const tCode = info?.toCode || leg.selectedFlight.arrAirportCode || '';
+                              // Get city names: resolved airport city (e.g., "Mumbai" for BOM when origin is Thane)
+                              const fCity = info?.fromCity || fromCity?.parentCity || fromCity?.name || '';
+                              const tCity = info?.toCity || toCity?.parentCity || toCity?.name || '';
+                              if (fCode && tCode && fCode !== tCode) {
+                                // Show "Mumbai (BOM)" not "Thane (BOM)" — use code alone if city matches code
+                                const fLabel = fCity && fCity !== fCode ? `${fCity} (${fCode})` : fCode;
+                                const tLabel = tCity && tCity !== tCode ? `${tCity} (${tCode})` : tCode;
+                                routeDisplay = `${fLabel} - ${tLabel}`;
                               } else {
-                                routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
+                                routeDisplay = `${fCity || fCode} - ${tCity || tCode}`;
                               }
                             } else if (leg.selectedTrain) {
                               routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
