@@ -886,7 +886,7 @@ function DeepPlanPageContent() {
                     note: 'Evening exploration (optional)',
                   });
 
-                  // Fill as many activities as fit (no cap)
+                  // Fill as many activities as fit (no cap for arrival day free time)
                   let evCursor = freeStartMin + 30;
                   let addedCount = 0;
                   for (let ei = 0; ei < cityAttractions.length; ei++) {
@@ -967,9 +967,10 @@ function DeepPlanPageContent() {
       type TypedActivity = { name: string; category: string; durationMin: number; bestTime: string; note?: string; openingHours?: string; ticketPrice?: string; dayIndex?: number };
       const typedActivities: TypedActivity[] = [];
       const cityKey = toCity.parentCity || toCity.name;
-      // Exclude: arrival activities + user-removed activities
+      // Exclude arrival activities but NOT removed ones yet — we filter removed AFTER slicing per day
+      // so that removing an activity doesn't cause extras to backfill the slot
       const cityRemoved = new Set((removedActivities[cityKey] || []).map(n => n.toLowerCase()));
-      const usedNames = new Set<string>([...Array.from(usedArrivalActivities), ...Array.from(cityRemoved)]);
+      const usedNames = new Set<string>([...Array.from(usedArrivalActivities)]);
 
       // Priority 1: user-added places (wrapped with default 90min)
       if (dest.places && dest.places.length > 0) {
@@ -1016,11 +1017,11 @@ function DeepPlanPageContent() {
         const hotelName = dest.selectedHotel?.name || `Stay in ${toCity.name}`;
 
         // Distribute activities evenly across explore days
-        // Don't enforce minimum when user has removed activities (respect their edits)
-        const hasUserRemovals = (removedActivities[cityKey] || []).length > 0;
+        // Slice FIRST to get original day assignment, THEN filter removed — prevents backfill
         const perDay = Math.max(1, Math.ceil(typedActivities.length / exploreDays));
         const startIdx = n * perDay;
-        let dayActivities: TypedActivity[] = typedActivities.slice(startIdx, startIdx + perDay);
+        let dayActivities: TypedActivity[] = typedActivities.slice(startIdx, startIdx + perDay)
+          .filter(a => !cityRemoved.has(a.name.toLowerCase()));
 
         // Smart scheduling: fit activities into morning + afternoon windows
         const dayStartMin = 9 * 60; // 09:00
