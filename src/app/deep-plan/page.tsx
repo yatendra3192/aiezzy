@@ -2575,28 +2575,20 @@ function DeepPlanPageContent() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
                                   {stop.time && (() => {
-                                    const isEditableTime = stop.name === 'Rest / Sleep' || stop.name === 'Return to hotel' || stop.name === 'Overnight';
-                                    if (isEditableTime) {
-                                      const timeKey = `day_${day.day}_${stop.name.replace(/\s+/g, '_')}`;
-                                      const displayTime = editedTimes[timeKey] || stop.time;
-                                      const isEditing = editingTimeKey === timeKey;
-                                      return isEditing ? (
-                                        <input type="time" autoFocus value={displayTime}
-                                          onChange={e => { if (e.target.value) setEditedTimes(prev => ({ ...prev, [timeKey]: e.target.value })); }}
-                                          onBlur={() => setEditingTimeKey(null)}
-                                          className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[70px] p-0 flex-shrink-0"
-                                        />
-                                      ) : (
-                                        <button onClick={() => setEditingTimeKey(timeKey)} className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0 hover:text-accent-cyan/70 cursor-pointer" title="Click to change time">
-                                          {formatTime12(parseTime(displayTime))}
-                                        </button>
-                                      );
-                                    }
-                                    return (
-                                      <span className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0">
-                                        {formatTime12(parseTime(stop.time))}
+                                    const timeKey = `day_${day.day}_${stop.name.replace(/\s+/g, '_')}`;
+                                    const displayTime = editedTimes[timeKey] || stop.time;
+                                    const isEditing = editingTimeKey === timeKey;
+                                    return isEditing ? (
+                                      <input type="time" autoFocus value={displayTime}
+                                        onChange={e => { if (e.target.value) setEditedTimes(prev => ({ ...prev, [timeKey]: e.target.value })); }}
+                                        onBlur={() => setEditingTimeKey(null)}
+                                        className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[70px] p-0 flex-shrink-0"
+                                      />
+                                    ) : (
+                                      <button onClick={() => setEditingTimeKey(timeKey)} className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0 hover:text-accent-cyan/70 cursor-pointer" title="Click to change time">
+                                        {formatTime12(parseTime(displayTime))}
                                         {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
-                                      </span>
+                                      </button>
                                     );
                                   })()}
                                   <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : stop.name}</h3>
