@@ -389,7 +389,7 @@ function DeepPlanPageContent() {
         if (cancelledRef?.current) return;
         if (data.activities?.length > 0) {
           // updateDeepPlanData deep-merges nested Records, safe for parallel calls
-          const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities }, cacheVersion: 2 };
+          const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities }, cacheGeneratedAt: new Date().toISOString().split('T')[0] };
           if (data.dayThemes?.length > 0) updates.dayThemes = { [cityName]: data.dayThemes };
           if (data.mealCosts) updates.mealCosts = { [cityName]: data.mealCosts };
           if (data.localTransport) updates.localTransport = { [cityName]: data.localTransport };
@@ -416,10 +416,11 @@ function DeepPlanPageContent() {
       const cityName = dest.city.parentCity || dest.city.name;
       if (!cityName) continue;
       const cached = trip.deepPlanData?.cityActivities?.[cityName] || [];
-      // Skip if cached AND cache version is current (v2 = post-fix meal costs + scheduling)
-      const CACHE_VERSION = 2;
-      const cachedVersion = trip.deepPlanData?.cacheVersion || 0;
-      if (cached.length > 0 && cachedVersion >= CACHE_VERSION) continue;
+      // Skip if cached AND generated after the last fix date (per-trip, not global)
+      // Only regenerate trips cached before 2026-04-05 (meal cost + scheduling fixes)
+      const FIX_DATE = '2026-04-05';
+      const cachedAt = trip.deepPlanData?.cacheGeneratedAt;
+      if (cached.length > 0 && cachedAt && cachedAt >= FIX_DATE) continue;
       if (dest.nights < 1) continue;
       const exploreDays = Math.max(1, dest.nights);
       const userPlaces = dest.places?.map(p => p.name) || [];
