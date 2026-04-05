@@ -191,6 +191,15 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
         if (idx < newLegs.length) {
           newLegs[idx] = { ...newLegs[idx], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
         }
+        // Also clear the leg before the removed position — its "to" city changed
+        if (idx > 0 && idx - 1 < newLegs.length) {
+          newLegs[idx - 1] = { ...newLegs[idx - 1], selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null, duration: '~', distance: '~' };
+        }
+      }
+      // Trim excess legs for round trips (should have newDests.length + 1 max)
+      const expectedLegs = s.tripType === 'roundTrip' ? newDests.length + 1 : newDests.length;
+      while (newLegs.length > expectedLegs && expectedLegs > 0) {
+        newLegs.pop();
       }
       return dirty({ ...s, destinations: newDests, transportLegs: newLegs });
     });

@@ -585,16 +585,19 @@ function DeepPlanPageContent() {
       const fromCity = destIdx === 0 ? trip.from : prevDest!.city;
       const toCity = dest.city;
 
-      // Calculate travel day cost (include children + infants at 15%)
-      const transportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
+      // Calculate travel day cost
+      // Flights: adults + children (full fare) + infants (15% of adult fare)
+      // Trains/Bus: adults + children (full fare), no infant surcharge
+      const flightPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
+      const trainPax = trip.adults + (trip.children || 0);
       let travelDayCost = 0;
       let travelCostLabel = '';
       if (leg) {
         if (leg.selectedFlight) {
-          travelDayCost = leg.selectedFlight.pricePerAdult * transportPax;
+          travelDayCost = leg.selectedFlight.pricePerAdult * flightPax;
           travelCostLabel = 'Flight';
         } else if (leg.selectedTrain) {
-          travelDayCost = leg.selectedTrain.price * transportPax;
+          travelDayCost = leg.selectedTrain.price * trainPax;
           travelCostLabel = 'Train';
         }
       }
@@ -749,10 +752,11 @@ function DeepPlanPageContent() {
                 note: checkInNote2 || undefined,
               });
 
-              // Add activities if arriving before 6 PM — pack the day!
+              // Add activities if arriving during daytime (7 AM–6 PM) — pack the day!
               const dinnerTime2 = 19 * 60;
               const sleepTime2 = 22 * 60;
-              if (hotelArriveMin2 !== null && hotelArriveMin2 < dinnerTime2 - 60) {
+              const earliestActivity2 = 7 * 60; // Don't schedule activities before 7 AM
+              if (hotelArriveMin2 !== null && hotelArriveMin2 >= earliestActivity2 && hotelArriveMin2 < dinnerTime2 - 60) {
                 arrivalDay.type = 'arrival' as any;
                 const freeStart2 = hotelArriveMin2 + 30;
                 const freeHrs2 = (sleepTime2 - freeStart2) / 60;
@@ -853,10 +857,11 @@ function DeepPlanPageContent() {
                 note: checkInNote || undefined,
               });
 
-              // Add evening activities if arriving before 6 PM — pack the day!
+              // Add evening activities if arriving during daytime (7 AM–6 PM) — pack the day!
               const dinnerTime = 19 * 60; // 7 PM
               const sleepTime = 22 * 60; // 10 PM
-              if (hotelArriveMin !== null && hotelArriveMin < dinnerTime - 60) {
+              const earliestActivity = 7 * 60; // Don't schedule activities before 7 AM
+              if (hotelArriveMin !== null && hotelArriveMin >= earliestActivity && hotelArriveMin < dinnerTime - 60) {
                 // Retype as "arrival" to show it's not a wasted day
                 travelDay.type = 'arrival' as any;
                 const freeStartMin = hotelArriveMin + 30; // 30 min to settle in
@@ -1127,15 +1132,16 @@ function DeepPlanPageContent() {
       const lastDest = trip.destinations[trip.destinations.length - 1];
       const returnLeg = trip.transportLegs[trip.transportLegs.length - 1];
 
-      const returnTransportPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
+      const returnFlightPax = (trip.adults + (trip.children || 0)) + (trip.infants || 0) * 0.15;
+      const returnTrainPax = trip.adults + (trip.children || 0);
       let returnDayCost = 0;
       let returnCostLabel = '';
       if (returnLeg) {
         if (returnLeg.selectedFlight) {
-          returnDayCost = returnLeg.selectedFlight.pricePerAdult * returnTransportPax;
+          returnDayCost = returnLeg.selectedFlight.pricePerAdult * returnFlightPax;
           returnCostLabel = 'Flight';
         } else if (returnLeg.selectedTrain) {
-          returnDayCost = returnLeg.selectedTrain.price * returnTransportPax;
+          returnDayCost = returnLeg.selectedTrain.price * returnTrainPax;
           returnCostLabel = 'Train';
         }
       }
@@ -2990,8 +2996,8 @@ function DeepPlanPageContent() {
                                     <div className={`flex items-center justify-between text-[10px] pt-2 border-t ${borderColor}`}>
                                       {train.price > 0 ? (
                                         <>
-                                          <span className="text-text-secondary font-body">{formatPrice(train.price, currency)}/pax &times; {trip.adults}</span>
-                                          <span className="text-accent-cyan font-mono font-bold text-[12px]">Total: {formatPrice(train.price * trip.adults, currency)}</span>
+                                          <span className="text-text-secondary font-body">{formatPrice(train.price, currency)}/pax &times; {trip.adults + (trip.children || 0)}</span>
+                                          <span className="text-accent-cyan font-mono font-bold text-[12px]">Total: {formatPrice(train.price * (trip.adults + (trip.children || 0)), currency)}</span>
                                         </>
                                       ) : (
                                         <span className="text-text-muted font-body italic">Price N/A</span>
