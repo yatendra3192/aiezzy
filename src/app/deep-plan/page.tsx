@@ -2722,7 +2722,7 @@ function DeepPlanPageContent() {
                             {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && stop.destIndex < trip.destinations.length && (() => {
                               const dest = trip.destinations[stop.destIndex!];
                               const hotel = dest?.selectedHotel;
-                              const hotelDoc = day.city ? (trip.bookingDocs || []).find((d: any) => d.docType === 'hotel' && (d.city || '').toLowerCase().includes(day.city.toLowerCase())) : null;
+                              const hotelDoc = day.city ? (trip.bookingDocs || []).find((d: any) => (!d.docType || d.docType === 'hotel' || d.docType === 'general') && (d.matchCities || []).some((c: string) => c.toLowerCase().includes(day.city.toLowerCase()) || day.city.toLowerCase().includes(c.toLowerCase()))) : null;
                               if (!hotel) return (
                                 <div className="mt-2 bg-amber-50/60 border border-amber-200/50 border-l-[3px] border-l-amber-400 rounded-xl p-3">
                                   <div className="flex items-center justify-between">
@@ -2808,7 +2808,11 @@ function DeepPlanPageContent() {
                                           const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
                                           const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
                                           const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
-                                          const transportDoc = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName)) : null;
+                                          const transportDoc = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => {
+                                            if (d.docType && d.docType !== 'transport' && d.docType !== 'general') return false;
+                                            const cities = (d.matchCities || []).map((c: string) => c.toLowerCase());
+                                            return cities.some((c: string) => c.includes(fcName) || fcName.includes(c)) && cities.some((c: string) => c.includes(tcName) || tcName.includes(c));
+                                          }) : null;
                                           return transportDoc ? (
                                             <button onClick={() => setViewingBooking(transportDoc)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
@@ -2907,7 +2911,11 @@ function DeepPlanPageContent() {
                                           const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
                                           const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
                                           const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
-                                          const transportDoc2 = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName)) : null;
+                                          const transportDoc2 = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => {
+                                            if (d.docType && d.docType !== 'transport' && d.docType !== 'general') return false;
+                                            const cities = (d.matchCities || []).map((c: string) => c.toLowerCase());
+                                            return cities.some((c: string) => c.includes(fcName) || fcName.includes(c)) && cities.some((c: string) => c.includes(tcName) || tcName.includes(c));
+                                          }) : null;
                                           return transportDoc2 ? (
                                             <button onClick={() => setViewingBooking(transportDoc2)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
