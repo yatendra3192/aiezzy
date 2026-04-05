@@ -29,10 +29,15 @@ const STATIC_RATES_VS_INR: Record<CurrencyCode, number> = {
 
 // Live rates cache (updated by CurrencyContext)
 let liveRates: Record<CurrencyCode, number> | null = null;
+// Full API response — ALL currency rates (1 INR = X foreign), not just display currencies
+let allLiveRates: Record<string, number> | null = null;
 let liveRatesFetchedAt = 0;
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 export function setLiveRates(rates: Record<string, number>) {
+  // Store full rates for getForeignToINR()
+  allLiveRates = rates;
+
   const mapped: Partial<Record<CurrencyCode, number>> = { INR: 1 };
   for (const code of Object.keys(CURRENCIES) as CurrencyCode[]) {
     if (code === 'INR') continue;
@@ -54,6 +59,33 @@ function getRates(): Record<CurrencyCode, number> {
     return liveRates;
   }
   return STATIC_RATES_VS_INR;
+}
+
+// Static fallback: foreign currency → INR (1 foreign unit = X INR)
+const STATIC_FOREIGN_TO_INR: Record<string, number> = {
+  INR: 1, USD: 85, EUR: 93, GBP: 108, JPY: 0.57, THB: 2.5, CHF: 95,
+  AUD: 55, NZD: 50, CAD: 63, SGD: 63, AED: 23, MYR: 18, IDR: 0.005,
+  VND: 0.003, KRW: 0.06, CNY: 12, MXN: 5, BRL: 17, ARS: 0.07,
+  COP: 0.02, PEN: 23, CLP: 0.09, ZAR: 4.7, EGP: 1.7, MAD: 8.5,
+  TRY: 2.6, PHP: 1.5, KHR: 0.02, NPR: 0.63, LKR: 0.26, MVR: 5.5,
+  CZK: 3.7, SEK: 8, NOK: 8, DKK: 12.5, PLN: 21, HUF: 0.24,
+};
+
+/**
+ * Get conversion rates: foreign currency → INR (1 foreign = X INR).
+ * Uses live rates when available, static fallback otherwise.
+ * Covers 35+ currencies for AI-generated meal/transport costs.
+ */
+export function getForeignToINR(): Record<string, number> {
+  if (allLiveRates && (Date.now() - liveRatesFetchedAt) < CACHE_DURATION_MS) {
+    // API returns 1 INR = X foreign → invert to get 1 foreign = Y INR
+    const inverted: Record<string, number> = { INR: 1 };
+    for (const [code, rate] of Object.entries(allLiveRates)) {
+      if (rate > 0) inverted[code] = Math.round((1 / rate) * 1000) / 1000;
+    }
+    return inverted;
+  }
+  return STATIC_FOREIGN_TO_INR;
 }
 
 export function convertFromINR(amountINR: number, toCurrency: CurrencyCode): number {

@@ -7,7 +7,7 @@ import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
 import { useCurrency } from '@/context/CurrencyContext';
-import { formatPrice } from '@/lib/currency';
+import { formatPrice, getForeignToINR } from '@/lib/currency';
 import { getDirections } from '@/lib/googleApi';
 import dynamic from 'next/dynamic';
 import HotelModal from '@/components/HotelModal';
@@ -1706,7 +1706,8 @@ function DeepPlanPageContent() {
   }, [adjustedDays, trip.adults, trip.children]);
 
   // Estimate food costs from AI-generated mealCosts per city (stored in deepPlanData)
-  const convRates: Record<string, number> = { EUR: 93, USD: 85, GBP: 108, JPY: 0.57, THB: 2.5, INR: 1, CZK: 3.7, CHF: 95, SEK: 8, NOK: 8, DKK: 12.5, PLN: 21, HUF: 0.24, AUD: 55, NZD: 50, CAD: 63, SGD: 63, MYR: 18, IDR: 0.005, VND: 0.003, KRW: 0.06, CNY: 12, MXN: 5, BRL: 17, ARS: 0.07, COP: 0.02, PEN: 23, CLP: 0.09, ZAR: 4.7, EGP: 1.7, MAD: 8.5, TRY: 2.6, AED: 23, PHP: 1.5, KHR: 0.02, NPR: 0.63, LKR: 0.26, MVR: 5.5 };
+  // Live rates (foreign → INR) from open.er-api.com, falls back to static rates
+  const convRates: Record<string, number> = getForeignToINR();
   const totalDays = adjustedDays.length;
   const foodCost = useMemo(() => {
     const pax = (trip.adults || 1) + (trip.children || 0);
