@@ -785,8 +785,8 @@ function RoutePageContent() {
 
       if (leg.selectedFlight) {
         const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
-        const fc = info?.fromCode || findAirportCode(fromC) || fromC.name;
-        const tc = info?.toCode || findAirportCode(toC) || toC.name;
+        const fc = info?.fromCode || findAirportCode(fromC) || fromC.parentCity || fromC.name;
+        const tc = info?.toCode || findAirportCode(toC) || toC.parentCity || toC.name;
         if (!fc || !tc || fc === tc) return;
 
         pending++;
@@ -806,8 +806,8 @@ function RoutePageContent() {
             onDone();
           }).catch(() => onDone());
       } else if (leg.selectedTrain) {
-        const fromName = fromC.name || fromC.fullName;
-        const toName = toC.name || toC.fullName;
+        const fromName = fromC.parentCity || fromC.name || fromC.fullName;
+        const toName = toC.parentCity || toC.name || toC.fullName;
         pending++;
         fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
           .then(r => r.json())
@@ -826,8 +826,8 @@ function RoutePageContent() {
           }).catch(() => onDone());
       } else {
         // Empty leg (no selection yet) — search for cheapest flight using city names for better nearby airport coverage
-        const fc = fromC.name || fromC.fullName || findAirportCode(fromC);
-        const tc = toC.name || toC.fullName || findAirportCode(toC);
+        const fc = fromC.parentCity || fromC.name || fromC.fullName || findAirportCode(fromC);
+        const tc = toC.parentCity || toC.name || toC.fullName || findAirportCode(toC);
         if (!fc || !tc || fc === tc) return;
         pending++;
         fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
@@ -895,7 +895,7 @@ function RoutePageContent() {
   const transportPax = trip.adults + trip.children; // children pay full fare
   const infantMultiplier = trip.infants * 0.15; // infants pay 15% on flights ONLY
   const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult * (transportPax + infantMultiplier), 0);
-  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * trip.adults, 0);
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * (trip.adults + (trip.children || 0)), 0);
   const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
     const extras = d.additionalHotels || [];
     const extraNights = extras.reduce((es, h) => es + h.nights, 0);
@@ -1758,8 +1758,8 @@ function RoutePageContent() {
                             <div className="flex items-center justify-between text-[11px]">
                               {leg.selectedTrain.price > 0 ? (
                                 <>
-                                  <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults}</span>
-                                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, currency)}</span>
+                                  <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults + (trip.children || 0)}</span>
+                                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * (trip.adults + (trip.children || 0)), currency)}</span>
                                 </>
                               ) : (
                                 <span className="text-text-muted font-body italic">Price N/A</span>
