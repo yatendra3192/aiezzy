@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, Reorder } from 'framer-motion';
+import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
@@ -219,6 +219,7 @@ function DeepPlanPageContent() {
   const trip = useTrip();
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
+  const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
 
   // Deep plan data from context (persisted to DB)
   const deepPlan = trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
@@ -2721,7 +2722,7 @@ function DeepPlanPageContent() {
                             {stop.type === 'hotel' && !hasTransport && stop.destIndex !== undefined && stop.destIndex < trip.destinations.length && (() => {
                               const dest = trip.destinations[stop.destIndex!];
                               const hotel = dest?.selectedHotel;
-                              const hasBookingDoc = day.city ? (trip.bookingDocs || []).some((d: any) => d.docType === 'hotel' && (d.city || '').toLowerCase().includes(day.city.toLowerCase())) : false;
+                              const hotelDoc = day.city ? (trip.bookingDocs || []).find((d: any) => d.docType === 'hotel' && (d.city || '').toLowerCase().includes(day.city.toLowerCase())) : null;
                               if (!hotel) return (
                                 <div className="mt-2 bg-amber-50/60 border border-amber-200/50 border-l-[3px] border-l-amber-400 rounded-xl p-3">
                                   <div className="flex items-center justify-between">
@@ -2742,8 +2743,8 @@ function DeepPlanPageContent() {
                                       <span className="text-[11px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}N</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      {hasBookingDoc ? (
-                                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                      {hotelDoc ? (
+                                        <button onClick={() => setViewingBooking(hotelDoc)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                       ) : (
                                         <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
                                       )}
@@ -2807,9 +2808,9 @@ function DeepPlanPageContent() {
                                           const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
                                           const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
                                           const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
-                                          const hasDoc = fcName && tcName && (trip.bookingDocs || []).some((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName));
-                                          return hasDoc ? (
-                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                          const transportDoc = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName)) : null;
+                                          return transportDoc ? (
+                                            <button onClick={() => setViewingBooking(transportDoc)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
                                             <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-blue-100 text-blue-700">Pending</span>
                                           );
@@ -2906,9 +2907,9 @@ function DeepPlanPageContent() {
                                           const { fromCity: fc, toCity: tc } = getLegCities(legIdx);
                                           const fcName = (fc?.parentCity || fc?.name || '').toLowerCase();
                                           const tcName = (tc?.parentCity || tc?.name || '').toLowerCase();
-                                          const hasDoc = fcName && tcName && (trip.bookingDocs || []).some((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName));
-                                          return hasDoc ? (
-                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700">Booked</span>
+                                          const transportDoc2 = fcName && tcName ? (trip.bookingDocs || []).find((d: any) => d.docType === 'transport' && (d.from || '').toLowerCase().includes(fcName) && (d.to || '').toLowerCase().includes(tcName)) : null;
+                                          return transportDoc2 ? (
+                                            <button onClick={() => setViewingBooking(transportDoc2)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
                                             <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
                                           );
@@ -3553,6 +3554,47 @@ function DeepPlanPageContent() {
           }
         }
       `}</style>
+
+      {/* Booking Document Viewer */}
+      <AnimatePresence>
+        {viewingBooking && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+            onClick={() => setViewingBooking(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-bg-surface rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600 flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span className="text-sm font-display font-bold text-text-primary truncate">{viewingBooking.name}</span>
+                </div>
+                <button onClick={() => setViewingBooking(null)}
+                  className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary transition-colors flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-2 flex items-center justify-center bg-gray-100">
+                {viewingBooking.mimeType === 'application/pdf' ? (
+                  <iframe src={viewingBooking.url} className="w-full h-full min-h-[70vh] rounded" title="Booking PDF" />
+                ) : (
+                  <img src={viewingBooking.url} alt="Booking document" className="max-w-full max-h-[80vh] object-contain rounded" />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
