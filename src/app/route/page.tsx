@@ -1995,9 +1995,6 @@ function RoutePageContent() {
             className="bg-white rounded-2xl shadow-xl p-6 max-w-[380px] w-full"
           >
             <div className="text-center mb-4">
-              <div className="w-10 h-10 mx-auto mb-3 rounded-full bg-accent-cyan/10 flex items-center justify-center">
-                <div className="w-5 h-5 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
-              </div>
               <h3 className="font-display text-lg font-bold text-text-primary">Setting Up Your Trip</h3>
               <p className="text-accent-cyan text-[13px] font-body mt-1 flex items-center justify-center gap-2">
                 <span className="w-3 h-3 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
