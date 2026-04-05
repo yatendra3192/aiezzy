@@ -98,9 +98,9 @@ Two data flows:
 - `bookingDocs: BookingDoc[]` — uploaded PDFs/images stored in Supabase Storage, metadata persisted via `_bookingDocs` JSONB embedding
 - `deepPlanData: DeepPlanData` — custom activities, day notes, start times, AI city activities cache, day themes persisted via `_deepPlanData` JSONB embedding
 - **`saveTrip` concurrency safety:** Uses `stateRef` (always latest state) instead of `setState` hack. `saveMutexRef` queues saves sequentially via promise chain. `isDirty` only cleared if state hasn't changed during the network round-trip. Checks `tripId` staleness to prevent overwriting a different trip loaded mid-save. **Optimistic locking:** Sends `expectedUpdatedAt` (server timestamp) with PUT requests; API returns 409 if another tab saved in between (2s tolerance). Client keeps `isDirty: true` on conflict so next auto-save retries. All save responses include `updatedAt` from the server.
-- **Destination reorder/move/remove syncs transport legs:** `moveDestination` swaps corresponding legs + clears the adjacent leg after the swap pair. `removeDestination` clears the leg that slides into the gap. `reorderDestinations` clears ALL transport leg selections (every city pair changes). All three prevent stale flight/train data from persisting on wrong city pairs.
+- **Destination reorder/move/remove syncs transport legs:** `moveDestination` swaps corresponding legs + clears the adjacent leg after the swap pair. `removeDestination` clears the leg that slides into the gap AND the adjacent leg before it (its "to" city changed), plus trims excess legs for round trips. `reorderDestinations` clears ALL transport leg selections (every city pair changes). All three prevent stale flight/train data from persisting on wrong city pairs.
 
-**CurrencyContext**: 10 currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates.
+**CurrencyContext** (`src/lib/currency.ts`): 10 display currencies, all prices stored in INR, converted on display via `formatPrice()`. Live rates fetched from `open.er-api.com` on mount (1-hour cache), falls back to static rates. `getForeignToINR()` returns inverted live rates for 150+ currencies (used by deep plan meal/transport cost display). Static fallback covers 35+ currencies. **Always push to git after every code change.**
 
 ### API Routes
 
@@ -176,7 +176,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Arrival day separation:** Arrival days ALWAYS get their own card with dinner + sleep. `dayNum` is incremented after every arrival day so explore days start the next calendar day. This prevents confusing 24h+ merged cards where 7 PM dinner flows into 9 AM breakfast.
 
-**Arrival day activities:** Fill as many activities as fit in free time (no cap). Track used activities in `usedArrivalActivities` set — explore days exclude these to prevent repeats across days in the same city.
+**Arrival day activities:** Fill as many activities as fit in free time between 7 AM and 6 PM only (no activities before 7 AM — prevents overnight flight arrivals showing activities at 2 AM). Track used activities in `usedArrivalActivities` set — explore days exclude these to prevent repeats across days in the same city.
 
 **Auto-fill on mount:** When deep plan loads, auto-detects all cities needing AI activities and fetches them in **parallel** (`Promise.allSettled`). Shows progress overlay with per-city checklist. Includes 1-night arrival-only destinations (not just 2+ nights). **Progressive save:** Each city's activities save individually as they complete (not after all cities finish). Failed cities update progress without blocking others. **Staleness guard:** Captures `effectTripId` at start; callbacks skip state updates if `cancelled` flag is set (cleanup sets it).
 
@@ -186,19 +186,29 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Empty states:** Travel days with free time show "Auto-plan this day" card. Explore days with no attractions show "Add places" + "Auto-plan" buttons.
 
-**Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, day themes, and activity order stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
+**Persisted to DB:** Custom activities, day notes, day start times, AI city activities cache, day themes, activity order, edited times, removed activities, and `cacheGeneratedAt` stored in `deepPlanData` (via `_deepPlanData` JSONB embedding).
+
+**AI cache versioning:** `deepPlanData.cacheGeneratedAt` (YYYY-MM-DD) tracks when AI activities were generated per trip. On load, if `cacheGeneratedAt` is before `FIX_DATE` (or missing), activities auto-regenerate. Bump `FIX_DATE` in the auto-fill useEffect when AI data format changes. This is per-trip, not global — only stale trips regenerate.
+
+**Activity removal stability:** Removed activities are tracked in `removedActivities` but stay in the scheduling pipeline. They are filtered from rendered stops AFTER scheduling to prevent extras from backfilling the gap. Activity times are editable (click to change) and cascade to subsequent stops.
+
+**Drag-reorder time recalculation:** Explore days fully reschedule activities (morning/afternoon blocks with travel gaps). Arrival days swap times from the original order to the new order. Both persist via `activityOrder` in `deepPlanData`.
 
 ### Key Patterns
 
 - **City geocoding:** Search "city" appended to avoid India location bias (e.g., "Barcelona city" → Spain).
 - **Airport resolution:** `resolveToAirports()` for IATA codes looks up name/city from catalog DB. For city names, geocodes + PostGIS nearby search.
 - **Price display:** All prices in INR. `formatPrice(amountINR, currency)`. Live rates from `open.er-api.com` cached 1 hour. PDF uses ASCII-safe `Rs.` instead of `₹`.
-- **Price calculation for custom transport:** Total price entered → divided by trip's passenger formula. Flights: `total / (adults + children + infants×0.15)`. Trains: `total / adults`. Route page multiplies back.
+- **Price calculation for custom transport:** Total price entered → divided by trip's passenger formula. Flights: `total / (adults + children + infants×0.15)`. Trains: `total / (adults + children)`. Route page multiplies back.
 - **PDF export:** `exportTripPDFFromData()` — structured jsPDF (not html2canvas). Text truncation, right-aligned price columns.
 - **TypeScript gotchas:** Don't use `for...of` on `Set` or `Map` (needs `downlevelIteration`). Don't use `parseInt()` on numbers. Use `Array.from(set)` or `Array.from(map.keys())` instead.
 - **Null safety for new fields:** `bookingDocs` and `deepPlanData` may be undefined on trips saved before these features. Always use `trip.bookingDocs?.length`, `trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} }`. `cityActivities` and `dayThemes` inside `deepPlanData` are also optional.
 - **Hotel `address`/`lat`/`lng`:** Optional fields on `Hotel` interface. Custom stays and Google hotels store address for accurate distance calculations via Google Directions.
 - **City name display:** Always use `city.parentCity || city.name` for display — never parse `fullName` by commas (e.g., "Jaipur, Rajasthan, India" would give "Rajasthan" not "Jaipur").
+- **City key consistency:** `day.city`, `removedActivities` keys, `cityActivities` keys, `mealCosts` keys MUST all use `parentCity || name`. Mismatches cause removed activities to reappear, meal costs to not display, etc.
+- **Airport resolution for suburbs:** Always use `parentCity || name` (not just `name`) when resolving airports. Origin `name` may be a place/address (e.g., "Silver Oak Prestige residency"), while `parentCity` is the actual city (e.g., "Thane" → resolves to BOM). This applies to auto-select, manual refresh, display, and proactive resolver.
+- **Booking doc matching:** Uses `matchCities[]` array (not `city`/`from`/`to` fields which don't exist on `BookingDoc`). Match via substring inclusion: `cities.some(c => c.includes(key) || key.includes(c))`.
+- **AI meal/transport cost sanity:** AI sometimes returns USD values labeled as local currency (e.g., lunch: 2 labeled THB instead of ~150 THB). The API has sanity checks that detect suspiciously low values and multiply by USD-to-local rate.
 - **Transport type atomicity:** `changeTransportType()` clears both `selectedFlight` and `selectedTrain`. When selecting transport while also changing type (e.g., bus), use `updateTransportLeg()` with all fields in one call.
 - **OpenAI Responses API:** PDF-handling endpoints (`extract-trip`, `extract-booking`, `extract-transport`, `classify-doc`) use `/v1/responses` (not `/v1/chat/completions`). Content types: `input_text`, `input_file`, `input_image`. Response: `data.output[].content[].text`.
 - **From city on reload:** `loadTrip` extracts city name from `fromAddress` when `from_city.name` is empty (e.g., "42 Rue Jacob, Paris, France" → `parentCity: "Paris"`). Uses second-to-last comma-separated part.
