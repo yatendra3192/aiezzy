@@ -2473,6 +2473,33 @@ function DeepPlanPageContent() {
                   const allStopIds = isDraggableDay ? day.stops.map(s => s.id) : [];
                   const useReorder = isDraggableDay && activityIds.length >= 1;
 
+                  // Apply edited times and cascade: if user edited a time, recalculate subsequent stops
+                  {
+                    let timeShift = 0; // accumulated shift in minutes from edits
+                    for (let si2 = 0; si2 < day.stops.length; si2++) {
+                      const s = day.stops[si2];
+                      if (!s.time) continue;
+                      const timeKey = s.mealType
+                        ? `day_${day.day}_${s.mealType}`
+                        : `day_${day.day}_${s.name.replace(/\s+/g, '_')}`;
+                      const edited = editedTimes[timeKey];
+                      if (edited) {
+                        // User edited this stop's time — compute shift from original
+                        const origMin = parseTime(s.time);
+                        const editMin = parseTime(edited);
+                        timeShift = editMin - origMin;
+                        s.time = edited; // apply the edit
+                      } else if (timeShift !== 0) {
+                        // Downstream stop — shift by accumulated offset
+                        const origMin = parseTime(s.time);
+                        const shifted = origMin + timeShift;
+                        if (shifted >= 0 && shifted < 24 * 60) {
+                          s.time = formatTime24(shifted);
+                        }
+                      }
+                    }
+                  }
+
                   const stopsContent = day.stops.map((stop, si) => {
                     const hasTransport = stop.transport !== null;
                     const isMeal = !!stop.mealType;
