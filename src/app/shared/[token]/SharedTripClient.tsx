@@ -272,8 +272,8 @@ export default function SharedTripClient({ trip }: { trip: SharedTrip }) {
                               );
                             })()}
                             <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, 'INR')}/pax &times; {trip.adults}</span>
-                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * trip.adults, 'INR')}</span>
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, 'INR')}/pax &times; {trip.adults + (trip.children || 0)}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * (trip.adults + (trip.children || 0)), 'INR')}</span>
                             </div>
                           </div>
                         )}

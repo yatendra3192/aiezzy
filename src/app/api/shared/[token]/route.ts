@@ -58,7 +58,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     .reduce((s: number, l: any) => s + (l.selectedFlight?.pricePerAdult || 0), 0) * (trip.adults || 1);
   const trainCost = transportLegs
     .filter((l: any) => l.selectedTrain)
-    .reduce((s: number, l: any) => s + (l.selectedTrain?.price || 0), 0) * (trip.adults || 1);
+    .reduce((s: number, l: any) => s + (l.selectedTrain?.price || 0), 0) * ((trip.adults || 1) + (trip.children || 0));
   const hotelCost = destinations
     .filter((d: any) => d.selectedHotel && d.nights > 0)
     .reduce((s: number, d: any) => s + (d.selectedHotel?.pricePerNight || 0) * d.nights, 0);

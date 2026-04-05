@@ -121,7 +121,7 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
 
   const totalNights = data.destinations.reduce((s, d) => s + d.nights, 0);
   const flightCost = data.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * data.adults;
-  const trainCost = data.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * data.adults;
+  const trainCost = data.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * (data.adults + (data.children || 0));
   const hotelCost = data.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
     const extras = d.additionalHotels || [];
     const extraNights = extras.reduce((es, h) => es + h.nights, 0);

@@ -47,7 +47,7 @@ export async function GET() {
       .reduce((s: number, l: any) => s + (l.selected_flight?.pricePerAdult || 0), 0) * (trip.adults || 1);
     const trainCost = legs
       .filter((l: any) => l.selected_train)
-      .reduce((s: number, l: any) => s + (l.selected_train?.price || 0), 0) * (trip.adults || 1);
+      .reduce((s: number, l: any) => s + (l.selected_train?.price || 0), 0) * ((trip.adults || 1) + (trip.children || 0));
     const hotelCost = dests
       .filter((d: any) => d.selected_hotel && d.nights > 0)
       .reduce((s: number, d: any) => s + (d.selected_hotel?.pricePerNight || 0) * d.nights, 0);

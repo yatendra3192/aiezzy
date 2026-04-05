@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       const dests = t.trip_destinations || [];
       const legs = t.trip_transport_legs || [];
       const flightCost = legs.filter((l: any) => l.selected_flight).reduce((s: number, l: any) => s + (l.selected_flight?.pricePerAdult || 0), 0) * (t.adults || 1);
-      const trainCost = legs.filter((l: any) => l.selected_train).reduce((s: number, l: any) => s + (l.selected_train?.price || 0), 0) * (t.adults || 1);
+      const trainCost = legs.filter((l: any) => l.selected_train).reduce((s: number, l: any) => s + (l.selected_train?.price || 0), 0) * ((t.adults || 1) + (t.children || 0));
       const hotelCost = dests.filter((d: any) => d.selected_hotel && d.nights > 0).reduce((s: number, d: any) => s + (d.selected_hotel?.pricePerNight || 0) * d.nights, 0);
 
       // Find user
