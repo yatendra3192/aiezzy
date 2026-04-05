@@ -3018,7 +3018,11 @@ function DeepPlanPageContent() {
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
                           const isDropdownOpen = openTravelDropdown === travelKey;
                           const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
-                          const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(stop.name + ', ' + day.city)}/${encodeURIComponent(nextStop.name + ', ' + day.city)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
+                          // Use a real place name for directions origin — skip "Free time", "Morning in", meal names
+                          const originName = (stop.name.startsWith('Free time') || stop.name.startsWith('Morning in') || stop.mealType)
+                            ? (day.stops.slice(0, si).reverse().find(s => s.type === 'hotel' || (s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')))?.name || day.city)
+                            : stop.name;
+                          const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(originName + ', ' + day.city)}/${encodeURIComponent(nextStop.name + ', ' + day.city)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
 
                           return (
                             <div className="pl-4 py-1">
