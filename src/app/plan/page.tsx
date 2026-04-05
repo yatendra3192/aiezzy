@@ -274,11 +274,14 @@ function PlanPageContent() {
       const pending = sessionStorage.getItem('pendingAIPlan');
       if (pending) {
         sessionStorage.removeItem('pendingAIPlan');
-        const data = JSON.parse(pending);
-        if (data.destinations?.length > 0) {
-          data.tripType = data.tripType === 'oneWay' ? 'oneWay' : 'roundTrip';
-          trip.buildFullTrip(data as Parameters<typeof trip.buildFullTrip>[0]);
-          return;
+        // Only build if context doesn't already have matching data (avoid double-call)
+        if (trip.destinations.length === 0) {
+          const data = JSON.parse(pending);
+          if (data.destinations?.length > 0) {
+            data.tripType = data.tripType === 'oneWay' ? 'oneWay' : 'roundTrip';
+            trip.buildFullTrip(data as Parameters<typeof trip.buildFullTrip>[0]);
+            return;
+          }
         }
       }
     } catch {}

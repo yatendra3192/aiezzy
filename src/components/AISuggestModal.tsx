@@ -102,14 +102,15 @@ export default function AISuggestModal({ isOpen, onClose }: AISuggestModalProps)
       tripType: (s.tripType === 'oneWay' ? 'oneWay' : 'roundTrip') as 'roundTrip' | 'oneWay',
     };
 
-    // Store in sessionStorage so plan page can pick it up even if context hasn't committed
+    // Store in sessionStorage — plan page picks it up on mount via useEffect
     try { sessionStorage.setItem('pendingAIPlan', JSON.stringify(tripData)); } catch {}
 
-    // Set context state
+    // Build trip in context immediately (handles same-page case)
     buildFullTrip(tripData);
 
     onClose();
-    router.replace('/plan');
+    // Navigate to plan page — small delay ensures state commits before navigation
+    setTimeout(() => router.replace('/plan'), 50);
   };
 
   const handleClose = () => {
