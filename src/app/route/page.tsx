@@ -22,7 +22,7 @@ import WeatherBadge from '@/components/WeatherBadge';
 const HotelModal = dynamic(() => import('@/components/HotelModal'), { ssr: false });
 const TransportCompareModal = dynamic(() => import('@/components/TransportCompareModal'), { ssr: false });
 const ShareTripModal = dynamic(() => import('@/components/ShareTripModal'), { ssr: false });
-const PackingListModal = dynamic(() => import('@/components/PackingListModal'), { ssr: false });
+
 import { getVisaInfo } from '@/data/visaRequirements';
 
 const transportIcons: Record<string, string> = {
@@ -123,7 +123,7 @@ function RoutePageContent() {
   const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
   const [hotelModal, setHotelModal] = useState<{ destIndex: number; isAdditional?: boolean } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
-  const [showPackingList, setShowPackingList] = useState(false);
+
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
 
   // Find booking docs for a city, optionally filtered by type
@@ -1855,92 +1855,8 @@ function RoutePageContent() {
             {autoSaveStatus === 'idle' && trip.lastSavedAt && (
               <p role="status" aria-live="polite" className="text-center text-[10px] font-body text-text-muted/50 py-1">Auto-saved</p>
             )}
-            {/* Add to Calendar — only show when at least one flight/train or hotel is selected */}
-            {(trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain) || trip.destinations.some(d => d.selectedHotel)) && (
-              <button
-                onClick={() => {
-                  const ics = generateICS(trip);
-                  if (ics) {
-                    const cityNames = trip.destinations.map(d => d.city.name).join('-');
-                    downloadICS(ics, `trip-${cityNames || 'plan'}.ics`);
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-                Add to Calendar
-              </button>
-            )}
-            {/* Share trip — only show if trip is saved */}
-            {trip.tripId && (
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                </svg>
-                Share Trip
-              </button>
-            )}
-            <button
-              onClick={async () => {
-                setPdfLoading(true);
-                try {
-                  const { exportTripPDFFromData } = await import('@/lib/pdfExport');
-                  const cityNames = trip.destinations.map(d => d.city.name).join('-');
-                  await exportTripPDFFromData({
-                    from: trip.from,
-                    fromAddress: trip.fromAddress,
-                    destinations: trip.destinations,
-                    transportLegs: trip.transportLegs,
-                    departureDate: trip.departureDate,
-                    adults: trip.adults,
-                    children: trip.children,
-                    infants: trip.infants,
-                    tripType: trip.tripType,
-                    currency,
-                    formatPrice: (amount: number) => formatPrice(amount, currency),
-                  }, `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
-                } catch (e) {
-                  console.error('PDF export failed:', e);
-                } finally {
-                  setPdfLoading(false);
-                }
-              }}
-              disabled={pdfLoading}
-              className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {pdfLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
-                  Generating PDF...
-                </>
-              ) : (
-                <>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                  Download PDF
-                </>
-              )}
-            </button>
-            {/* Packing List — show when at least one destination exists */}
-            {trip.destinations.length > 0 && (
-              <button
-                onClick={() => setShowPackingList(true)}
-                className="w-full flex items-center justify-center gap-2 border border-border-subtle text-text-secondary font-display font-bold py-3 rounded-xl text-xs transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-                  <rect x="9" y="3" width="6" height="4" rx="1" />
-                  <path d="M9 14l2 2 4-4" />
-                </svg>
-                Packing List
-              </button>
-            )}
+
+
             {/* My Documents */}
             {trip.bookingDocs?.length > 0 && (
               <div className="bg-bg-card border border-border-subtle rounded-xl p-3">
@@ -1980,6 +1896,79 @@ function RoutePageContent() {
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
               Deep Plan
             </motion.button>
+            {/* Secondary actions row */}
+            <div className="flex gap-2 mt-2">
+              {(trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain) || trip.destinations.some(d => d.selectedHotel)) && (
+                <button
+                  onClick={() => {
+                    const ics = generateICS(trip);
+                    if (ics) {
+                      const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                      downloadICS(ics, `trip-${cityNames || 'plan'}.ics`);
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  Calendar
+                </button>
+              )}
+              {trip.tripId && (
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                  Share
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  setPdfLoading(true);
+                  try {
+                    const { exportTripPDFFromData } = await import('@/lib/pdfExport');
+                    const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                    await exportTripPDFFromData({
+                      from: trip.from,
+                      fromAddress: trip.fromAddress,
+                      destinations: trip.destinations,
+                      transportLegs: trip.transportLegs,
+                      departureDate: trip.departureDate,
+                      adults: trip.adults,
+                      children: trip.children,
+                      infants: trip.infants,
+                      tripType: trip.tripType,
+                      currency,
+                      formatPrice: (amount: number) => formatPrice(amount, currency),
+                    }, `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
+                  } catch (e) {
+                    console.error('PDF export failed:', e);
+                  } finally {
+                    setPdfLoading(false);
+                  }
+                }}
+                disabled={pdfLoading}
+                className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
+                    PDF...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    PDF
+                  </>
+                )}
+              </button>
+            </div>
           </div>
           </div>{/* end sidebar */}
           </div>{/* end grid */}
@@ -2241,14 +2230,6 @@ function RoutePageContent() {
         />
       )}
 
-      {/* Packing List Modal */}
-      <PackingListModal
-        isOpen={showPackingList}
-        onClose={() => setShowPackingList(false)}
-        destinations={trip.destinations.map(d => ({ city: d.city, nights: d.nights }))}
-        totalNights={totalNights}
-        tripId={trip.tripId}
-      />
 
       {/* Booking Document Viewer */}
       <AnimatePresence>
