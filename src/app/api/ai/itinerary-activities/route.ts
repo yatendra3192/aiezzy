@@ -198,7 +198,7 @@ Rules:
       const minVal = minLunch[cur];
       if (minVal && lunch > 0 && lunch < minVal) {
         // Values look like USD — convert using approximate USD-to-local rates
-        const usdRate: Record<string, number> = { THB: 35, JPY: 155, INR: 85, IDR: 16000, VND: 25000, KRW: 1400, CZK: 24, HUF: 380, KHR: 4100, NPR: 135, LKR: 320, PHP: 58 };
+        const usdRate: Record<string, number> = { THB: 33, JPY: 160, INR: 93, IDR: 16800, VND: 26000, KRW: 1500, CZK: 25, HUF: 400, KHR: 4100, NPR: 140, LKR: 330, PHP: 60 };
         const r = usdRate[cur] || 1;
         breakfast = Math.round(breakfast * r);
         lunch = Math.round(lunch * r);
