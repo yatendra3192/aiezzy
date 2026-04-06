@@ -10,6 +10,7 @@ import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice, getForeignToINR } from '@/lib/currency';
 import { getDirections } from '@/lib/googleApi';
 import dynamic from 'next/dynamic';
+const ShareTripModal = dynamic(() => import('@/components/ShareTripModal'), { ssr: false });
 import HotelModal from '@/components/HotelModal';
 import WeatherBadge from '@/components/WeatherBadge';
 import PlacePhoto from '@/components/PlacePhoto';
@@ -220,6 +221,7 @@ function DeepPlanPageContent() {
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadContextRef = useRef<{ cities: string[]; docType: 'hotel' | 'transport' }>({ cities: [], docType: 'transport' });
@@ -2197,9 +2199,10 @@ function DeepPlanPageContent() {
                 </>
               )}
             </button>
-            <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.clipboard) { navigator.clipboard.writeText(window.location.href); } }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            <button onClick={() => setShowShareModal(true)}
+              disabled={!trip.tripId}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm disabled:opacity-50">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               Share
             </button>
           </div>
@@ -3684,6 +3687,15 @@ function DeepPlanPageContent() {
           }
         }
       `}</style>
+
+      {/* Share Trip Modal */}
+      {trip.tripId && (
+        <ShareTripModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          tripId={trip.tripId}
+        />
+      )}
 
       {/* Hidden file input for booking doc uploads */}
       <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleUploadBooking} />
