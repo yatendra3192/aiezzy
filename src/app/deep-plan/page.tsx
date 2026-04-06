@@ -219,6 +219,7 @@ function DeepPlanPageContent() {
   const trip = useTrip();
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadContextRef = useRef<{ cities: string[]; docType: 'hotel' | 'transport' }>({ cities: [], docType: 'transport' });
@@ -2157,10 +2158,44 @@ function DeepPlanPageContent() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
               Edit Route
             </button>
-            <button onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-              Print
+            <button
+              onClick={async () => {
+                setPdfLoading(true);
+                try {
+                  const { exportTripPDFFromData } = await import('@/lib/pdfExport');
+                  const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                  await exportTripPDFFromData({
+                    from: trip.from,
+                    fromAddress: trip.fromAddress,
+                    destinations: trip.destinations,
+                    transportLegs: trip.transportLegs,
+                    departureDate: trip.departureDate,
+                    adults: trip.adults,
+                    children: trip.children,
+                    infants: trip.infants,
+                    tripType: trip.tripType,
+                    currency,
+                    formatPrice: (amount: number) => formatPrice(amount, currency),
+                  }, `AIEzzy-DeepPlan${cityNames ? '-' + cityNames : ''}.pdf`);
+                } catch (e) {
+                  console.error('PDF export failed:', e);
+                } finally {
+                  setPdfLoading(false);
+                }
+              }}
+              disabled={pdfLoading}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              {pdfLoading ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
+                  PDF...
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  PDF
+                </>
+              )}
             </button>
             <button onClick={() => { if (typeof navigator !== 'undefined' && navigator.clipboard) { navigator.clipboard.writeText(window.location.href); } }}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
