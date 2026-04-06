@@ -220,6 +220,30 @@ function DeepPlanPageContent() {
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const uploadContextRef = useRef<{ cities: string[]; docType: 'hotel' | 'transport' }>({ cities: [], docType: 'transport' });
+  const handleUploadBooking = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !trip.tripId) return;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('tripId', trip.tripId);
+      fd.append('matchCities', uploadContextRef.current.cities.join(','));
+      const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
+      if (res.ok) {
+        const doc = await res.json();
+        doc.docType = uploadContextRef.current.docType;
+        doc.matchCities = uploadContextRef.current.cities;
+        trip.addBookingDoc(doc);
+      }
+    } catch { /* continue */ }
+    if (uploadRef.current) uploadRef.current.value = '';
+  };
+  const triggerUpload = (cities: string[], docType: 'hotel' | 'transport') => {
+    uploadContextRef.current = { cities, docType };
+    uploadRef.current?.click();
+  };
 
   // Deep plan data from context (persisted to DB)
   const deepPlan = trip.deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
@@ -2787,7 +2811,13 @@ function DeepPlanPageContent() {
                                       {hotelDoc ? (
                                         <button onClick={() => setViewingBooking(hotelDoc)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                       ) : (
-                                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                        <>
+                                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                          <button onClick={() => triggerUpload([day.city], 'hotel')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                            Upload
+                                          </button>
+                                        </>
                                       )}
                                       <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
                                     </div>
@@ -2857,7 +2887,13 @@ function DeepPlanPageContent() {
                                           return transportDoc ? (
                                             <button onClick={() => setViewingBooking(transportDoc)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
-                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-blue-100 text-blue-700">Pending</span>
+                                            <>
+                                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-blue-100 text-blue-700">Pending</span>
+                                              <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                                Upload
+                                              </button>
+                                            </>
                                           );
                                         })()}
                                         <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
@@ -2960,7 +2996,13 @@ function DeepPlanPageContent() {
                                           return transportDoc2 ? (
                                             <button onClick={() => setViewingBooking(transportDoc2)} className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors cursor-pointer">Booked</button>
                                           ) : (
-                                            <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                            <>
+                                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
+                                              <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                                Upload
+                                              </button>
+                                            </>
                                           );
                                         })()}
                                         <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
@@ -3607,6 +3649,9 @@ function DeepPlanPageContent() {
           }
         }
       `}</style>
+
+      {/* Hidden file input for booking doc uploads */}
+      <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleUploadBooking} />
 
       {/* Booking Document Viewer */}
       <AnimatePresence>
