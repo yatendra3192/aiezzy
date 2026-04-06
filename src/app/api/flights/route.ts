@@ -109,7 +109,21 @@ export async function GET(req: NextRequest) {
     let resolvedToAp = toCandidates[0];
     let foundFlights = false;
 
-    console.log(`[flights] Searching ${from}→${to} (${date}): ${fromTrials.length} from × ${toCandidates.length} to airports`);
+    // Fast path: try city-name scraper search first (handles destinations without airports, e.g., Napa Valley → SFO)
+    if (!exactAirport && FLIGHTS_API_URL && FLIGHTS_API_KEY && from.length > 3 && to.length > 3) {
+      const fastResult = await fetchScraperFlights(from, to, date, adults).catch(() => null);
+      if (fastResult && fastResult.length > 0) {
+        allFlights = fastResult.map((f: any) => ({ ...f, source: 'scraper' }));
+        // Resolve from/to airports from the first result
+        const firstDep = fastResult[0].depAirportCode;
+        const firstArr = fastResult[0].arrAirportCode;
+        if (firstDep) resolvedFromAp = fromCandidates.find(a => a.code === firstDep) || { code: firstDep, name: '', city: from, distance: 0 };
+        if (firstArr) resolvedToAp = toCandidates.find(a => a.code === firstArr) || { code: firstArr, name: '', city: to, distance: 0 };
+        foundFlights = true;
+      }
+    }
+
+    console.log(`[flights] Searching ${from}→${to} (${date}): ${fromTrials.length} from × ${toCandidates.length} to airports${foundFlights ? ' (fast path hit)' : ''}`);
     for (const tryFromAp of fromTrials) {
       if (foundFlights) break;
     for (const toAp of toCandidates) {
