@@ -7,9 +7,10 @@ interface ShareTripModalProps {
   isOpen: boolean;
   onClose: () => void;
   tripId: string;
+  view?: 'route' | 'deepplan';
 }
 
-export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripModalProps) {
+export default function ShareTripModal({ isOpen, onClose, tripId, view }: ShareTripModalProps) {
   const [shareUrl, setShareUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -28,7 +29,7 @@ export default function ShareTripModal({ isOpen, onClose, tripId }: ShareTripMod
       const res = await fetch(`/api/trips/${tripId}/share`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to generate share link');
       const data = await res.json();
-      setShareUrl(data.shareUrl);
+      setShareUrl(view === 'deepplan' ? `${data.shareUrl}?view=deepplan` : data.shareUrl);
     } catch {
       setError('Could not generate share link. Try again.');
     }

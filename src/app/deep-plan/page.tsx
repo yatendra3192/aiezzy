@@ -3694,6 +3694,7 @@ function DeepPlanPageContent() {
           isOpen={showShareModal}
           onClose={() => setShowShareModal(false)}
           tripId={trip.tripId}
+          view="deepplan"
         />
       )}
 
