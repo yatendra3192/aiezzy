@@ -11,7 +11,7 @@ async function getSharedTrip(token: string): Promise<SharedTrip | null> {
     .from('trips')
     .select(`
       id, title, from_city, from_address, departure_date, adults, children, infants,
-      trip_type, status, created_at, updated_at,
+      trip_type, status, created_at, updated_at, deep_plan_data,
       trip_destinations(id, position, city, nights, selected_hotel),
       trip_transport_legs(id, position, transport_type, duration, distance, departure_time, arrival_time, selected_flight, selected_train)
     `)
@@ -68,6 +68,9 @@ async function getSharedTrip(token: string): Promise<SharedTrip | null> {
   // Strip internal fields from from_city (old trips may still have embedded data)
   const { _deepPlanData, _bookingDocs, ...fromCity } = (trip.from_city || {}) as any;
 
+  // Deep plan data: dedicated column first, fall back to from_city embedding for old trips
+  const deepPlanData = (trip as any).deep_plan_data || _deepPlanData || null;
+
   return {
     title: trip.title || 'Shared Trip',
     from: fromCity,
@@ -84,6 +87,7 @@ async function getSharedTrip(token: string): Promise<SharedTrip | null> {
     trainCost,
     hotelCost,
     totalCost: flightCost + trainCost + hotelCost,
+    deepPlanData,
   };
 }
 
@@ -128,12 +132,12 @@ export async function generateMetadata({ params }: { params: { token: string } }
 }
 
 /** Server-rendered shared trip page */
-export default async function SharedTripPage({ params }: { params: { token: string } }) {
+export default async function SharedTripPage({ params, searchParams }: { params: { token: string }; searchParams: { view?: string } }) {
   const trip = await getSharedTrip(params.token);
 
   if (!trip) {
     notFound();
   }
 
-  return <SharedTripClient trip={trip} />;
+  return <SharedTripClient trip={trip} initialView={searchParams.view === 'deepplan' ? 'deepplan' : 'route'} />;
 }

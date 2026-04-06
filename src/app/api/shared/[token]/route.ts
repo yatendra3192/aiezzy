@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     .from('trips')
     .select(`
       id, title, from_city, from_address, departure_date, adults, children, infants,
-      trip_type, status, created_at, updated_at,
+      trip_type, status, created_at, updated_at, deep_plan_data,
       trip_destinations(id, position, city, nights, selected_hotel),
       trip_transport_legs(id, position, transport_type, duration, distance, departure_time, arrival_time, selected_flight, selected_train)
     `)
@@ -67,6 +67,9 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
   // Strip internal fields from from_city (old trips may still have embedded data)
   const { _deepPlanData, _bookingDocs, ...cleanFrom } = (trip.from_city || {}) as any;
 
+  // Deep plan data: dedicated column first, fall back to from_city embedding for old trips
+  const deepPlanData = (trip as any).deep_plan_data || _deepPlanData || null;
+
   return NextResponse.json({
     title: trip.title,
     from: cleanFrom,
@@ -84,6 +87,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     trainCost,
     hotelCost,
     totalCost: flightCost + trainCost + hotelCost,
+    deepPlanData,
     createdAt: trip.created_at,
     updatedAt: trip.updated_at,
   });
