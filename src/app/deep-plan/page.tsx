@@ -1630,13 +1630,13 @@ function DeepPlanPageContent() {
         for (const s of orderedForScheduling) {
           const dur = s.durationMin || 60;
           const gap = getTravelGap(prevName, s.name);
-          // First activity starts at cursor (hotel leave time), subsequent add travel gap
-          const actStart = prevName === hotelName ? cursor : cursor;
+          // Add travel gap from previous stop (including hotel → first activity)
+          const actStart = cursor + gap;
           if (actStart + dur > lunchTime) break;
           morningScheduled.push({ stop: s, time: actStart });
           scheduledIds.add(s.id);
           prevName = s.name;
-          cursor = actStart + dur + gap;
+          cursor = actStart + dur;
         }
       }
 
@@ -1651,12 +1651,12 @@ function DeepPlanPageContent() {
       for (const s of remainingForAfternoon) {
         const dur = s.durationMin || 60;
         const gap = getTravelGap(prevName, s.name);
-        const actStart = cursor;
+        const actStart = cursor + gap;
         if (actStart + dur > afternoonEnd) continue;
         afternoonScheduled.push({ stop: s, time: actStart });
         scheduledIds.add(s.id);
         prevName = s.name;
-        cursor = actStart + dur + gap;
+        cursor = actStart + dur;
       }
 
       // Rebuild stops array
