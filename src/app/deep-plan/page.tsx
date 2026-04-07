@@ -3211,8 +3211,13 @@ function DeepPlanPageContent() {
                                                 return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(distKm * (lt.taxiPerKm || 2) * rate), currency)}</span>;
                                               })()}
                                             </span>
-                                          ) : (
+                                          ) : travelData?._fetched ? (
                                             <span className="text-[11px] font-body text-text-muted">Walk <span className="text-emerald-500">Free</span></span>
+                                          ) : (
+                                            <span className="text-[11px] font-body text-text-muted/50">
+                                              <span className="inline-block w-2.5 h-2.5 border border-text-muted/30 border-t-text-muted/60 rounded-full animate-spin mr-1 align-middle" />
+                                              Loading...
+                                            </span>
                                           )}
                                           <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
                                         </button>
