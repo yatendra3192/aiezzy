@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
+import { getCityPricing, calcTaxiCost } from '@/data/cityPricing';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
 import { useCurrency } from '@/context/CurrencyContext';
 import { formatPrice, getForeignToINR } from '@/lib/currency';
@@ -38,6 +39,10 @@ interface DeepStop {
   ticketPrice?: string;
   /** Whether this stop was promoted from AI to custom ("pinned") */
   isPinned?: boolean;
+  /** Latitude for precise directions */
+  lat?: number;
+  /** Longitude for precise directions */
+  lng?: number;
 }
 
 interface DayPlan {
@@ -458,7 +463,7 @@ function DeepPlanPageContent() {
       const cached = trip.deepPlanData?.cityActivities?.[cityName] || [];
       // Skip if cached AND generated after the last fix date (per-trip, not global)
       // Only regenerate trips cached before fix date (scheduling + cost display + real place names)
-      const FIX_DATE = '2026-04-08';
+      const FIX_DATE = '2026-04-09';
       const cachedAt = trip.deepPlanData?.cacheGeneratedAt;
       if (cached.length > 0 && cachedAt && cachedAt >= FIX_DATE) continue;
       if (dest.nights < 1) continue;
@@ -838,6 +843,7 @@ function DeepPlanPageContent() {
                       transport: { icon: 'walk', duration: '', distance: '' },
                       category: aiD2?.category || 'landmark', durationMin: dur2,
                       note: aiD2?.note, openingHours: aiD2?.openingHours, ticketPrice: aiD2?.ticketPrice,
+                      lat: aiD2?.lat, lng: aiD2?.lng,
                     });
                     usedArrivalActivities.add(attrName2.toLowerCase());
                     evCursor2 += dur2 + 30;
@@ -950,6 +956,7 @@ function DeepPlanPageContent() {
                       category: aiDetail?.category || 'landmark',
                       durationMin: dur,
                       note: aiDetail?.note, openingHours: aiDetail?.openingHours, ticketPrice: aiDetail?.ticketPrice,
+                      lat: aiDetail?.lat, lng: aiDetail?.lng,
                     });
                     usedArrivalActivities.add(attrName.toLowerCase());
                     addedCount++;
@@ -1012,7 +1019,7 @@ function DeepPlanPageContent() {
 
       // Build typed activity list with durations from multiple sources
       // Skip activities already used on the arrival day to avoid repeats
-      type TypedActivity = { name: string; category: string; durationMin: number; bestTime: string; note?: string; openingHours?: string; ticketPrice?: string; dayIndex?: number };
+      type TypedActivity = { name: string; category: string; durationMin: number; bestTime: string; note?: string; openingHours?: string; ticketPrice?: string; dayIndex?: number; lat?: number; lng?: number };
       const typedActivities: TypedActivity[] = [];
       const cityKey = toCity.parentCity || toCity.name;
       // Exclude arrival activities but NOT removed ones yet — we filter removed AFTER slicing per day
@@ -1035,7 +1042,7 @@ function DeepPlanPageContent() {
       if (aiCached && aiCached.length > 0) {
         for (const a of aiCached) {
           if (!usedNames.has(a.name.toLowerCase())) {
-            typedActivities.push({ name: a.name, category: a.category || 'landmark', durationMin: a.durationMin || 60, bestTime: a.bestTime || 'anytime', note: a.note, openingHours: a.openingHours, ticketPrice: a.ticketPrice, dayIndex: a.dayIndex });
+            typedActivities.push({ name: a.name, category: a.category || 'landmark', durationMin: a.durationMin || 60, bestTime: a.bestTime || 'anytime', note: a.note, openingHours: a.openingHours, ticketPrice: a.ticketPrice, dayIndex: a.dayIndex, lat: a.lat, lng: a.lng });
             usedNames.add(a.name.toLowerCase());
           }
         }
@@ -1117,7 +1124,7 @@ function DeepPlanPageContent() {
         });
 
         // Leave hotel
-        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '', distance: '' } });
+        expDay.stops.push({ id: `dp${sc++}`, name: hotelName, type: 'hotel', time: '09:00', transport: { icon: 'walk', duration: '', distance: '' }, lat: dest.selectedHotel?.lat, lng: dest.selectedHotel?.lng });
 
         // Morning activities
         for (const { act, startMin } of morningScheduled) {
@@ -1127,6 +1134,7 @@ function DeepPlanPageContent() {
             note: act.note || undefined,
             category: act.category, durationMin: act.durationMin,
             openingHours: act.openingHours, ticketPrice: act.ticketPrice,
+            lat: act.lat, lng: act.lng,
           });
         }
 
@@ -1144,6 +1152,7 @@ function DeepPlanPageContent() {
             note: act.note || undefined,
             category: act.category, durationMin: act.durationMin,
             openingHours: act.openingHours, ticketPrice: act.ticketPrice,
+            lat: act.lat, lng: act.lng,
           });
         }
 
@@ -1769,12 +1778,15 @@ function DeepPlanPageContent() {
     for (const day of adjustedDays) {
       const meals = day.stops.filter(s => s.mealType);
       if (meals.length === 0) continue;
-      // Find meal costs — try day.city, departureCity, then match by destination parentCity
+      // Find meal costs — try AI data first, then curated city pricing as fallback
       const mc = cityMealCosts[day.city] || cityMealCosts[day.departureCity || ''] || (() => {
         const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
         return dest ? cityMealCosts[dest.city.parentCity || dest.city.name] : undefined;
+      })() || (() => {
+        const pricing = getCityPricing(day.city) || getCityPricing(day.departureCity);
+        return pricing ? { currency: pricing.currency, breakfast: pricing.meals.breakfast, lunch: pricing.meals.lunch, dinner: pricing.meals.dinner } : undefined;
       })();
-      if (!mc) continue; // no AI data yet
+      if (!mc) continue; // no data available
       const rate = convRates[mc.currency?.toUpperCase()] || convRates[mc.currency] || 1;
       for (const meal of meals) {
         const cost = mc[meal.mealType as 'breakfast' | 'lunch' | 'dinner'] || 0;
@@ -1790,11 +1802,13 @@ function DeepPlanPageContent() {
     const cityTransportData = trip.deepPlanData?.localTransport || {};
     let total = 0;
     for (const day of adjustedDays) {
-      // Try day.city, departureCity, then match by destination parentCity
-      const lt = cityTransportData[day.city] || cityTransportData[day.departureCity || ''] || (() => {
+      // Try AI data first, then curated city pricing as fallback
+      const ltAi = cityTransportData[day.city] || cityTransportData[day.departureCity || ''] || (() => {
         const dest = trip.destinations.find(d => d.city.name === day.city || d.city.parentCity === day.city);
         return dest ? cityTransportData[dest.city.parentCity || dest.city.name] : undefined;
       })();
+      const ltPricing = !ltAi ? (getCityPricing(day.city) || getCityPricing(day.departureCity)) : null;
+      const lt = ltAi || (ltPricing ? { currency: ltPricing.currency, metroSingleRide: ltPricing.transport.metroSingle, busSingleRide: ltPricing.transport.busSingle, taxiPerKm: ltPricing.transport.taxiPerKm, taxiBase: ltPricing.transport.taxiBase, dailyPass: ltPricing.transport.dailyPass } : null);
       const rate = lt ? (convRates[lt.currency?.toUpperCase()] || convRates[lt.currency] || 1) : 1;
       for (const stop of day.stops) {
         if (!stop.transport || stop.legIndex !== undefined) continue;
@@ -1818,7 +1832,7 @@ function DeepPlanPageContent() {
         } else if (mode === 'drive' && lt) {
           const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
           const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
-          total += distKm * (lt.taxiPerKm || 2) * rate;
+          total += (distKm * (lt.taxiPerKm || 2)) * rate;
         } else if (mode === 'transit') {
           total += 150 * pax; // fallback if no AI data
         } else if (mode === 'drive') {
@@ -1876,8 +1890,8 @@ function DeepPlanPageContent() {
         const key = `${from.name}→${to.name}`; // Key uses original stop name for render lookup
         if (travelFetchedRef.current[key] || travelBetween[key]) continue;
         travelFetchedRef.current[key] = true;
-        const fromQ = fromIsHub ? queryFrom.name : `${queryFrom.name}, ${fromCity}`;
-        const toQ = toIsHub ? to.name : `${to.name}, ${toCity}`;
+        const fromQ = fromIsHub ? queryFrom.name : (queryFrom.lat && queryFrom.lng ? `${queryFrom.lat},${queryFrom.lng}` : `${queryFrom.name}, ${fromCity}`);
+        const toQ = toIsHub ? to.name : (to.lat && to.lng ? `${to.lat},${to.lng}` : `${to.name}, ${toCity}`);
         // Fetch all 3 modes in parallel
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
           getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
@@ -2649,8 +2663,12 @@ function DeepPlanPageContent() {
                                 </span>
                                 {(() => {
                                   const mealCosts = trip.deepPlanData?.mealCosts || {};
-                                  // day.city uses parentCity||name, same key as mealCosts storage
-                                  const mc = mealCosts[day.city] || mealCosts[day.departureCity || ''];
+                                  // AI data first, then curated city pricing as fallback
+                                  const mcAi = mealCosts[day.city] || mealCosts[day.departureCity || ''];
+                                  const mc = mcAi || (() => {
+                                    const pricing = getCityPricing(day.city) || getCityPricing(day.departureCity);
+                                    return pricing ? { currency: pricing.currency, breakfast: pricing.meals.breakfast, lunch: pricing.meals.lunch, dinner: pricing.meals.dinner } : null;
+                                  })();
                                   if (!mc || !stop.mealType) return null;
                                   const cost = mc[stop.mealType as 'breakfast' | 'lunch' | 'dinner'];
                                   if (!cost) return null;
@@ -3195,10 +3213,13 @@ function DeepPlanPageContent() {
                                                 const isBeforeTransport = transportIdx >= 0 && si < transportIdx;
                                                 const cityKey = isBeforeTransport ? (day.departureCity || day.city) : day.city;
                                                 const ltAll = trip.deepPlanData?.localTransport || {};
-                                                const lt = ltAll[cityKey] || ltAll[day.city] || ltAll[day.departureCity || ''];
+                                                const ltAi = ltAll[cityKey] || ltAll[day.city] || ltAll[day.departureCity || ''];
+                                                // Curated city pricing as fallback when AI data is missing
+                                                const ltPricing = !ltAi ? (getCityPricing(cityKey) || getCityPricing(day.city) || getCityPricing(day.departureCity)) : null;
+                                                const lt = ltAi || (ltPricing ? { currency: ltPricing.currency, metroSingleRide: ltPricing.transport.metroSingle, busSingleRide: ltPricing.transport.busSingle, taxiPerKm: ltPricing.transport.taxiPerKm, taxiBase: ltPricing.transport.taxiBase, dailyPass: ltPricing.transport.dailyPass } : null);
                                                 if (selMode === 'walk') return <span className="text-emerald-500 ml-1">Free</span>;
                                                 if (!lt) {
-                                                  // No AI transport data — estimate from distance
+                                                  // No data at all — rough estimate from distance
                                                   const distMatch2 = selData.distance?.match(/([\d.]+)\s*km/);
                                                   const distKm2 = distMatch2 ? parseFloat(distMatch2[1]) : 0;
                                                   if (distKm2 > 0 && selMode !== 'walk') {
@@ -3219,7 +3240,8 @@ function DeepPlanPageContent() {
                                                   const cost = lt.dailyPass && lt.dailyPass < rideCost ? lt.dailyPass : rideCost;
                                                   return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(cost * rate), currency)}</span>;
                                                 }
-                                                return <span className="text-violet-500 ml-1">~{formatPrice(Math.round(distKm * (lt.taxiPerKm || 2) * rate), currency)}</span>;
+                                                // Taxi: base fare + per-km rate
+                                                return <span className="text-violet-500 ml-1">~{formatPrice(Math.round((distKm * (lt.taxiPerKm || 2)) * rate), currency)}</span>;
                                               })()}
                                             </span>
                                           ) : travelData?._fetched ? (

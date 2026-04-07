@@ -11,6 +11,8 @@ export interface ItineraryActivity {
   openingHours?: string;
   ticketPrice?: string;
   dayIndex?: number;
+  lat?: number;
+  lng?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -72,7 +74,7 @@ ${hotelContext}${userPlacesSection}${scheduleContext}
 Return ONLY valid JSON (no other text):
 {
   "activities": [
-    { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line practical tip", "openingHours": "9 AM - 5 PM", "ticketPrice": "Free or e.g. €15", "dayIndex": 0 }
+    { "name": "Place Name", "category": "landmark|museum|park|market|experience|religious|neighborhood|viewpoint", "durationMin": 45, "bestTime": "morning|afternoon|evening|anytime", "note": "One-line practical tip", "openingHours": "9 AM - 5 PM", "ticketPrice": "Free or e.g. €15", "dayIndex": 0, "lat": 52.3676, "lng": 4.9041 }
   ],
   "dayThemes": ["Historic & Cultural", "Outdoor & Nature"],
   "mealCosts": { "currency": "EUR", "breakfast": 12, "lunch": 18, "dinner": 30 },
@@ -90,6 +92,7 @@ Rules:
 - openingHours: ALWAYS include for indoor places (e.g., "9 AM - 5 PM"). Use "Open 24h" for outdoor/parks
 - ticketPrice: ALWAYS include for EVERY activity — use "Free" for free places, local currency for paid (e.g., "€20", "CZK 250", "$15"). Never omit this field
 - NO duplicate activities
+- lat/lng: ALWAYS include precise GPS coordinates (decimal degrees, 4+ decimals) for EVERY activity. Use the exact location of the entrance/main point
 - Plan an efficient route — nearby activities should be on the same day
 - mealCosts: average PER PERSON in local currency. breakfast=cafe, lunch=casual, dinner=mid-range
 - localTransport: per-ride/km costs. metroSingleRide, busSingleRide, taxiPerKm, dailyPass (0 if unavailable)`;

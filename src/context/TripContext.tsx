@@ -23,6 +23,8 @@ export interface CityActivityCached {
   openingHours?: string;
   ticketPrice?: string;
   dayIndex?: number;
+  lat?: number;
+  lng?: number;
 }
 
 export interface DeepPlanData {
