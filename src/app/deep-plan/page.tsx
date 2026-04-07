@@ -291,6 +291,7 @@ function DeepPlanPageContent() {
     walk?: { duration: string; distance: string };
     transit?: { duration: string; distance: string };
     drive?: { duration: string; distance: string };
+    _fetched?: boolean;
   }>>({});
   const travelFetchedRef = useRef<Record<string, boolean>>({});
   const [openTravelDropdown, setOpenTravelDropdown] = useState<string | null>(null);
