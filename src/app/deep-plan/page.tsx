@@ -3317,7 +3317,7 @@ function DeepPlanPageContent() {
                 })()}
 
                 {/* Smart empty state / Generate Itinerary for days with free time */}
-                {(day.type === 'travel' || day.type === 'departure' || day.type === 'arrival') && day.stops.some(s => s.name.startsWith('Free time')) && (() => {
+                {!isReadOnly && (day.type === 'travel' || day.type === 'departure' || day.type === 'arrival') && day.stops.some(s => s.name.startsWith('Free time')) && (() => {
                   const freeStop = day.stops.find(s => s.name.startsWith('Free time'));
                   const hoursMatch = freeStop?.name.match(/(\d+)\s*hours?/);
                   const freeHours = hoursMatch ? parseInt(hoursMatch[1]) : 4;
