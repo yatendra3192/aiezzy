@@ -85,9 +85,10 @@ Rules:
 - Duration: photo stops 20-30min, parks/neighborhoods 45-60, museums 90-120, landmarks 60-90, experiences 30-60
 - bestTime: museums morning, parks/viewpoints afternoon, markets morning, religious sites morning
 - Mix of categories — not all landmarks
+- Use REAL specific place names (e.g., "National Museum" not "Prague Museum", "Old Town Square" not "Main Square")
 - Notes: specific and practical (e.g., "Buy tickets online to skip 2h queue", "Free entry first Sunday")
-- openingHours: include if known. Skip for outdoor/24h places
-- ticketPrice: ALWAYS include — use "Free" for free places, local currency for paid (e.g., "€20", "$15")
+- openingHours: ALWAYS include for indoor places (e.g., "9 AM - 5 PM"). Use "Open 24h" for outdoor/parks
+- ticketPrice: ALWAYS include for EVERY activity — use "Free" for free places, local currency for paid (e.g., "€20", "CZK 250", "$15"). Never omit this field
 - NO duplicate activities
 - Plan an efficient route — nearby activities should be on the same day
 - mealCosts: average PER PERSON in local currency. breakfast=cafe, lunch=casual, dinner=mid-range
