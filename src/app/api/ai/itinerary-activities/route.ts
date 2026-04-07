@@ -101,7 +101,7 @@ Rules:
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 20_000);
       try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        const response = await fetch('https://api.openai.com/v1/responses', {
           method: 'POST',
           signal: ctrl.signal,
           headers: {
@@ -109,19 +109,20 @@ Rules:
             'Authorization': `Bearer ${openaiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-4.1-mini',
-            max_tokens: 4096,
-            temperature: 0.7,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
+            model: 'gpt-5.4',
+            input: [
+              { role: 'user', content: [{ type: 'input_text', text: systemPrompt + '\n\n' + userPrompt }] },
             ],
+            text: { format: { type: 'text' } },
+            reasoning: { effort: 'medium', summary: 'auto' },
+            store: true,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          text = data.choices?.[0]?.message?.content || '';
+          text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
+            || data.output?.[0]?.content?.[0]?.text || '';
         } else {
           console.error('OpenAI itinerary-activities error:', response.status);
         }

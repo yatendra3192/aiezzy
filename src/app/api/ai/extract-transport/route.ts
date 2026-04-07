@@ -96,7 +96,7 @@ Rules:
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
       body: JSON.stringify({
-        model: 'gpt-4.1-mini',
+        model: 'gpt-5.4',
         input: [{ role: 'user', content: contentParts }],
         temperature: 0.1,
       }),
