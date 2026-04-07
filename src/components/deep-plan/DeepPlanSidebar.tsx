@@ -92,13 +92,15 @@ interface SidebarProps {
   localTransportCost: number;
   totalDays: number;
   currency: CurrencyCode;
+  isReadOnly?: boolean;
+  shareToken?: string;
 }
 
 export default memo(function DeepPlanSidebar({
   adjustedDays, tripId, destinations, transportLegs, from, bookingDocs,
   totalNights, isLocalStay,
   flightCost, trainCost, hotelCost, attractionCost, foodCost, localTransportCost,
-  totalDays, currency,
+  totalDays, currency, isReadOnly, shareToken,
 }: SidebarProps) {
   const router = useRouter();
 
@@ -268,7 +270,7 @@ export default memo(function DeepPlanSidebar({
               return (
                 <div key={`wf-${d.day}`} className="flex flex-col items-center text-center">
                   <span className="text-[10px] font-body font-semibold text-text-primary">{dayLabel}</span>
-                  <div className="my-1">{d.city ? <WeatherBadge city={d.city} date={dIso} /> : <span className="text-[10px] text-text-muted">--</span>}</div>
+                  <div className="my-1">{d.city ? <WeatherBadge city={d.city} date={dIso} shareToken={shareToken} /> : <span className="text-[10px] text-text-muted">--</span>}</div>
                   <span className="text-[8px] text-text-muted font-body truncate w-full">{cityLabel.length > 6 ? cityLabel.slice(0, 5) + '\u2026' : cityLabel}</span>
                 </div>
               );
@@ -300,10 +302,12 @@ export default memo(function DeepPlanSidebar({
       <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
         <h3 className="font-display font-bold text-[14px] text-text-primary mb-2">Quick Links</h3>
         <div className="space-y-2">
+          {!isReadOnly && (
           <button onClick={() => router.push(tripId ? `/route?id=${tripId}` : '/route')} className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             Back to Route
           </button>
+          )}
           <button onClick={() => window.print()} className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
             Print Itinerary

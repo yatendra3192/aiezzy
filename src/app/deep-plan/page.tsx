@@ -217,6 +217,8 @@ function DeepPlanPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlTripId = searchParams.get('id');
+  const shareToken = searchParams.get('shareToken');
+  const isReadOnly = !!shareToken;
   const trip = useTrip();
   const { currency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
@@ -351,9 +353,19 @@ function DeepPlanPageContent() {
     });
   };
 
-  // Restore trip from URL param, context, or sessionStorage on page reload
+  // Restore trip from URL param, share token, context, or sessionStorage on page reload
   useEffect(() => {
-    if (trip.destinations.length > 0) return;
+    if (trip.destinations.length > 0 && !shareToken) return;
+    if (shareToken) {
+      // Load trip via public shared API (no auth needed)
+      setIsRestoring(true);
+      fetch(`/api/trips/shared/${shareToken}`)
+        .then(res => { if (!res.ok) throw new Error('Shared trip not found'); return res.json(); })
+        .then(data => { trip.loadTripFromData(data); })
+        .catch(() => {})
+        .finally(() => setIsRestoring(false));
+      return;
+    }
     const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
     if (idToLoad) {
       setIsRestoring(true);
@@ -382,7 +394,7 @@ function DeepPlanPageContent() {
   // Watch for deepPlanData changes and auto-save
   const deepPlanJSON = JSON.stringify(trip.deepPlanData || {});
   useEffect(() => {
-    if (!deepPlanStableRef.current || !trip.tripId) return;
+    if (isReadOnly || !deepPlanStableRef.current || !trip.tripId) return;
     if (deepPlanSaveTimerRef.current) clearTimeout(deepPlanSaveTimerRef.current);
     deepPlanSaveTimerRef.current = setTimeout(() => {
       trip.saveTrip().catch(() => {});
@@ -436,7 +448,7 @@ function DeepPlanPageContent() {
 
   // On mount / trip load: auto-fetch AI activities ONLY for cities with NO cached data
   useEffect(() => {
-    if (trip.destinations.length === 0 || autoFillRanRef.current) return;
+    if (isReadOnly || trip.destinations.length === 0 || autoFillRanRef.current) return;
     // Collect cities that need AI activities — only cities with ZERO cached activities
     const citiesNeeded: Array<{ cityName: string; country: string; days: number; userPlaces: string[]; hotel?: string; timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }> }> = [];
     for (const dest of trip.destinations) {
@@ -2125,6 +2137,7 @@ function DeepPlanPageContent() {
         <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-5 md:p-8 relative">
           {/* ====== [A] TRIP HEADER ====== */}
           <div className="mb-5">
+            {!isReadOnly && (
             <nav className="print-hide flex items-center gap-1.5 mb-3 text-[11px] font-body">
               <button onClick={() => router.push('/my-trips')} className="text-text-muted hover:text-accent-cyan transition-colors">My Trips</button>
               <span className="text-text-muted/50">/</span>
@@ -2132,6 +2145,15 @@ function DeepPlanPageContent() {
               <span className="text-text-muted/50">/</span>
               <span className="text-text-primary font-semibold">Itinerary</span>
             </nav>
+            )}
+            {isReadOnly && (
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-[11px] font-body font-semibold text-teal-700">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  Shared Itinerary (Read-Only)
+                </span>
+              </div>
+            )}
             <h1 className="font-display text-[22px] md:text-[26px] font-bold text-text-primary leading-tight tracking-tight">
               {trip.destinations.length > 0
                 ? trip.destinations.map(d => d.city.parentCity || d.city.name).filter((v, i, a) => a.indexOf(v) === i).join(' & ')
@@ -2155,11 +2177,13 @@ function DeepPlanPageContent() {
 
           {/* ====== [B] ACTION ROW ====== */}
           <div className="print-hide flex items-center gap-2 mb-5 flex-wrap">
+            {!isReadOnly && (
             <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
               Edit Route
             </button>
+            )}
             <button
               onClick={async () => {
                 setPdfLoading(true);
@@ -2199,12 +2223,14 @@ function DeepPlanPageContent() {
                 </>
               )}
             </button>
+            {!isReadOnly && (
             <button onClick={() => setShowShareModal(true)}
               disabled={!trip.tripId}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm disabled:opacity-50">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               Share
             </button>
+            )}
           </div>
 
           {/* ====== [C] TRIP OVERVIEW CARD ====== */}
@@ -2422,12 +2448,12 @@ function DeepPlanPageContent() {
                         <div className="hidden md:flex items-center gap-1.5">
                           {day.departureCity && day.departureCity !== day.city ? (
                             <>
-                              <WeatherBadge city={day.departureCity} date={isoDate} />
+                              <WeatherBadge city={day.departureCity} date={isoDate} shareToken={shareToken || undefined} />
                               <span className="text-text-muted text-[10px]">&rarr;</span>
-                              <WeatherBadge city={day.city} date={isoDate} />
+                              <WeatherBadge city={day.city} date={isoDate} shareToken={shareToken || undefined} />
                             </>
                           ) : (
-                            <WeatherBadge city={day.city} date={isoDate} />
+                            <WeatherBadge city={day.city} date={isoDate} shareToken={shareToken || undefined} />
                           )}
                         </div>
                       )}
@@ -2446,7 +2472,7 @@ function DeepPlanPageContent() {
                         <span className="text-[13px] font-mono font-bold text-accent-cyan whitespace-nowrap">{formatPrice(day.dayCost, currency)}</span>
                       )}
                       {/* Add Activity + Refresh — explore days only, visible when expanded */}
-                      {isDayExpanded(day.day) && (day.type === 'explore' || day.type === 'arrival') && (
+                      {!isReadOnly && isDayExpanded(day.day) && (day.type === 'explore' || day.type === 'arrival') && (
                         <div className="print-hide flex items-center gap-1">
                           <button
                             onClick={(e) => { e.stopPropagation(); setShowActivityInput(prev => ({ ...prev, [day.day]: true })); }}
@@ -2523,7 +2549,7 @@ function DeepPlanPageContent() {
                   <div className="border-t border-border-subtle/50 px-4 pb-4 mt-1">
 
                 {/* Start time selector + AI loading for explore days */}
-                {day.type === 'explore' && (
+                {!isReadOnly && day.type === 'explore' && (
                   <div className="print-hide flex items-center gap-3 py-3 flex-wrap">
                     <label className="text-[11px] text-text-muted font-body font-medium">Start time</label>
                     <input
@@ -2612,7 +2638,7 @@ function DeepPlanPageContent() {
                                       className="text-orange-400 text-[10px] font-mono bg-transparent border-none outline-none w-[60px] p-0"
                                     />
                                   ) : (
-                                    <button onClick={() => setEditingTimeKey(timeKey)} className="text-orange-400 text-[10px] font-mono hover:text-orange-600 cursor-pointer" title="Click to change time">
+                                    <button onClick={() => !isReadOnly && setEditingTimeKey(timeKey)} className={`text-orange-400 text-[10px] font-mono ${isReadOnly ? '' : 'hover:text-orange-600 cursor-pointer'}`} title={isReadOnly ? '' : 'Click to change time'}>
                                       {formatTime12(parseTime(displayTime))}
                                     </button>
                                   );
@@ -2690,7 +2716,7 @@ function DeepPlanPageContent() {
                                         className="text-accent-cyan text-[13px] font-mono font-bold bg-transparent border-none outline-none w-[70px] p-0 flex-shrink-0"
                                       />
                                     ) : (
-                                      <button onClick={() => setEditingTimeKey(timeKey)} className="text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0 hover:text-accent-cyan/70 cursor-pointer" title="Click to change time">
+                                      <button onClick={() => !isReadOnly && setEditingTimeKey(timeKey)} className={`text-accent-cyan text-[13px] font-mono font-bold flex-shrink-0 ${isReadOnly ? '' : 'hover:text-accent-cyan/70 cursor-pointer'}`} title={isReadOnly ? '' : 'Click to change time'}>
                                         {formatTime12(parseTime(displayTime))}
                                         {stop.isNextDay && <span className="text-accent-cyan/60 text-[9px] ml-0.5">+1</span>}
                                       </button>
@@ -2700,7 +2726,7 @@ function DeepPlanPageContent() {
                                 </div>
                               </div>
                               {/* Action menu — three-dot with dropdown */}
-                              <div className="print-hide relative flex-shrink-0 mt-0.5">
+                              {!isReadOnly && <div className="print-hide relative flex-shrink-0 mt-0.5">
                                 {stop.isPinned && (
                                   <span className="text-accent-cyan p-0.5 mr-0.5" title="Saved activity">
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
@@ -2776,7 +2802,7 @@ function DeepPlanPageContent() {
                                     </button>
                                   </div>
                                 )}
-                              </div>
+                              </div>}
                             </div>
                             {stop.note && (() => {
                               const isUrgent = /Leave by|Board |Check-in /i.test(stop.note);
@@ -2833,7 +2859,7 @@ function DeepPlanPageContent() {
                                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                                       No hotel selected
                                     </span>
-                                    <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Select hotel</button>
+                                    {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Select hotel</button>}
                                   </div>
                                 </div>
                               );
@@ -2851,13 +2877,13 @@ function DeepPlanPageContent() {
                                       ) : (
                                         <>
                                           <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
-                                          <button onClick={() => triggerUpload([day.city], 'hotel')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                          {!isReadOnly && <button onClick={() => triggerUpload([day.city], 'hotel')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
                                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                             Upload
-                                          </button>
+                                          </button>}
                                         </>
                                       )}
-                                      <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
+                                      {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>}
                                     </div>
                                   </div>
                                 </div>
@@ -2927,14 +2953,14 @@ function DeepPlanPageContent() {
                                           ) : (
                                             <>
                                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-blue-100 text-blue-700">Pending</span>
-                                              <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                              {!isReadOnly && <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
                                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                                 Upload
-                                              </button>
+                                              </button>}
                                             </>
                                           );
                                         })()}
-                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
+                                        {!isReadOnly && <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>}
                                       </div>
                                     </div>
                                     {/* Vertical route stepper */}
@@ -3036,14 +3062,14 @@ function DeepPlanPageContent() {
                                           ) : (
                                             <>
                                               <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold font-body bg-amber-100 text-amber-700">Pending</span>
-                                              <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                              {!isReadOnly && <button onClick={() => triggerUpload([fc?.parentCity || fc?.name || '', tc?.parentCity || tc?.name || ''].filter(Boolean), 'transport')} className="print-hide text-purple-600 text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
                                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                                                 Upload
-                                              </button>
+                                              </button>}
                                             </>
                                           );
                                         })()}
-                                        <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>
+                                        {!isReadOnly && <button onClick={() => setTransportModal({ legIndex: legIdx })} className="text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>}
                                       </div>
                                     </div>
                                     {/* Vertical route stepper */}
@@ -3121,6 +3147,18 @@ function DeepPlanPageContent() {
                             <div className="pl-4 py-1">
                               <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
                                 {legIdx !== undefined ? (
+                                  isReadOnly ? (
+                                  <div className="flex items-center gap-2 text-text-secondary">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d={TRANSPORT_ICONS[stop.transport.icon] || TRANSPORT_ICONS.drive} />
+                                    </svg>
+                                    {hasDurationInfo ? (
+                                      <span className="text-xs font-mono">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                    ) : (
+                                      <span className="text-xs font-body text-text-muted capitalize">{stop.transport.icon === 'walk' ? 'Walk' : stop.transport.icon}</span>
+                                    )}
+                                  </div>
+                                  ) : (
                                   <button
                                     onClick={() => setTransportModal({ legIndex: legIdx })}
                                     className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
@@ -3135,6 +3173,7 @@ function DeepPlanPageContent() {
                                     )}
                                     <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
                                   </button>
+                                  )
                                 ) : (
                                   <div className="relative">
                                     <div className="flex items-center gap-2">
@@ -3222,8 +3261,9 @@ function DeepPlanPageContent() {
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className="relative cursor-grab active:cursor-grabbing active:z-10 select-none"
-                          whileDrag={{ scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
+                          className={`relative ${isReadOnly ? '' : 'cursor-grab active:cursor-grabbing active:z-10'} select-none`}
+                          dragListener={!isReadOnly}
+                          whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
                         >
                           {stopContent}
                         </Reorder.Item>
@@ -3304,7 +3344,7 @@ function DeepPlanPageContent() {
                 })()}
 
                 {/* Empty state for explore days with no attractions */}
-                {day.type === 'explore' && day.stops.filter(s => s.type === 'attraction' && !s.mealType).length === 0 && !showActivityInput[day.day] && (
+                {!isReadOnly && day.type === 'explore' && day.stops.filter(s => s.type === 'attraction' && !s.mealType).length === 0 && !showActivityInput[day.day] && (
                   <div className="print-hide ml-4 pl-4 mt-3">
                     <div className="bg-gradient-to-r from-emerald-50/50 to-transparent border border-emerald-200/30 rounded-xl p-3 text-center">
                       <p className="text-[12px] text-text-secondary font-body mb-2">This day is still open. Add some activities?</p>
@@ -3337,7 +3377,7 @@ function DeepPlanPageContent() {
                 )}
 
                 {/* Add Activity input form (explore days, shown via header button) */}
-                {(day.type === 'explore' || day.type === 'arrival') && showActivityInput[day.day] && (() => {
+                {!isReadOnly && (day.type === 'explore' || day.type === 'arrival') && showActivityInput[day.day] && (() => {
                   const suggestions = placeSuggestions[day.day] || [];
                   return (
                   <div className="print-hide ml-4 pl-4 mt-2 overflow-visible">
@@ -3416,6 +3456,19 @@ function DeepPlanPageContent() {
                 })()}
 
                 {/* Day Notes */}
+                {isReadOnly ? (
+                  dayNotes[day.day] ? (
+                    <div className="ml-4 pl-4 mt-2">
+                      <p className="text-[11px] text-text-muted font-body italic flex items-start gap-1.5">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                        {dayNotes[day.day]}
+                      </p>
+                    </div>
+                  ) : null
+                ) : (
                 <div className="print-hide ml-4 pl-4 mt-2">
                   {!showDayNotes[day.day] ? (
                     <button
@@ -3452,6 +3505,7 @@ function DeepPlanPageContent() {
                     <p className="text-[10px] text-text-muted font-body italic mt-0.5 truncate max-w-[300px]">{dayNotes[day.day]}</p>
                   )}
                 </div>
+                )}
 
                   </div>
                 )}{/* end collapsible day content */}
@@ -3546,6 +3600,8 @@ function DeepPlanPageContent() {
             localTransportCost={localTransportCost}
             totalDays={totalDays}
             currency={currency}
+            isReadOnly={isReadOnly}
+            shareToken={shareToken || undefined}
           />
 
           </div>{/* end 2-column layout */}
@@ -3553,7 +3609,7 @@ function DeepPlanPageContent() {
       </motion.div>
 
       {/* Hotel Modal */}
-      {hotelModal !== null && (() => {
+      {!isReadOnly && hotelModal !== null && (() => {
         const dest = trip.destinations[hotelModal.destIndex];
         if (!dest) return null;
         return <HotelModal isOpen onClose={() => setHotelModal(null)}
@@ -3562,7 +3618,7 @@ function DeepPlanPageContent() {
       })()}
 
       {/* Transport Compare Modal (full-screen, same as route page) */}
-      {transportModal !== null && (() => {
+      {!isReadOnly && transportModal !== null && (() => {
         const { fromCity, toCity } = getLegCities(transportModal.legIndex);
         const leg = trip.transportLegs[transportModal.legIndex];
         if (!fromCity || !toCity) return null;
@@ -3689,7 +3745,7 @@ function DeepPlanPageContent() {
       `}</style>
 
       {/* Share Trip Modal */}
-      {trip.tripId && (
+      {!isReadOnly && trip.tripId && (
         <ShareTripModal
           isOpen={showShareModal}
           onClose={() => setShowShareModal(false)}
@@ -3699,7 +3755,7 @@ function DeepPlanPageContent() {
       )}
 
       {/* Hidden file input for booking doc uploads */}
-      <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleUploadBooking} />
+      {!isReadOnly && <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleUploadBooking} />}
 
       {/* Booking Document Viewer */}
       <AnimatePresence>

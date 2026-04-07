@@ -29,7 +29,8 @@ export default function ShareTripModal({ isOpen, onClose, tripId, view }: ShareT
       const res = await fetch(`/api/trips/${tripId}/share`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to generate share link');
       const data = await res.json();
-      setShareUrl(view === 'deepplan' ? `${data.shareUrl}?view=deepplan` : data.shareUrl);
+      const baseUrl = data.shareUrl.replace(/\/shared\/[^/]+$/, '');
+      setShareUrl(view === 'deepplan' ? `${baseUrl}/deep-plan?shareToken=${data.shareToken}` : data.shareUrl);
     } catch {
       setError('Could not generate share link. Try again.');
     }

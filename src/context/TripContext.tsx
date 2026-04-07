@@ -105,6 +105,8 @@ interface TripActions {
   }) => void;
   saveTrip: () => Promise<string | null>;
   loadTrip: (tripId: string) => Promise<void>;
+  /** Load trip from pre-fetched data (same shape as /api/trips/[id] response). Used for shared/read-only views. */
+  loadTripFromData: (data: any) => void;
   resetTrip: () => void;
   clearTripId: () => void;
 }
@@ -689,6 +691,62 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     try { sessionStorage.setItem('currentTripId', tripId); } catch {}
   }, []);
 
+  // ─── Load trip from pre-fetched data (for shared/read-only views) ─────────
+  const loadTripFromData = useCallback((data: any) => {
+    removedReturnLegRef.current = null;
+    const loadedDests = (data.destinations || []).map((d: any) => ({
+      id: d.id || `d${Date.now()}-${Math.random()}`,
+      city: d.city,
+      nights: d.nights,
+      selectedHotel: d.selectedHotel,
+      additionalHotels: d.additionalHotels || [],
+      notes: d.notes || '',
+      places: d.places || [],
+    }));
+    const reconstructedPlaces: Place[] = loadedDests.flatMap((d: any) => d.places || []);
+    const { _bookingDocs, _deepPlanData, ...fromCity } = data.from || {};
+    const loadedBookingDocs = data.bookingDocs || _bookingDocs || [];
+    const loadedDeepPlanData = data.deepPlanData || _deepPlanData || { customActivities: {}, dayNotes: {}, dayStartTimes: {} };
+    let resolvedFrom = fromCity.name ? fromCity : CITIES[0];
+    const loadedFromAddress = data.fromAddress || '';
+    if (!fromCity.name && loadedFromAddress) {
+      const parts = loadedFromAddress.split(',').map((s: string) => s.trim());
+      const cityPart = parts.length >= 3 ? parts[parts.length - 2] : parts.length >= 2 ? parts[parts.length - 1] : parts[0];
+      resolvedFrom = { name: cityPart, country: parts[parts.length - 1] || '', fullName: loadedFromAddress, parentCity: cityPart };
+    }
+    setState({
+      tripId: null, // null prevents auto-saves (read-only)
+      from: resolvedFrom,
+      fromAddress: loadedFromAddress,
+      destinations: loadedDests,
+      userPlaces: reconstructedPlaces,
+      transportLegs: (data.transportLegs || []).map((l: any) => {
+        const { _resolvedAirports, ...flightData } = l.selectedFlight || {};
+        return {
+          id: l.id || `tl${Date.now()}-${Math.random()}`,
+          type: l.type,
+          duration: l.duration,
+          distance: l.distance,
+          departureTime: l.departureTime,
+          arrivalTime: l.arrivalTime,
+          selectedFlight: l.selectedFlight ? flightData : null,
+          selectedTrain: l.selectedTrain,
+          resolvedAirports: _resolvedAirports || null,
+        };
+      }),
+      departureDate: data.departureDate,
+      adults: data.adults,
+      children: data.children,
+      infants: data.infants,
+      tripType: data.tripType,
+      bookingDocs: loadedBookingDocs,
+      deepPlanData: loadedDeepPlanData,
+      isSaving: false,
+      isDirty: false,
+      lastSavedAt: null,
+    });
+  }, []);
+
   // ─── Reset to new trip ──────────────────────────────────────────────────────
   const resetTrip = useCallback(() => {
     removedReturnLegRef.current = null; // Clear stale ref
@@ -720,7 +778,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
     updateDestinationHotel, addAdditionalHotel, removeAdditionalHotel, updateAdditionalHotelNights,
     moveDestination, reorderDestinations,
     addBookingDoc, removeBookingDoc, setBookingDocs, updateDeepPlanData, buildFullTrip,
-    saveTrip, loadTrip, resetTrip, clearTripId,
+    saveTrip, loadTrip, loadTripFromData, resetTrip, clearTripId,
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Combined value for backward-compatible useTrip()

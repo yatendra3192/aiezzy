@@ -12,6 +12,11 @@ export async function middleware(req: NextRequest) {
   );
   if (!isProtected) return NextResponse.next();
 
+  // Allow deep-plan page without auth when shareToken is present (read-only shared view)
+  if (pathname === '/deep-plan' && req.nextUrl.searchParams.has('shareToken')) {
+    return NextResponse.next();
+  }
+
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token) {
     const signInUrl = new URL('/', req.url);

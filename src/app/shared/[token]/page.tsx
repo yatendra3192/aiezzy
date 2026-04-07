@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/server';
 import SharedTripClient, { SharedTrip } from './SharedTripClient';
 
@@ -133,11 +133,16 @@ export async function generateMetadata({ params }: { params: { token: string } }
 
 /** Server-rendered shared trip page */
 export default async function SharedTripPage({ params, searchParams }: { params: { token: string }; searchParams: { view?: string } }) {
+  // Redirect deep plan view to the real deep plan page with read-only mode
+  if (searchParams.view === 'deepplan') {
+    redirect(`/deep-plan?shareToken=${params.token}`);
+  }
+
   const trip = await getSharedTrip(params.token);
 
   if (!trip) {
     notFound();
   }
 
-  return <SharedTripClient trip={trip} initialView={searchParams.view === 'deepplan' ? 'deepplan' : 'route'} />;
+  return <SharedTripClient trip={trip} initialView={'route'} />;
 }

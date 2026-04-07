@@ -5,6 +5,7 @@ import { useState, useEffect, memo } from 'react';
 interface WeatherBadgeProps {
   city: string;
   date: string; // YYYY-MM-DD
+  shareToken?: string;
 }
 
 function weatherEmoji(code: number): string {
@@ -20,7 +21,7 @@ function weatherEmoji(code: number): string {
   return '\u2600\uFE0F';
 }
 
-export default memo(function WeatherBadge({ city, date }: WeatherBadgeProps) {
+export default memo(function WeatherBadge({ city, date, shareToken }: WeatherBadgeProps) {
   const [weather, setWeather] = useState<{
     temp_max: number;
     temp_min: number;
@@ -40,7 +41,7 @@ export default memo(function WeatherBadge({ city, date }: WeatherBadgeProps) {
     let cancelled = false;
     setLoading(true);
 
-    fetch(`/api/weather?city=${encodeURIComponent(city)}&date=${date}`)
+    fetch(`/api/weather?city=${encodeURIComponent(city)}&date=${date}${shareToken ? `&shareToken=${shareToken}` : ''}`)
       .then(r => {
         if (!r.ok) throw new Error('Failed');
         return r.json();
