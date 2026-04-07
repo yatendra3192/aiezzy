@@ -92,6 +92,7 @@ interface SidebarProps {
   localTransportCost: number;
   totalDays: number;
   currency: CurrencyCode;
+  setCurrency?: (c: CurrencyCode) => void;
   isReadOnly?: boolean;
   shareToken?: string;
 }
@@ -100,7 +101,7 @@ export default memo(function DeepPlanSidebar({
   adjustedDays, tripId, destinations, transportLegs, from, bookingDocs,
   totalNights, isLocalStay,
   flightCost, trainCost, hotelCost, attractionCost, foodCost, localTransportCost,
-  totalDays, currency, isReadOnly, shareToken,
+  totalDays, currency, setCurrency, isReadOnly, shareToken,
 }: SidebarProps) {
   const router = useRouter();
 
@@ -149,7 +150,20 @@ export default memo(function DeepPlanSidebar({
       {/* Budget Summary */}
       {grandTotal > 0 && (
         <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
-          <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Budget</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-display font-bold text-[14px] text-text-primary">Budget</h3>
+            {setCurrency && (
+              <select
+                value={currency}
+                onChange={e => setCurrency(e.target.value as CurrencyCode)}
+                className="text-[11px] font-mono bg-bg-card border border-border-subtle rounded-lg px-2 py-1 text-text-secondary cursor-pointer outline-none focus:border-accent-cyan"
+              >
+                {(['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED', 'THB'] as CurrencyCode[]).map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+          </div>
           <div className="space-y-2.5">
             {flightCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" /> Flights</span><span className="font-mono text-text-primary">{formatPrice(flightCost, currency)}</span></div>}
             {trainCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> Trains</span><span className="font-mono text-text-primary">{formatPrice(trainCost, currency)}</span></div>}

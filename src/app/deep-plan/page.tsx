@@ -220,7 +220,7 @@ function DeepPlanPageContent() {
   const shareToken = searchParams.get('shareToken');
   const isReadOnly = !!shareToken;
   const trip = useTrip();
-  const { currency } = useCurrency();
+  const { currency, setCurrency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -3616,6 +3616,7 @@ function DeepPlanPageContent() {
             localTransportCost={localTransportCost}
             totalDays={totalDays}
             currency={currency}
+            setCurrency={setCurrency}
             isReadOnly={isReadOnly}
             shareToken={shareToken || undefined}
           />
