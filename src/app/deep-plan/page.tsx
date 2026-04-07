@@ -1167,7 +1167,7 @@ function DeepPlanPageContent() {
           transport: null, mealType: 'dinner',
         });
 
-        expDay.stops.push({ id: `dp${sc++}`, name: 'Return to hotel', type: 'hotel', time: '20:00', transport: null, destIndex: destIdx });
+        expDay.stops.push({ id: `dp${sc++}`, name: 'Return to hotel', type: 'hotel', time: '20:00', transport: null, destIndex: destIdx, lat: dest.selectedHotel?.lat, lng: dest.selectedHotel?.lng });
         expDay.stops.push({ id: `dp${sc++}`, name: 'Rest / Sleep', type: 'hotel', time: '22:00', transport: null });
         result.push(expDay);
         dayNum++;
@@ -1881,8 +1881,8 @@ function DeepPlanPageContent() {
         const transportLegIdx = day.stops.findIndex(s => s.legIndex !== undefined);
         const isFromAfterTransport = transportLegIdx >= 0 && j > transportLegIdx;
         const isToAfterTransport = transportLegIdx >= 0 && day.stops.indexOf(to) > transportLegIdx;
-        const fromCity = isFromAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city);
-        const toCity = isToAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city);
+        const fromCity = (isFromAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city)) || '';
+        const toCity = (isToAfterTransport ? (day.city || day.departureCity) : (day.departureCity || day.city)) || '';
         // If stop is an airport/station, use its full name directly (not "Mumbai Airport, Amsterdam")
         const queryFrom = actualFrom || from; // Use actual location for directions query
         const fromIsHub = queryFrom.type === 'airport' || queryFrom.type === 'station' || queryFrom.type === 'home';
@@ -1890,8 +1890,20 @@ function DeepPlanPageContent() {
         const key = `${from.name}→${to.name}`; // Key uses original stop name for render lookup
         if (travelFetchedRef.current[key] || travelBetween[key]) continue;
         travelFetchedRef.current[key] = true;
-        const fromQ = fromIsHub ? queryFrom.name : (queryFrom.lat && queryFrom.lng ? `${queryFrom.lat},${queryFrom.lng}` : `${queryFrom.name}, ${fromCity}`);
-        const toQ = toIsHub ? to.name : (to.lat && to.lng ? `${to.lat},${to.lng}` : `${to.name}, ${toCity}`);
+        // For hotel stops ("Return to hotel", "Leave hotel"), resolve to actual hotel name when no coordinates
+        const resolveStopQuery = (stop: DeepStop, city: string, isHub: boolean) => {
+          if (isHub) return stop.name;
+          if (stop.lat && stop.lng) return `${stop.lat},${stop.lng}`;
+          // If this is a hotel stop with a generic name, find the real hotel name from this day
+          if (stop.type === 'hotel' && (stop.name === 'Return to hotel' || stop.name.startsWith('Stay in '))) {
+            const realHotel = day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType && !s.name.startsWith('Stay in ') && s.name !== 'Rest / Sleep');
+            if (realHotel?.lat && realHotel?.lng) return `${realHotel.lat},${realHotel.lng}`;
+            if (realHotel) return `${realHotel.name}, ${city}`;
+          }
+          return `${stop.name}, ${city}`;
+        };
+        const fromQ = resolveStopQuery(queryFrom, fromCity, fromIsHub);
+        const toQ = resolveStopQuery(to, toCity, toIsHub);
         // Fetch all 3 modes in parallel
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
           getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
@@ -3157,10 +3169,12 @@ function DeepPlanPageContent() {
                           const isDropdownOpen = openTravelDropdown === travelKey;
                           const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
                           // Use a real place name for directions origin — skip "Free time", "Morning in", meal names
-                          const originName = (stop.name.startsWith('Free time') || stop.name.startsWith('Morning in') || stop.mealType)
-                            ? (day.stops.slice(0, si).reverse().find(s => s.type === 'hotel' || (s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')))?.name || day.city)
-                            : stop.name;
-                          const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(originName + ', ' + day.city)}/${encodeURIComponent(nextStop.name + ', ' + day.city)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
+                          const originStop = (stop.name.startsWith('Free time') || stop.name.startsWith('Morning in') || stop.mealType)
+                            ? (day.stops.slice(0, si).reverse().find(s => s.type === 'hotel' || (s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time'))) || stop)
+                            : stop;
+                          const originQ = originStop.lat && originStop.lng ? `${originStop.lat},${originStop.lng}` : (originStop.name === 'Return to hotel' ? (day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType)?.name || day.city) : originStop.name) + ', ' + day.city;
+                          const destQ = nextStop?.lat && nextStop?.lng ? `${nextStop.lat},${nextStop.lng}` : (nextStop?.name === 'Return to hotel' ? (day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType)?.name || day.city) : nextStop?.name || '') + ', ' + day.city;
+                          const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(originQ)}/${encodeURIComponent(destQ)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
 
                           return (
                             <div className="pl-4 py-1">
