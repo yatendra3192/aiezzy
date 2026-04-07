@@ -125,6 +125,20 @@ function formatDuration(min: number): string {
   return m > 0 ? `${h}h ${m} min` : `${h}h`;
 }
 
+/** Parse distance string from Google Directions (supports km, mi, ft, m) to km */
+function parseDistKm(d: string | undefined): number {
+  if (!d) return 0;
+  const kmMatch = d.match(/([\d,.]+)\s*km/);
+  if (kmMatch) return parseFloat(kmMatch[1].replace(',', ''));
+  const miMatch = d.match(/([\d,.]+)\s*mi/);
+  if (miMatch) return parseFloat(miMatch[1].replace(',', '')) * 1.609;
+  const ftMatch = d.match(/([\d,.]+)\s*ft/);
+  if (ftMatch) return parseFloat(ftMatch[1].replace(',', '')) * 0.0003048;
+  const mMatch = d.match(/([\d,.]+)\s*m\b/);
+  if (mMatch) return parseFloat(mMatch[1].replace(',', '')) / 1000;
+  return 0;
+}
+
 /** Capitalize category for display */
 const CATEGORY_LABELS: Record<string, string> = {
   landmark: 'Landmark', museum: 'Museum', park: 'Park', market: 'Market',
@@ -1821,24 +1835,20 @@ function DeepPlanPageContent() {
         if (mode === 'walk') continue;
         const selData = td[mode as 'transit' | 'drive'];
         if (!selData) continue;
+        const segDistKm = parseDistKm(selData.distance);
+        if (segDistKm < 0.1) continue; // Skip bogus directions (< 100m)
         if (mode === 'transit' && lt) {
-          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
-          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
-          const rides = distKm < 5 ? 1 : distKm < 15 ? 2 : 3;
+          const rides = segDistKm < 5 ? 1 : segDistKm < 15 ? 2 : 3;
           const perRide = lt.metroSingleRide || lt.busSingleRide || 2;
           const rideCost = rides * perRide;
           const cost = lt.dailyPass && lt.dailyPass < rideCost ? lt.dailyPass : rideCost;
           total += cost * rate * pax;
         } else if (mode === 'drive' && lt) {
-          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
-          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
-          total += (distKm * (lt.taxiPerKm || 2)) * rate;
+          total += (segDistKm * (lt.taxiPerKm || 2)) * rate;
         } else if (mode === 'transit') {
           total += 150 * pax; // fallback if no AI data
         } else if (mode === 'drive') {
-          const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
-          const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
-          total += distKm * 100; // fallback ₹100/km
+          total += segDistKm * 100; // fallback ₹100/km
         }
       }
     }
@@ -2858,12 +2868,6 @@ function DeepPlanPageContent() {
                                     {stop.openingHours}
                                   </span>
                                 )}
-                                {stop.ticketPrice ? (
-                                  <span className={`text-[10px] font-body font-semibold flex items-center gap-1 ${stop.ticketPrice.toLowerCase().includes('free') ? 'text-emerald-600' : 'text-violet-600'}`}>
-                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                                    {stop.ticketPrice}
-                                  </span>
-                                ) : null}
                                 {isAttractionCard && !(stop.ticketPrice && stop.ticketPrice.toLowerCase().includes('free')) && (
                                   <a
                                     href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(stop.name + ' ' + day.city)}`}
@@ -2921,8 +2925,8 @@ function DeepPlanPageContent() {
                               );
                             })()}
 
-                            {stop.type === 'attraction' && !isMeal && !isCustom && (stop.category || stop.durationMin) && (
-                              <div className="flex items-center gap-1.5 mt-1">
+                            {stop.type === 'attraction' && !isMeal && !isCustom && (stop.category || stop.durationMin || stop.ticketPrice) && (
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                 {stop.category && (
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold font-body ${cardStyle?.pill || 'bg-slate-100 text-slate-600'}`}>
                                     {CATEGORY_LABELS[stop.category] || 'Sightseeing'}
@@ -2933,6 +2937,12 @@ function DeepPlanPageContent() {
                                     {formatDuration(stop.durationMin)}
                                   </span>
                                 ) : null}
+                                {stop.ticketPrice && (
+                                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold font-body ${stop.ticketPrice.toLowerCase().includes('free') ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'}`}>
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                    {stop.ticketPrice}
+                                  </span>
+                                )}
                               </div>
                             )}
                             </div>{/* close inner content wrapper */}
@@ -3232,19 +3242,19 @@ function DeepPlanPageContent() {
                                                 const ltPricing = !ltAi ? (getCityPricing(cityKey) || getCityPricing(day.city) || getCityPricing(day.departureCity)) : null;
                                                 const lt = ltAi || (ltPricing ? { currency: ltPricing.currency, metroSingleRide: ltPricing.transport.metroSingle, busSingleRide: ltPricing.transport.busSingle, taxiPerKm: ltPricing.transport.taxiPerKm, taxiBase: ltPricing.transport.taxiBase, dailyPass: ltPricing.transport.dailyPass } : null);
                                                 if (selMode === 'walk') return <span className="text-emerald-500 ml-1">Free</span>;
+                                                const parsedDistKm = parseDistKm(selData.distance);
+                                                // If distance is suspiciously small (< 0.1 km), directions likely failed — skip cost
+                                                if (parsedDistKm < 0.1) return null;
                                                 if (!lt) {
                                                   // No data at all — rough estimate from distance
-                                                  const distMatch2 = selData.distance?.match(/([\d.]+)\s*km/);
-                                                  const distKm2 = distMatch2 ? parseFloat(distMatch2[1]) : 0;
-                                                  if (distKm2 > 0 && selMode !== 'walk') {
-                                                    const estCost = selMode === 'transit' ? Math.round(distKm2 * 5) : Math.round(distKm2 * 15);
+                                                  if (parsedDistKm > 0 && selMode !== 'walk') {
+                                                    const estCost = selMode === 'transit' ? Math.round(parsedDistKm * 5) : Math.round(parsedDistKm * 15);
                                                     return <span className="text-violet-500 ml-1">~{formatPrice(estCost, currency)}</span>;
                                                   }
                                                   return null;
                                                 }
                                                 const rate = convRates[lt.currency?.toUpperCase()] || 1;
-                                                const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
-                                                const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
+                                                const distKm = parsedDistKm > 0 ? parsedDistKm : 3;
                                                 if (selMode === 'transit') {
                                                   // Scale transit: 1 ride for <5km, 2 for 5-15km, 3 for 15km+
                                                   const rides = distKm < 5 ? 1 : distKm < 15 ? 2 : 3;

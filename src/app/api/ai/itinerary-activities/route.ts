@@ -251,24 +251,24 @@ function getStaticFallback(city: string, days: number, count: number, userPlaces
   const dayGroups: ItineraryActivity[][] = [
     // Day 0: Cultural
     [
-      { name: `${city} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'morning', dayIndex: 0 },
-      { name: `${city} Museum`, category: 'museum', durationMin: 90, bestTime: 'morning', dayIndex: 0 },
-      { name: `${city} Cathedral / Temple`, category: 'religious', durationMin: 45, bestTime: 'morning', dayIndex: 0 },
-      { name: `${city} Main Square`, category: 'landmark', durationMin: 45, bestTime: 'anytime', dayIndex: 0 },
+      { name: `${city} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'morning', dayIndex: 0, openingHours: 'Open 24h', ticketPrice: 'Free' },
+      { name: `${city} Museum`, category: 'museum', durationMin: 90, bestTime: 'morning', dayIndex: 0, openingHours: '9 AM - 5 PM', ticketPrice: '$20' },
+      { name: `${city} Cathedral / Temple`, category: 'religious', durationMin: 45, bestTime: 'morning', dayIndex: 0, openingHours: '8 AM - 6 PM', ticketPrice: 'Free' },
+      { name: `${city} Main Square`, category: 'landmark', durationMin: 45, bestTime: 'anytime', dayIndex: 0, openingHours: 'Open 24h', ticketPrice: 'Free' },
     ],
     // Day 1: Outdoor / Local
     [
-      { name: `${city} City Park`, category: 'park', durationMin: 60, bestTime: 'afternoon', dayIndex: 1 },
-      { name: `${city} Viewpoint`, category: 'viewpoint', durationMin: 30, bestTime: 'evening', note: 'Great for sunset', dayIndex: 1 },
-      { name: `${city} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning', note: 'Best visited early', dayIndex: 1 },
-      { name: `${city} Waterfront`, category: 'neighborhood', durationMin: 60, bestTime: 'afternoon', dayIndex: 1 },
+      { name: `${city} City Park`, category: 'park', durationMin: 60, bestTime: 'afternoon', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
+      { name: `${city} Viewpoint`, category: 'viewpoint', durationMin: 30, bestTime: 'evening', note: 'Great for sunset', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
+      { name: `${city} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning', note: 'Best visited early', dayIndex: 1, openingHours: '7 AM - 3 PM', ticketPrice: 'Free' },
+      { name: `${city} Waterfront`, category: 'neighborhood', durationMin: 60, bestTime: 'afternoon', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
     ],
     // Day 2: Experiences
     [
-      { name: `${city} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning', note: 'Explore the city on foot', dayIndex: 2 },
-      { name: `${city} Food Street`, category: 'experience', durationMin: 60, bestTime: 'evening', note: 'Try local street food', dayIndex: 2 },
-      { name: `${city} Art District`, category: 'neighborhood', durationMin: 75, bestTime: 'afternoon', dayIndex: 2 },
-      { name: `${city} Night Market`, category: 'market', durationMin: 60, bestTime: 'evening', dayIndex: 2 },
+      { name: `${city} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning', note: 'Explore the city on foot', dayIndex: 2, ticketPrice: '$25' },
+      { name: `${city} Food Street`, category: 'experience', durationMin: 60, bestTime: 'evening', note: 'Try local street food', dayIndex: 2, openingHours: '5 PM - 11 PM', ticketPrice: 'Free' },
+      { name: `${city} Art District`, category: 'neighborhood', durationMin: 75, bestTime: 'afternoon', dayIndex: 2, openingHours: 'Open 24h', ticketPrice: 'Free' },
+      { name: `${city} Night Market`, category: 'market', durationMin: 60, bestTime: 'evening', dayIndex: 2, openingHours: '6 PM - 11 PM', ticketPrice: 'Free' },
     ],
   ];
 
