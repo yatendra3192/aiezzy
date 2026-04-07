@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
-import { getDepartureHub, getArrivalHub, CITY_ATTRACTIONS } from '@/data/mockData';
+import { getDepartureHub, getArrivalHub } from '@/data/mockData';
 import { getCityPricing, calcTaxiCost } from '@/data/cityPricing';
 import { addDaysToDate, subtractMinutes, addMinutes, getBufferMinutes, parseDurationMinutes, formatTime12, formatTime24, parseTime } from '@/lib/timeUtils';
 import { useCurrency } from '@/context/CurrencyContext';
@@ -427,7 +427,7 @@ function DeepPlanPageContent() {
     autoFillRanRef.current = false;
   }, [trip.tripId]);
 
-  // Fetch AI activities for cities not in static CITY_ATTRACTIONS and not already cached
+  // Fetch AI activities for cities not already cached
   const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[], hotel?: string, timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }>, cancelledRef?: { current: boolean }) => {
     if (aiFetchedRef.current[cityName]) return;
     aiFetchedRef.current[cityName] = true;
@@ -828,8 +828,6 @@ function DeepPlanPageContent() {
                   cityAttr2 = dest.places.map(p => p.name);
                 } else if (trip.deepPlanData?.cityActivities?.[evCityKey2]?.length) {
                   cityAttr2 = trip.deepPlanData.cityActivities[evCityKey2].map(a => a.name);
-                } else if (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name]) {
-                  cityAttr2 = (CITY_ATTRACTIONS[evCityKey2] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
                 }
                 // Filter out user-removed activities
                 const removed2 = new Set((removedActivities[evCityKey2] || []).map(n => n.toLowerCase()));
@@ -937,8 +935,6 @@ function DeepPlanPageContent() {
                   cityAttractions = dest.places.map(p => p.name);
                 } else if (trip.deepPlanData?.cityActivities?.[evCityKey]?.length) {
                   cityAttractions = trip.deepPlanData.cityActivities[evCityKey].map(a => a.name);
-                } else if (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name]) {
-                  cityAttractions = (CITY_ATTRACTIONS[evCityKey] || CITY_ATTRACTIONS[toCity.name])?.map(a => a.name) || [];
                 }
                 // Filter out user-removed activities
                 const removedSame = new Set((removedActivities[evCityKey] || []).map(n => n.toLowerCase()));
@@ -1062,16 +1058,7 @@ function DeepPlanPageContent() {
         }
       }
 
-      // Priority 3: static CITY_ATTRACTIONS (check both name and parentCity)
-      const staticAttr = CITY_ATTRACTIONS[cityKey] || CITY_ATTRACTIONS[toCity.name];
-      if (staticAttr) {
-        for (const a of staticAttr) {
-          if (!usedNames.has(a.name.toLowerCase())) {
-            typedActivities.push({ name: a.name, category: a.category, durationMin: a.durationMin, bestTime: a.bestTime });
-            usedNames.add(a.name.toLowerCase());
-          }
-        }
-      }
+      // No static fallback — wait for AI data. Empty days show "Auto-plan" prompt.
 
       // No generic fallback — wait for AI data. Empty days show "Auto-plan" prompt.
 
@@ -1250,8 +1237,7 @@ function DeepPlanPageContent() {
             const morningFreeHrs = (leaveMin - 9 * 60) / 60; // hours from 9 AM to leave time
             if (morningFreeHrs >= 2) {
               const depCityKey = fromCity.parentCity || fromCity.name;
-              const fromCityAttrNames = trip.deepPlanData?.cityActivities?.[depCityKey]?.map(a => a.name)
-                || (CITY_ATTRACTIONS[depCityKey] || CITY_ATTRACTIONS[fromCity.name])?.map(a => a.name) || [];
+              const fromCityAttrNames = trip.deepPlanData?.cityActivities?.[depCityKey]?.map(a => a.name) || [];
               const morningCount = morningFreeHrs >= 4 ? 2 : 1;
               if (fromCityAttrNames.length > 0) {
                 returnDay.stops.push({
