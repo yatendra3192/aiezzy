@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const targetCount = days * perDay + extras;
 
   if (!openaiKey && !anthropicKey) {
-    return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });
+    return NextResponse.json({ activities: [], error: 'No AI API key configured' });
   }
 
   const userPlacesSection = userPlaces.length > 0
@@ -168,12 +168,12 @@ Rules:
     }
 
     if (!text) {
-      return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });
+      return NextResponse.json({ activities: [] });
     }
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });
+      return NextResponse.json({ activities: [] });
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
@@ -235,63 +235,7 @@ Rules:
     return NextResponse.json({ activities, dayThemes, mealCosts, localTransport, source: 'ai' });
   } catch (err) {
     console.error('AI itinerary-activities error:', err);
-    return NextResponse.json({ activities: getStaticFallback(city, days, targetCount, userPlaces) });
+    return NextResponse.json({ activities: [] });
   }
 }
 
-function getStaticFallback(city: string, days: number, count: number, userPlaces: string[]): ItineraryActivity[] {
-  const activities: ItineraryActivity[] = [];
-
-  // Include user places first
-  for (const place of userPlaces) {
-    activities.push({ name: place, category: 'landmark', durationMin: 90, bestTime: 'anytime' });
-  }
-
-  // Generic activities grouped by day theme
-  const dayGroups: ItineraryActivity[][] = [
-    // Day 0: Cultural
-    [
-      { name: `${city} Old Town`, category: 'neighborhood', durationMin: 90, bestTime: 'morning', dayIndex: 0, openingHours: 'Open 24h', ticketPrice: 'Free' },
-      { name: `${city} Museum`, category: 'museum', durationMin: 90, bestTime: 'morning', dayIndex: 0, openingHours: '9 AM - 5 PM', ticketPrice: '$20' },
-      { name: `${city} Cathedral / Temple`, category: 'religious', durationMin: 45, bestTime: 'morning', dayIndex: 0, openingHours: '8 AM - 6 PM', ticketPrice: 'Free' },
-      { name: `${city} Main Square`, category: 'landmark', durationMin: 45, bestTime: 'anytime', dayIndex: 0, openingHours: 'Open 24h', ticketPrice: 'Free' },
-    ],
-    // Day 1: Outdoor / Local
-    [
-      { name: `${city} City Park`, category: 'park', durationMin: 60, bestTime: 'afternoon', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
-      { name: `${city} Viewpoint`, category: 'viewpoint', durationMin: 30, bestTime: 'evening', note: 'Great for sunset', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
-      { name: `${city} Local Market`, category: 'market', durationMin: 60, bestTime: 'morning', note: 'Best visited early', dayIndex: 1, openingHours: '7 AM - 3 PM', ticketPrice: 'Free' },
-      { name: `${city} Waterfront`, category: 'neighborhood', durationMin: 60, bestTime: 'afternoon', dayIndex: 1, openingHours: 'Open 24h', ticketPrice: 'Free' },
-    ],
-    // Day 2: Experiences
-    [
-      { name: `${city} Walking Tour`, category: 'experience', durationMin: 120, bestTime: 'morning', note: 'Explore the city on foot', dayIndex: 2, ticketPrice: '$25' },
-      { name: `${city} Food Street`, category: 'experience', durationMin: 60, bestTime: 'evening', note: 'Try local street food', dayIndex: 2, openingHours: '5 PM - 11 PM', ticketPrice: 'Free' },
-      { name: `${city} Art District`, category: 'neighborhood', durationMin: 75, bestTime: 'afternoon', dayIndex: 2, openingHours: 'Open 24h', ticketPrice: 'Free' },
-      { name: `${city} Night Market`, category: 'market', durationMin: 60, bestTime: 'evening', dayIndex: 2, openingHours: '6 PM - 11 PM', ticketPrice: 'Free' },
-    ],
-  ];
-
-  const usedNames = new Set(activities.map(a => a.name.toLowerCase()));
-  for (let d = 0; d < Math.min(days, dayGroups.length); d++) {
-    for (const g of dayGroups[d]) {
-      if (activities.length >= count) break;
-      if (!usedNames.has(g.name.toLowerCase())) {
-        activities.push(g);
-        usedNames.add(g.name.toLowerCase());
-      }
-    }
-  }
-  // Fill remaining from any day group
-  for (const group of dayGroups) {
-    for (const g of group) {
-      if (activities.length >= count) break;
-      if (!usedNames.has(g.name.toLowerCase())) {
-        activities.push(g);
-        usedNames.add(g.name.toLowerCase());
-      }
-    }
-  }
-
-  return activities.slice(0, count);
-}
