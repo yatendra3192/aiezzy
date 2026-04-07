@@ -3194,10 +3194,20 @@ function DeepPlanPageContent() {
                                                 const transportIdx = day.stops.findIndex(s => s.legIndex !== undefined);
                                                 const isBeforeTransport = transportIdx >= 0 && si < transportIdx;
                                                 const cityKey = isBeforeTransport ? (day.departureCity || day.city) : day.city;
-                                                const lt = (trip.deepPlanData?.localTransport || {})[cityKey];
-                                                if (!lt) return null;
-                                                const rate = convRates[lt.currency?.toUpperCase()] || 1;
+                                                const ltAll = trip.deepPlanData?.localTransport || {};
+                                                const lt = ltAll[cityKey] || ltAll[day.city] || ltAll[day.departureCity || ''];
                                                 if (selMode === 'walk') return <span className="text-emerald-500 ml-1">Free</span>;
+                                                if (!lt) {
+                                                  // No AI transport data — estimate from distance
+                                                  const distMatch2 = selData.distance?.match(/([\d.]+)\s*km/);
+                                                  const distKm2 = distMatch2 ? parseFloat(distMatch2[1]) : 0;
+                                                  if (distKm2 > 0 && selMode !== 'walk') {
+                                                    const estCost = selMode === 'transit' ? Math.round(distKm2 * 5) : Math.round(distKm2 * 15);
+                                                    return <span className="text-violet-500 ml-1">~{formatPrice(estCost, currency)}</span>;
+                                                  }
+                                                  return null;
+                                                }
+                                                const rate = convRates[lt.currency?.toUpperCase()] || 1;
                                                 const distMatch = selData.distance?.match(/([\d.]+)\s*km/);
                                                 const distKm = distMatch ? parseFloat(distMatch[1]) : 3;
                                                 if (selMode === 'transit') {
