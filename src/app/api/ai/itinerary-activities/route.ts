@@ -102,7 +102,7 @@ Rules:
 
     if (openaiKey) {
       const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 20_000);
+      const timeout = setTimeout(() => ctrl.abort(), 45_000);
       try {
         const response = await fetch('https://api.openai.com/v1/responses', {
           method: 'POST',
@@ -139,7 +139,7 @@ Rules:
     // Fallback to Anthropic
     if (!text && anthropicKey) {
       const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 20_000);
+      const timeout = setTimeout(() => ctrl.abort(), 45_000);
       try {
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -186,6 +186,8 @@ Rules:
       openingHours: a.openingHours ? String(a.openingHours) : undefined,
       ticketPrice: a.ticketPrice ? String(a.ticketPrice) : undefined,
       dayIndex: typeof a.dayIndex === 'number' ? a.dayIndex : undefined,
+      lat: typeof a.lat === 'number' ? a.lat : undefined,
+      lng: typeof a.lng === 'number' ? a.lng : undefined,
     })).filter((a: ItineraryActivity) => a.name);
 
     const dayThemes: string[] | undefined = parsed.dayThemes && Array.isArray(parsed.dayThemes)

@@ -562,11 +562,8 @@ function DeepPlanPageContent() {
   // Refresh AI suggestions for a specific city
   const refreshAiActivities = useCallback((cityName: string, country: string, days: number, userPlaces: string[]) => {
     aiFetchedRef.current[cityName] = false;
-    // Clear cached data for this city
-    const existing = trip.deepPlanData?.cityActivities || {};
-    const updated = { ...existing };
-    delete updated[cityName];
-    trip.updateDeepPlanData({ cityActivities: updated });
+    // Clear cached data for this city — set to empty array (not delete, which deep merge would undo)
+    trip.updateDeepPlanData({ cityActivities: { [cityName]: [] } });
     fetchAiActivities(cityName, country, days, userPlaces);
   }, [fetchAiActivities]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2509,7 +2506,7 @@ function DeepPlanPageContent() {
                             const cityKey = day.city;
                             const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityKey || d.city.name === cityKey);
                             if (!dest) return null;
-                            const exploreDaysCount = Math.max(0, dest.nights - 1);
+                            const exploreDaysCount = Math.max(1, dest.nights);
                             return (
                               <button
                                 onClick={(e) => { e.stopPropagation(); refreshAiActivities(cityKey, dest.city.country || '', exploreDaysCount, dest.places?.map(p => p.name) || []); }}
@@ -3408,7 +3405,7 @@ function DeepPlanPageContent() {
                           const cityKey = day.city;
                           const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityKey || d.city.name === cityKey);
                           if (!dest) return null;
-                          const exploreDaysCount = Math.max(0, dest.nights - 1);
+                          const exploreDaysCount = Math.max(1, dest.nights);
                           return (
                             <button
                               onClick={() => refreshAiActivities(cityKey, dest.city.country || '', exploreDaysCount, dest.places?.map(p => p.name) || [])}
