@@ -428,10 +428,11 @@ function DeepPlanPageContent() {
   }, [trip.tripId]);
 
   // Fetch AI activities for cities not already cached
-  const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[], hotel?: string, timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }>, cancelledRef?: { current: boolean }) => {
-    if (aiFetchedRef.current[cityName]) return;
+  const fetchAiActivities = useCallback(async (cityName: string, country: string, days: number, userPlaces: string[], hotel?: string, timeWindows?: Array<{ dayIndex: number; date: string; slots: Array<{ from: string; to: string; label: string }> }>, cancelledRef?: { current: boolean }): Promise<boolean> => {
+    if (aiFetchedRef.current[cityName]) return false;
     aiFetchedRef.current[cityName] = true;
     setAiLoading(prev => ({ ...prev, [cityName]: true }));
+    let success = false;
     try {
       const monthName = trip.departureDate
         ? new Date(trip.departureDate).toLocaleString('en', { month: 'long' })
@@ -442,11 +443,12 @@ function DeepPlanPageContent() {
         body: JSON.stringify({ city: cityName, country, days, userPlaces, month: monthName, hotel, timeWindows }),
       });
       // Check cancellation before applying state — prevents stale data from merging into a different trip
-      if (cancelledRef?.current) return;
+      if (cancelledRef?.current) return false;
       if (res.ok) {
         const data = await res.json();
-        if (cancelledRef?.current) return;
+        if (cancelledRef?.current) return false;
         if (data.activities?.length > 0) {
+          success = true;
           // updateDeepPlanData deep-merges nested Records, safe for parallel calls
           const updates: Record<string, any> = { cityActivities: { [cityName]: data.activities }, cacheGeneratedAt: new Date().toISOString().split('T')[0] };
           if (data.dayThemes?.length > 0) updates.dayThemes = { [cityName]: data.dayThemes };
@@ -460,6 +462,7 @@ function DeepPlanPageContent() {
     } finally {
       setAiLoading(prev => ({ ...prev, [cityName]: false }));
     }
+    return success;
   }, [trip.departureDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill progress state
@@ -528,13 +531,11 @@ function DeepPlanPageContent() {
 
     // Fetch cities sequentially (2 at a time) to avoid OpenAI rate limits / timeouts
     const CONCURRENCY = 2;
-    const updateProgress = (i: number, cityName: string) => {
+    const updateProgress = (i: number, succeeded: boolean) => {
       if (cancelledRef.current) return;
-      // Check if activities actually arrived for this city
-      const hasActivities = (trip.deepPlanData?.cityActivities?.[cityName]?.length || 0) > 0;
       setAutoFillProgress(prev => {
         if (!prev) return null;
-        const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true, failed: !hasActivities } : city);
+        const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true, failed: !succeeded } : city);
         const doneCount = updated.filter(city => city.done).length;
         const nextPending = updated.find(city => !city.done);
         return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
@@ -545,8 +546,8 @@ function DeepPlanPageContent() {
     const runNext = async (): Promise<void> => {
       const item = queue.shift();
       if (!item || cancelledRef.current) return;
-      await fetchAiActivities(item.cityName, item.country, item.days, item.userPlaces, item.hotel, item.timeWindows, cancelledRef).catch(() => {});
-      updateProgress(item.i, item.cityName);
+      const ok = await fetchAiActivities(item.cityName, item.country, item.days, item.userPlaces, item.hotel, item.timeWindows, cancelledRef).catch(() => false);
+      updateProgress(item.i, !!ok);
       return runNext();
     };
     // Start CONCURRENCY workers
