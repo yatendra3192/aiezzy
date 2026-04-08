@@ -104,7 +104,8 @@ Rules:
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 45_000);
       try {
-        const response = await fetch('https://api.openai.com/v1/responses', {
+        // Use Chat Completions API (better global connectivity than Responses API)
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           signal: ctrl.signal,
           headers: {
@@ -112,25 +113,24 @@ Rules:
             'Authorization': `Bearer ${openaiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-5.4-nano',
-            input: [
-              { role: 'user', content: [{ type: 'input_text', text: systemPrompt + '\n\n' + userPrompt }] },
+            model: 'gpt-4.1-mini',
+            max_tokens: 4096,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
             ],
-            text: { format: { type: 'text' } },
-            reasoning: { effort: 'medium', summary: 'auto' },
-            store: true,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
-            || data.output?.[0]?.content?.[0]?.text || '';
+          text = data.choices?.[0]?.message?.content || '';
         } else {
-          console.error('OpenAI itinerary-activities error:', response.status);
+          const errBody = await response.text().catch(() => '');
+          console.error('OpenAI itinerary-activities error:', response.status, errBody.slice(0, 200));
         }
       } catch (e: any) {
-        console.error('OpenAI itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);
+        console.error('OpenAI itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (45s)' : e.message);
       } finally {
         clearTimeout(timeout);
       }
