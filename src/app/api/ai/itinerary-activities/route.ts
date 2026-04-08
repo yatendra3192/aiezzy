@@ -112,7 +112,7 @@ Rules:
             'Authorization': `Bearer ${openaiKey}`,
           },
           body: JSON.stringify({
-            model: 'gpt-5.4',
+            model: 'gpt-5.4-nano',
             input: [
               { role: 'user', content: [{ type: 'input_text', text: systemPrompt + '\n\n' + userPrompt }] },
             ],
