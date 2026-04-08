@@ -2804,14 +2804,14 @@ function DeepPlanPageContent() {
                                   )}
                                   {isReadOnly && mealHint && <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5">{mealHint}</span>}
                                   {isExpanded && (
-                                    <div className="ml-3 mt-1.5 mb-1">
+                                    <div className="ml-3 mt-1.5 mb-1 max-w-[calc(100vw-120px)] md:max-w-[500px]">
                                       {isLoading ? (
                                         <div className="flex items-center gap-2 text-[9px] text-orange-400/70 font-body">
                                           <span className="w-2.5 h-2.5 border border-orange-300 border-t-transparent rounded-full animate-spin" />
                                           Finding restaurants...
                                         </div>
                                       ) : suggestions.length > 0 ? (
-                                        <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+                                        <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-none max-w-full">
                                           {suggestions.map((r, ri) => (
                                             <button key={ri} onClick={() => {
                                               trip.updateDeepPlanData({ selectedMealVenues: { [mealKey]: r } });
