@@ -477,7 +477,7 @@ function DeepPlanPageContent() {
       const cached = trip.deepPlanData?.cityActivities?.[cityName] || [];
       // Skip if cached AND generated after the last fix date (per-trip, not global)
       // Only regenerate trips cached before fix date (scheduling + cost display + real place names)
-      const FIX_DATE = '2026-04-09';
+      const FIX_DATE = '2026-04-08';
       const cachedAt = trip.deepPlanData?.cacheGeneratedAt;
       if (cached.length > 0 && cachedAt && cachedAt >= FIX_DATE) continue;
       if (dest.nights < 1) continue;
