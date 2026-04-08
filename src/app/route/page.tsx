@@ -465,29 +465,8 @@ function RoutePageContent() {
       const toNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
       // Also extract city from fullName or fromAddress (e.g., "42 Rue Jacob, Paris, France" → contains "paris")
       const fromFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
-      const toFull = (toC.fullName || '').toLowerCase();
-      // Same-metro-area pairs where cities share the same airport
-      const METRO_GROUPS: string[][] = [
-        ['mumbai', 'thane', 'navi mumbai', 'kalyan', 'dombivli', 'mira-bhayandar', 'vasai-virar', 'panvel'],
-        ['delhi', 'new delhi', 'noida', 'gurgaon', 'gurugram', 'faridabad', 'ghaziabad', 'greater noida'],
-        ['bangalore', 'bengaluru', 'whitefield', 'electronic city'],
-        ['hyderabad', 'secunderabad', 'cyberabad'],
-        ['chennai', 'mahabalipuram'],
-        ['kolkata', 'howrah', 'salt lake'],
-        ['london', 'heathrow', 'gatwick', 'croydon', 'watford'],
-        ['new york', 'new york city', 'manhattan', 'brooklyn', 'queens', 'jersey city', 'newark'],
-        ['tokyo', 'yokohama', 'kawasaki', 'chiba'],
-        ['paris', 'versailles', 'boulogne-billancourt'],
-      ];
-      const allFromNames = [...fromNames, ...fromFull.split(',').map(s => s.trim()).filter(Boolean)];
-      const allToNames = [...toNames, ...toFull.split(',').map(s => s.trim()).filter(Boolean)];
-      const inSameMetro = METRO_GROUPS.some(group =>
-        allFromNames.some(fn => group.some(g => fn.includes(g) || g.includes(fn))) &&
-        allToNames.some(tn => group.some(g => tn.includes(g) || g.includes(tn)))
-      );
       const isSameCity = fromNames.some(fn => toNames.some(tn => fn === tn))
-        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn))
-        || inSameMetro;
+        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn));
       if (isSameCity) {
         // Only replace if currently a flight/train (not already a local transfer)
         if (leg.selectedTrain?.operator !== 'Local Transfer') {
@@ -543,6 +522,29 @@ function RoutePageContent() {
       pendingStepDescsRef.current.set(transportLabel, `Searching ${transportLabel}...`);
       setAutoSelectStep(`Searching ${transportLabel}...`);
 
+      // Pre-check: resolve airports for BOTH cities and compare — if same, auto-select drive
+      // This catches cases like Thane→Mumbai (both resolve to BOM) worldwide
+      const setDriveForSameAirport = () => {
+        const driveFrom = fromC.fullName || `${fromC.parentCity || fromC.name}, ${fromC.country || ''}`;
+        const driveTo = toC.fullName || `${toC.parentCity || toC.name}, ${toC.country || ''}`;
+        const fStation = fromC.parentCity || fromC.name || '';
+        const tStation = toC.parentCity || toC.name || '';
+        getDirections(driveFrom, driveTo, 'driving').then(driveResult => {
+          if (signal.aborted) return;
+          if (driveResult) {
+            const distKm = parseFloat(driveResult.distanceText.replace(/[^\d.]/g, '')) || 0;
+            const cabCost = Math.round(distKm * 18);
+            trip.updateTransportLeg(leg.id, {
+              type: 'drive', selectedFlight: null,
+              selectedTrain: { id: `drive-auto-${Date.now()}-${i}`, operator: 'Hire Cab', trainName: 'Hire Cab', trainNumber: '', departure: '', arrival: '', duration: driveResult.durationText, stops: 'Direct', fromStation: fStation, toStation: tStation, price: cabCost, color: '#f59e0b' },
+              duration: driveResult.durationText, distance: driveResult.distanceText, departureTime: null, arrivalTime: null,
+            });
+          }
+          pendingCountRef.current--;
+          if (pendingCountRef.current === 0) setAutoSelectStep('');
+        }).catch(() => { pendingCountRef.current--; if (pendingCountRef.current === 0) setAutoSelectStep(''); });
+      };
+
       // Fetch BOTH flights and trains in parallel (throttled by semaphore to avoid rate limits)
       acquireSemaphore().then(() => {
       if (signal.aborted) { releaseSemaphore(); return; }
@@ -578,36 +580,9 @@ function RoutePageContent() {
         trip.updateTransportLeg(leg.id, { resolvedAirports: resolvedInfo });
 
         // Same airport check: if from/to resolve to the same code, auto-select drive
+        // Works globally: Thane→Mumbai (BOM=BOM), Oakland→SF (SFO=SFO), etc.
         if (resolvedFrom && resolvedTo && resolvedFrom === resolvedTo) {
-          const driveFrom = fromC.fullName || `${fromC.parentCity || fromC.name}, ${fromC.country || 'India'}`;
-          const driveTo = toC.fullName || `${toC.parentCity || toC.name}, ${toC.country || 'India'}`;
-          const legId = leg.id;
-          const fStation = fromC.parentCity || fromC.name || '';
-          const tStation = toC.parentCity || toC.name || '';
-          // Fetch drive directions for this short-distance leg
-          getDirections(driveFrom, driveTo, 'driving').then(driveResult => {
-            if (driveResult) {
-              const distKm = parseFloat(driveResult.distanceText.replace(/[^\d.]/g, '')) || 0;
-              const cabCost = Math.round(distKm * 18);
-              trip.updateTransportLeg(legId, {
-                type: 'drive',
-                selectedFlight: null,
-                selectedTrain: {
-                  id: `drive-auto-${Date.now()}`, operator: 'Hire Cab', trainName: 'Hire Cab', trainNumber: '',
-                  departure: '', arrival: '', duration: driveResult.durationText, stops: 'Direct',
-                  fromStation: fStation, toStation: tStation,
-                  price: cabCost, color: '#f59e0b',
-                },
-                duration: driveResult.durationText, distance: driveResult.distanceText,
-                departureTime: null, arrivalTime: null,
-              });
-            } else {
-              // Directions failed — still set as drive with no details
-              trip.updateTransportLeg(legId, { type: 'drive', selectedFlight: null, selectedTrain: null, duration: '~', distance: '~', departureTime: null, arrivalTime: null });
-            }
-          }).catch(() => {
-            trip.updateTransportLeg(legId, { type: 'drive', selectedFlight: null, selectedTrain: null, duration: '~', distance: '~', departureTime: null, arrivalTime: null });
-          });
+          setDriveForSameAirport();
           trackPending(-1, transportLabel);
           return;
         }
