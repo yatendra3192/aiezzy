@@ -2769,9 +2769,8 @@ function DeepPlanPageContent() {
                                   const mealKey = `day_${day.day}_${stop.mealType}`;
                                   const selectedVenue = trip.deepPlanData?.selectedMealVenues?.[mealKey];
                                   if (selectedVenue) {
-                                    return <span className="text-orange-500 text-[9px] font-body font-semibold ml-1 flex items-center gap-1">
+                                    return <span className="text-orange-500 text-[10px] font-body font-semibold ml-1">
                                       at {selectedVenue.name}
-                                      {!isReadOnly && <button onClick={(e) => { e.stopPropagation(); trip.updateDeepPlanData({ selectedMealVenues: { [mealKey]: undefined as any } }); }} className="text-orange-300 hover:text-red-400 ml-0.5">x</button>}
                                     </span>;
                                   }
                                   return null;
@@ -2786,10 +2785,8 @@ function DeepPlanPageContent() {
                                 const isLoading = mealSuggestionsLoading[mealKey];
 
                                 if (selectedVenue) {
-                                  return <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5 flex items-center gap-1">
-                                    {selectedVenue.rating > 0 && <span>{selectedVenue.rating}</span>}
-                                    {selectedVenue.cuisineType && <span>· {selectedVenue.cuisineType}</span>}
-                                  </span>;
+                                  // Restaurant already appears as activity card below — just show hint
+                                  return mealHint ? <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5">{mealHint}</span> : null;
                                 }
 
                                 return <>
@@ -2814,7 +2811,22 @@ function DeepPlanPageContent() {
                                         <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-none max-w-full">
                                           {suggestions.map((r, ri) => (
                                             <button key={ri} onClick={() => {
+                                              // Save venue selection
                                               trip.updateDeepPlanData({ selectedMealVenues: { [mealKey]: r } });
+                                              // Add as a custom activity at the meal time so it appears as a full card
+                                              const mealTime = stop.time || (stop.mealType === 'breakfast' ? '08:00' : stop.mealType === 'lunch' ? '12:30' : '19:00');
+                                              setCustomActivities(prev => {
+                                                const existing = prev[day.day] || [];
+                                                // Don't add if already there
+                                                if (existing.some(c => c.name === r.name)) return prev;
+                                                return { ...prev, [day.day]: [...existing, { name: r.name, time: mealTime }] };
+                                              });
+                                              // Cache lat/lng in cityActivities so the card gets coordinates for directions
+                                              const cityKey = day.city;
+                                              const existingActs = trip.deepPlanData?.cityActivities?.[cityKey] || [];
+                                              if (!existingActs.some(a => a.name === r.name)) {
+                                                trip.updateDeepPlanData({ cityActivities: { [cityKey]: [...existingActs, { name: r.name, category: r.cuisineType || 'restaurant', durationMin: 45, bestTime: 'anytime', lat: r.lat, lng: r.lng }] } });
+                                              }
                                               setExpandedMealSlot(null);
                                             }} className="flex-shrink-0 flex items-center gap-2 bg-white border border-orange-100 hover:border-orange-300 rounded-lg px-2.5 py-1.5 transition-colors shadow-sm hover:shadow group">
                                               <PlacePhoto name={r.name} city={day.city} className="w-9 h-9 rounded" fallbackIcon="" />
