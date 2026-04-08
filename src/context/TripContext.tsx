@@ -27,6 +27,17 @@ export interface CityActivityCached {
   lng?: number;
 }
 
+export interface MealVenue {
+  placeId: string;
+  name: string;
+  rating: number;
+  priceLevel?: string;
+  cuisineType?: string;
+  lat: number;
+  lng: number;
+  photoRef?: string;
+}
+
 export interface DeepPlanData {
   customActivities: Record<number, Array<{ name: string; time: string }>>;
   dayNotes: Record<number, string>;
@@ -46,6 +57,8 @@ export interface DeepPlanData {
   editedTimes?: Record<string, string>; // "day_3_breakfast" | "day_3_dinner" | "day_3_Return_to_hotel" → "19:30"
   /** Date when AI activities were last generated (YYYY-MM-DD) — used to invalidate stale caches per trip */
   cacheGeneratedAt?: string;
+  /** User-selected meal venues: "day_2_lunch" → MealVenue */
+  selectedMealVenues?: Record<string, MealVenue>;
 }
 
 interface TripState {
@@ -272,6 +285,7 @@ export function TripProvider({ children }: { children: React.ReactNode }) {
       if (data.removedActivities) merged.removedActivities = { ...prev.removedActivities, ...data.removedActivities };
       if (data.editedTimes) merged.editedTimes = { ...prev.editedTimes, ...data.editedTimes };
       if (data.activityOrder) merged.activityOrder = { ...prev.activityOrder, ...data.activityOrder };
+      if (data.selectedMealVenues) merged.selectedMealVenues = { ...prev.selectedMealVenues, ...data.selectedMealVenues };
       return dirty({ ...s, deepPlanData: merged });
     });
   }, []);

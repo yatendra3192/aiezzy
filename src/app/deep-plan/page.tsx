@@ -243,6 +243,10 @@ function DeepPlanPageContent() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  // Meal restaurant suggestions
+  const [mealSuggestions, setMealSuggestions] = useState<Record<string, Array<{ placeId: string; name: string; rating: number; priceLevel?: string; cuisineType?: string; lat: number; lng: number; photoRef?: string }>>>({});
+  const [mealSuggestionsLoading, setMealSuggestionsLoading] = useState<Record<string, boolean>>({});
+  const [expandedMealSlot, setExpandedMealSlot] = useState<string | null>(null);
   const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const uploadContextRef = useRef<{ cities: string[]; docType: 'hotel' | 'transport' }>({ cities: [], docType: 'transport' });
@@ -2031,6 +2035,44 @@ function DeepPlanPageContent() {
     setActivityOrder(prev => ({ ...prev, [dayNum]: newOrder }));
   };
 
+  // Fetch nearby restaurant suggestions for a meal slot
+  const fetchMealSuggestions = useCallback(async (mealKey: string, dayStops: any[], mealIdx: number, mealType: string, city: string) => {
+    if (mealSuggestions[mealKey]?.length) return; // already cached
+    setMealSuggestionsLoading(prev => ({ ...prev, [mealKey]: true }));
+    try {
+      // Find nearest stop with lat/lng: for breakfast use hotel, for lunch/dinner use previous activity
+      let lat = 0, lng = 0;
+      if (mealType === 'breakfast') {
+        // Find hotel stop in this day
+        const hotel = dayStops.find((s: any) => s.type === 'hotel' && s.lat && s.lng);
+        if (hotel) { lat = hotel.lat; lng = hotel.lng; }
+      }
+      if (!lat) {
+        // Walk backward from meal to find nearest stop with coordinates
+        for (let i = mealIdx - 1; i >= 0; i--) {
+          if (dayStops[i]?.lat && dayStops[i]?.lng) { lat = dayStops[i].lat; lng = dayStops[i].lng; break; }
+        }
+      }
+      if (!lat) {
+        // Walk forward
+        for (let i = mealIdx + 1; i < dayStops.length; i++) {
+          if (dayStops[i]?.lat && dayStops[i]?.lng) { lat = dayStops[i].lat; lng = dayStops[i].lng; break; }
+        }
+      }
+      if (!lat) { setMealSuggestionsLoading(prev => ({ ...prev, [mealKey]: false })); return; }
+
+      const res = await fetch(`/api/restaurants?lat=${lat}&lng=${lng}&mealType=${mealType}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMealSuggestions(prev => ({ ...prev, [mealKey]: data.restaurants || [] }));
+      }
+    } catch (e) {
+      console.error('Failed to fetch meal suggestions:', e);
+    } finally {
+      setMealSuggestionsLoading(prev => ({ ...prev, [mealKey]: false }));
+    }
+  }, [mealSuggestions]);
+
   // Generate itinerary for a travel/departure day's free time
   const [generatingDay, setGeneratingDay] = useState<Record<number, boolean>>({});
   const handleGenerateItinerary = async (dayNum: number, city: string, freeHours: number) => {
@@ -2723,8 +2765,78 @@ function DeepPlanPageContent() {
                                   const rate = convRates[mc.currency?.toUpperCase()] || convRates[mc.currency] || 1;
                                   return <span className="text-orange-400 text-[10px] font-mono ml-1">~{formatPrice(Math.round(cost * rate), currency)}/person</span>;
                                 })()}
+                                {(() => {
+                                  const mealKey = `day_${day.day}_${stop.mealType}`;
+                                  const selectedVenue = trip.deepPlanData?.selectedMealVenues?.[mealKey];
+                                  if (selectedVenue) {
+                                    return <span className="text-orange-500 text-[9px] font-body font-semibold ml-1 flex items-center gap-1">
+                                      at {selectedVenue.name}
+                                      {!isReadOnly && <button onClick={(e) => { e.stopPropagation(); trip.updateDeepPlanData({ selectedMealVenues: { [mealKey]: undefined as any } }); }} className="text-orange-300 hover:text-red-400 ml-0.5">x</button>}
+                                    </span>;
+                                  }
+                                  return null;
+                                })()}
                               </div>
-                              {mealHint && <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5">{mealHint}</span>}
+                              {/* Meal hint OR restaurant suggestions */}
+                              {(() => {
+                                const mealKey = `day_${day.day}_${stop.mealType}`;
+                                const isExpanded = expandedMealSlot === mealKey;
+                                const selectedVenue = trip.deepPlanData?.selectedMealVenues?.[mealKey];
+                                const suggestions = mealSuggestions[mealKey] || [];
+                                const isLoading = mealSuggestionsLoading[mealKey];
+
+                                if (selectedVenue) {
+                                  return <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5 flex items-center gap-1">
+                                    {selectedVenue.rating > 0 && <span>{selectedVenue.rating}</span>}
+                                    {selectedVenue.cuisineType && <span>· {selectedVenue.cuisineType}</span>}
+                                  </span>;
+                                }
+
+                                return <>
+                                  {!isReadOnly && !isExpanded && (
+                                    <button onClick={() => {
+                                      setExpandedMealSlot(mealKey);
+                                      fetchMealSuggestions(mealKey, day.stops, si, stop.mealType || 'lunch', day.city);
+                                    }} className="text-[9px] text-orange-400/70 hover:text-orange-600 font-body ml-3 mt-0.5 flex items-center gap-1 cursor-pointer transition-colors">
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                      Find places to eat nearby
+                                    </button>
+                                  )}
+                                  {isReadOnly && mealHint && <span className="text-[9px] text-orange-400/70 font-body ml-3 mt-0.5">{mealHint}</span>}
+                                  {isExpanded && (
+                                    <div className="ml-3 mt-1.5 mb-1">
+                                      {isLoading ? (
+                                        <div className="flex items-center gap-2 text-[9px] text-orange-400/70 font-body">
+                                          <span className="w-2.5 h-2.5 border border-orange-300 border-t-transparent rounded-full animate-spin" />
+                                          Finding restaurants...
+                                        </div>
+                                      ) : suggestions.length > 0 ? (
+                                        <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+                                          {suggestions.map((r, ri) => (
+                                            <button key={ri} onClick={() => {
+                                              trip.updateDeepPlanData({ selectedMealVenues: { [mealKey]: r } });
+                                              setExpandedMealSlot(null);
+                                            }} className="flex-shrink-0 flex items-center gap-2 bg-white border border-orange-100 hover:border-orange-300 rounded-lg px-2.5 py-1.5 transition-colors shadow-sm hover:shadow group">
+                                              <PlacePhoto name={r.name} city={day.city} className="w-9 h-9 rounded" fallbackIcon="" />
+                                              <div className="text-left">
+                                                <p className="text-[10px] font-body font-semibold text-text-primary leading-tight max-w-[100px] truncate">{r.name}</p>
+                                                <p className="text-[8px] text-text-muted font-body flex items-center gap-1">
+                                                  {r.rating > 0 && <span className="text-amber-500">{r.rating}</span>}
+                                                  {r.cuisineType && <span>{r.cuisineType}</span>}
+                                                </p>
+                                              </div>
+                                              <span className="text-orange-300 group-hover:text-orange-500 text-xs ml-1">+</span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[9px] text-text-muted font-body">No restaurants found nearby</span>
+                                      )}
+                                      <button onClick={() => setExpandedMealSlot(null)} className="text-[8px] text-text-muted hover:text-text-secondary font-body mt-1 cursor-pointer">Close</button>
+                                    </div>
+                                  )}
+                                </>;
+                              })()}
                             </div>
                           </div>
                         </div>
