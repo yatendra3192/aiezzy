@@ -2717,6 +2717,12 @@ function DeepPlanPageContent() {
                     const stopColor = TYPE_COLORS[stop.type] || '#E8654A';
                     const isAttractionCard = stop.type === 'attraction' && !isMeal && !stop.name.startsWith('Free time') && !stop.name.startsWith('Morning in');
                     // Enrich stop with AI data if missing (arrival days may build before AI cache loads)
+                    // Also check if this is a meal venue pick — force restaurant category
+                    const allMealVenues = trip.deepPlanData?.selectedMealVenues || {};
+                    const isMealVenue = Object.values(allMealVenues).some((v: any) => v?.name === stop.name);
+                    if (isAttractionCard && isMealVenue && (!stop.category || !CATEGORY_CARD_STYLES[stop.category])) {
+                      stop.category = 'restaurant';
+                    }
                     if (isAttractionCard && !stop.category) {
                       const aiCache = trip.deepPlanData?.cityActivities?.[day.city] || [];
                       const aiMatch = aiCache.find(a => a.name === stop.name);
