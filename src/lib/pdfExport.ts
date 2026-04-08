@@ -162,13 +162,18 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
   y += 7;
 
   const totalNights = data.destinations.reduce((s, d) => s + d.nights, 0);
-  const flightCost = data.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * data.adults;
+  // Flights: adults + children full fare, infants 15%
+  const flightPax = data.adults + (data.children || 0) + (data.infants || 0) * 0.15;
+  const flightCost = data.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult, 0) * flightPax;
+  // Trains: adults + children only (no infant surcharge)
   const trainCost = data.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price, 0) * (data.adults + (data.children || 0));
+  // Hotels: pricePerNight × nights × rooms (rooms = ceil((adults+children)/2))
+  const rooms = Math.ceil((data.adults + (data.children || 0)) / 2);
   const hotelCost = data.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
     const extras = d.additionalHotels || [];
     const extraNights = extras.reduce((es, h) => es + h.nights, 0);
     const primaryNights = d.nights - extraNights;
-    return s + d.selectedHotel!.pricePerNight * Math.max(0, primaryNights) + extras.reduce((es, h) => es + h.hotel.pricePerNight * h.nights, 0);
+    return s + (d.selectedHotel!.pricePerNight * Math.max(0, primaryNights) + extras.reduce((es, h) => es + h.hotel.pricePerNight * h.nights, 0)) * rooms;
   }, 0);
   const totalCost = flightCost + trainCost + hotelCost;
 
@@ -380,8 +385,8 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
 
       pdf.setTextColor(...CORAL);
       pdf.setFont('helvetica', 'bold');
-      const hotelTotal = dest.selectedHotel.pricePerNight * primaryNights;
-      pdf.text(`${fp(dest.selectedHotel.pricePerNight)}/night x${primaryNights} = ${fp(hotelTotal)}`, W - margin - 5, y + 5, { align: 'right' });
+      const hotelTotal = dest.selectedHotel.pricePerNight * primaryNights * rooms;
+      pdf.text(`${fp(dest.selectedHotel.pricePerNight)}/night x${primaryNights}${rooms > 1 ? ' x' + rooms + ' rooms' : ''} = ${fp(hotelTotal)}`, W - margin - 5, y + 5, { align: 'right' });
 
       y += 17;
 
@@ -407,8 +412,8 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
 
         pdf.setTextColor(...CORAL);
         pdf.setFont('helvetica', 'bold');
-        const addTotal = stay.hotel.pricePerNight * stay.nights;
-        pdf.text(`${fp(stay.hotel.pricePerNight)}/night x${stay.nights} = ${fp(addTotal)}`, W - margin - 5, y + 5, { align: 'right' });
+        const addTotal = stay.hotel.pricePerNight * stay.nights * rooms;
+        pdf.text(`${fp(stay.hotel.pricePerNight)}/night x${stay.nights}${rooms > 1 ? ' x' + rooms + 'r' : ''} = ${fp(addTotal)}`, W - margin - 5, y + 5, { align: 'right' });
 
         y += 17;
         checkOut.setDate(checkOut.getDate() + stay.nights);
@@ -682,7 +687,7 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
     pdf.text(fp(f.pricePerAdult), col3, y + 3, { align: 'right' });
     pdf.setTextColor(...DARK);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(fp(f.pricePerAdult * data.adults), col4, y + 3, { align: 'right' });
+    pdf.text(fp(f.pricePerAdult * flightPax), col4, y + 3, { align: 'right' });
     y += 6;
     drawLine(y - 1, [230, 230, 225]);
   });
@@ -723,10 +728,10 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
     pdf.text(truncate(`Hotel: ${dest.city.name}`, col2 - col1 - 3, 7), col1, y + 3);
     pdf.setTextColor(...GRAY);
     pdf.text(truncate(`${dest.selectedHotel.name} (${primaryNights}N)`, col2MaxW, 7), col2, y + 3);
-    pdf.text(`${fp(dest.selectedHotel.pricePerNight)}/n`, col3, y + 3, { align: 'right' });
+    pdf.text(`${fp(dest.selectedHotel.pricePerNight)}/n${rooms > 1 ? ' x' + rooms + 'r' : ''}`, col3, y + 3, { align: 'right' });
     pdf.setTextColor(...DARK);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(fp(dest.selectedHotel.pricePerNight * primaryNights), col4, y + 3, { align: 'right' });
+    pdf.text(fp(dest.selectedHotel.pricePerNight * primaryNights * rooms), col4, y + 3, { align: 'right' });
     y += 6;
     drawLine(y - 1, [230, 230, 225]);
 
@@ -739,10 +744,10 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
       pdf.text(truncate(`Hotel: ${dest.city.name}`, col2 - col1 - 3, 7), col1, y + 3);
       pdf.setTextColor(...GRAY);
       pdf.text(truncate(`${stay.hotel.name} (${stay.nights}N)`, col2MaxW, 7), col2, y + 3);
-      pdf.text(`${fp(stay.hotel.pricePerNight)}/n`, col3, y + 3, { align: 'right' });
+      pdf.text(`${fp(stay.hotel.pricePerNight)}/n${rooms > 1 ? ' x' + rooms + 'r' : ''}`, col3, y + 3, { align: 'right' });
       pdf.setTextColor(...DARK);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(fp(stay.hotel.pricePerNight * stay.nights), col4, y + 3, { align: 'right' });
+      pdf.text(fp(stay.hotel.pricePerNight * stay.nights * rooms), col4, y + 3, { align: 'right' });
       y += 6;
       drawLine(y - 1, [230, 230, 225]);
     });
