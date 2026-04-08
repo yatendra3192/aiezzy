@@ -465,8 +465,29 @@ function RoutePageContent() {
       const toNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
       // Also extract city from fullName or fromAddress (e.g., "42 Rue Jacob, Paris, France" → contains "paris")
       const fromFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
+      const toFull = (toC.fullName || '').toLowerCase();
+      // Same-metro-area pairs where cities share the same airport
+      const METRO_GROUPS: string[][] = [
+        ['mumbai', 'thane', 'navi mumbai', 'kalyan', 'dombivli', 'mira-bhayandar', 'vasai-virar', 'panvel'],
+        ['delhi', 'new delhi', 'noida', 'gurgaon', 'gurugram', 'faridabad', 'ghaziabad', 'greater noida'],
+        ['bangalore', 'bengaluru', 'whitefield', 'electronic city'],
+        ['hyderabad', 'secunderabad', 'cyberabad'],
+        ['chennai', 'mahabalipuram'],
+        ['kolkata', 'howrah', 'salt lake'],
+        ['london', 'heathrow', 'gatwick', 'croydon', 'watford'],
+        ['new york', 'new york city', 'manhattan', 'brooklyn', 'queens', 'jersey city', 'newark'],
+        ['tokyo', 'yokohama', 'kawasaki', 'chiba'],
+        ['paris', 'versailles', 'boulogne-billancourt'],
+      ];
+      const allFromNames = [...fromNames, ...fromFull.split(',').map(s => s.trim()).filter(Boolean)];
+      const allToNames = [...toNames, ...toFull.split(',').map(s => s.trim()).filter(Boolean)];
+      const inSameMetro = METRO_GROUPS.some(group =>
+        allFromNames.some(fn => group.some(g => fn.includes(g) || g.includes(fn))) &&
+        allToNames.some(tn => group.some(g => tn.includes(g) || g.includes(tn)))
+      );
       const isSameCity = fromNames.some(fn => toNames.some(tn => fn === tn))
-        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn));
+        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn))
+        || inSameMetro;
       if (isSameCity) {
         // Only replace if currently a flight/train (not already a local transfer)
         if (leg.selectedTrain?.operator !== 'Local Transfer') {
