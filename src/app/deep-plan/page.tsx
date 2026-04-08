@@ -2797,8 +2797,8 @@ function DeepPlanPageContent() {
                                     <button onClick={() => {
                                       setExpandedMealSlot(mealKey);
                                       fetchMealSuggestions(mealKey, day.stops, si, stop.mealType || 'lunch', day.city);
-                                    }} className="text-[9px] text-orange-400/70 hover:text-orange-600 font-body ml-3 mt-0.5 flex items-center gap-1 cursor-pointer transition-colors">
-                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                    }} className="text-[11px] text-orange-500 hover:text-orange-700 font-body font-medium ml-3 mt-1 flex items-center gap-1.5 cursor-pointer transition-colors">
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                       Find places to eat nearby
                                     </button>
                                   )}
