@@ -3162,8 +3162,13 @@ function DeepPlanPageContent() {
                           const originStop = (stop.name.startsWith('Free time') || stop.name.startsWith('Morning in') || stop.mealType)
                             ? (day.stops.slice(0, si).reverse().find(s => s.type === 'hotel' || (s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time'))) || stop)
                             : stop;
-                          const originQ = originStop.lat && originStop.lng ? `${originStop.lat},${originStop.lng}` : (originStop.name === 'Return to hotel' ? (day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType)?.name || day.city) : originStop.name) + ', ' + day.city;
-                          const destQ = nextStop?.lat && nextStop?.lng ? `${nextStop.lat},${nextStop.lng}` : (nextStop?.name === 'Return to hotel' ? (day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType)?.name || day.city) : nextStop?.name || '') + ', ' + day.city;
+                          // Google Maps links use place NAMES (not coordinates — coords resolve to random businesses)
+                          const resolveMapName = (s: DeepStop) => {
+                            if (s.name === 'Return to hotel') return (day.stops.find(h => h.type === 'hotel' && h.name !== 'Return to hotel' && !h.mealType)?.name || day.city) + ', ' + day.city;
+                            return s.name + ', ' + day.city;
+                          };
+                          const originQ = resolveMapName(originStop);
+                          const destQ = nextStop ? resolveMapName(nextStop) : '';
                           const gmapsUrl = nextStop ? `https://www.google.com/maps/dir/${encodeURIComponent(originQ)}/${encodeURIComponent(destQ)}/@0,0,14z/data=!3m1!4b1!4m2!4m1!3e${gmapsTravelMode === 'driving' ? '0' : gmapsTravelMode === 'transit' ? '3' : '2'}` : '';
 
                           return (
