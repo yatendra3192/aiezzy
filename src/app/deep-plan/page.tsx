@@ -3021,13 +3021,25 @@ function DeepPlanPageContent() {
                                   </div>
                                 </div>
                               );
+                              const rooms = Math.ceil((trip.adults + (trip.children || 0)) / 2);
+                              const totalHotelCost = hotel.pricePerNight * dest.nights * rooms;
+                              // Calculate check-in/check-out dates
+                              const destIdx2 = trip.destinations.indexOf(dest);
+                              let daysBefore = 0;
+                              for (let di2 = 0; di2 < destIdx2; di2++) { daysBefore += Math.max(1, trip.destinations[di2].nights + 1); }
+                              daysBefore++; // travel day
+                              const checkInDate = new Date(trip.departureDate);
+                              checkInDate.setDate(checkInDate.getDate() + daysBefore);
+                              const checkOutDate = new Date(checkInDate);
+                              checkOutDate.setDate(checkOutDate.getDate() + dest.nights);
+                              const fmtShort = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              const bookingUrl = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(hotel.name + ' ' + (dest.city.parentCity || dest.city.name))}&checkin=${checkInDate.toISOString().split('T')[0]}&checkout=${checkOutDate.toISOString().split('T')[0]}&group_adults=${trip.adults}&no_rooms=${rooms}`;
                               return (
-                                <div className="mt-2 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-xl p-3 space-y-1">
-                                  <div className="flex items-center justify-between">
+                                <div className="mt-2 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-xl p-3">
+                                  <div className="flex items-center justify-between mb-1.5">
                                     <div className="flex items-center gap-1.5">
                                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                                      {hotel.rating > 0 && <span className="px-1 py-0.5 rounded text-white font-mono font-bold text-[8px]" style={{ backgroundColor: hotel.ratingColor || '#9ca3af' }}>{hotel.rating}</span>}
-                                      <span className="text-[11px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}N</span>
+                                      {hotel.rating > 0 && <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold text-[9px]" style={{ backgroundColor: hotel.ratingColor || '#9ca3af' }}>{hotel.rating}</span>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                       {hotelDoc ? (
@@ -3041,8 +3053,18 @@ function DeepPlanPageContent() {
                                           </button>}
                                         </>
                                       )}
-                                      {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline">Replace</button>}
+                                      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
+                                        Book<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                      </a>
+                                      {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-text-muted text-[11px] font-body font-semibold hover:text-accent-cyan hover:underline">Change</button>}
                                     </div>
+                                  </div>
+                                  <p className="text-[10px] text-text-muted font-body">
+                                    Check-in {fmtShort(checkInDate)} &rarr; Check-out {fmtShort(checkOutDate)} &middot; {dest.nights}N{rooms > 1 ? ` · ${rooms} rooms` : ''}
+                                  </p>
+                                  <div className="flex items-center justify-between mt-1">
+                                    <span className="text-[11px] font-body text-text-secondary">{formatPrice(hotel.pricePerNight, currency)}/night &times; {dest.nights}{rooms > 1 ? ` × ${rooms}` : ''}</span>
+                                    <span className="text-[12px] font-mono font-bold text-accent-cyan">{formatPrice(totalHotelCost, currency)}</span>
                                   </div>
                                 </div>
                               );
