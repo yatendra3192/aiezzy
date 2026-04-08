@@ -2226,6 +2226,7 @@ function DeepPlanPageContent() {
                     tripType: trip.tripType,
                     currency,
                     formatPrice: (amount: number) => formatPrice(amount, currency),
+                    formatPriceINR: (amount: number) => formatPrice(amount, 'INR'),
                     days: adjustedDays.map(d => ({
                       day: d.day,
                       date: d.date,

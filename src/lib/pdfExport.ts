@@ -35,6 +35,8 @@ interface TripPDFData {
   tripType: 'roundTrip' | 'oneWay';
   currency: string;
   formatPrice: (amount: number) => string;
+  /** Format price in INR (for dual display when currency !== INR) */
+  formatPriceINR?: (amount: number) => string;
   /** Rich day-by-day itinerary from deep plan */
   days?: PDFDay[];
   /** Budget breakdown amounts (in INR) */
@@ -88,6 +90,13 @@ function pdfPrice(formatted: string, currency: string): string {
 export async function exportTripPDFFromData(data: TripPDFData, filename: string) {
   const jsPDF = (await import('jspdf')).default;
   const fp = (amount: number): string => pdfPrice(data.formatPrice(amount), data.currency);
+  // Dual price: show selected currency + INR if different
+  const fpDual = (amount: number): string => {
+    const main = fp(amount);
+    if (data.currency === 'INR' || amount === 0) return main;
+    const inr = pdfPrice(data.formatPriceINR ? data.formatPriceINR(amount) : `Rs.${Math.round(amount).toLocaleString('en-IN')}`, 'INR');
+    return `${main} (${inr})`;
+  };
   const pdf = new jsPDF('p', 'mm', 'a4');
   const W = pdf.internal.pageSize.getWidth();
   const H = pdf.internal.pageSize.getHeight();
@@ -182,7 +191,7 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
   });
   pdf.setTextColor(...CORAL);
   pdf.setFontSize(10);
-  pdf.text(`Total: ${fp(totalCost)}`, W - margin - 5, y + 6, { align: 'right' });
+  pdf.text(`Total: ${fpDual(totalCost)}`, W - margin - 5, y + 6, { align: 'right' });
 
   pdf.setFontSize(7);
   pdf.setFont('helvetica', 'normal');
@@ -775,7 +784,7 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.text('ESTIMATED TOTAL', margin + 3, y + 5.5);
-  pdf.text(fp(grandTotal), W - margin - 5, y + 5.5, { align: 'right' });
+  pdf.text(fpDual(grandTotal), W - margin - 5, y + 5.5, { align: 'right' });
 
   y += 14;
 
