@@ -2638,6 +2638,20 @@ function DeepPlanPageContent() {
                     const isCustom = isCustomDeletable(stop.name);
                     const stopColor = TYPE_COLORS[stop.type] || '#E8654A';
                     const isAttractionCard = stop.type === 'attraction' && !isMeal && !stop.name.startsWith('Free time') && !stop.name.startsWith('Morning in');
+                    // Enrich stop with AI data if missing (arrival days may build before AI cache loads)
+                    if (isAttractionCard && !stop.category) {
+                      const aiCache = trip.deepPlanData?.cityActivities?.[day.city] || [];
+                      const aiMatch = aiCache.find(a => a.name === stop.name);
+                      if (aiMatch) {
+                        if (!stop.category) stop.category = aiMatch.category;
+                        if (!stop.durationMin) stop.durationMin = aiMatch.durationMin;
+                        if (!stop.note) stop.note = aiMatch.note;
+                        if (!stop.openingHours) stop.openingHours = aiMatch.openingHours;
+                        if (!stop.ticketPrice) stop.ticketPrice = aiMatch.ticketPrice;
+                        if (!stop.lat) stop.lat = aiMatch.lat;
+                        if (!stop.lng) stop.lng = aiMatch.lng;
+                      }
+                    }
                     const cardStyle = isAttractionCard ? (CATEGORY_CARD_STYLES[stop.category || ''] || DEFAULT_CARD_STYLE) : null;
 
                     // Meal slot rendering
