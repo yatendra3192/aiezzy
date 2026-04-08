@@ -2178,29 +2178,30 @@ function DeepPlanPageContent() {
                 </span>
               </div>
             )}
-            <h1 className="font-display text-[22px] md:text-[26px] font-bold text-text-primary leading-tight tracking-tight">
-              {trip.destinations.length > 0
-                ? trip.destinations.map(d => d.city.parentCity || d.city.name).filter((v, i, a) => a.indexOf(v) === i).join(' & ')
-                : 'Your Itinerary'}
-            </h1>
-            <div className="flex items-center gap-2 mt-2 flex-wrap text-[13px] text-text-secondary font-body">
-              {adjustedDays.length > 0 && (
-                <>
-                  <span className="flex items-center gap-1.5">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    {formatDateNice(adjustedDays[0].date)} &mdash; {formatDateNice(adjustedDays[adjustedDays.length - 1].date)}
-                  </span>
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h1 className="font-display text-[22px] md:text-[26px] font-bold text-text-primary leading-tight tracking-tight">
+                  {trip.destinations.length > 0
+                    ? trip.destinations.map(d => d.city.parentCity || d.city.name).filter((v, i, a) => a.indexOf(v) === i).join(' & ')
+                    : 'Your Itinerary'}
+                </h1>
+                <div className="flex items-center gap-2 mt-2 flex-wrap text-[13px] text-text-secondary font-body">
+                  {adjustedDays.length > 0 && (
+                    <>
+                      <span className="flex items-center gap-1.5">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        {formatDateNice(adjustedDays[0].date)} &mdash; {formatDateNice(adjustedDays[adjustedDays.length - 1].date)}
+                      </span>
+                      <span className="w-1 h-1 rounded-full bg-text-muted/30" />
+                    </>
+                  )}
+                  <span>{trip.adults + (trip.children || 0) + (trip.infants || 0)} traveler{(trip.adults + (trip.children || 0) + (trip.infants || 0)) !== 1 ? 's' : ''}</span>
                   <span className="w-1 h-1 rounded-full bg-text-muted/30" />
-                </>
-              )}
-              <span>{trip.adults + (trip.children || 0) + (trip.infants || 0)} traveler{(trip.adults + (trip.children || 0) + (trip.infants || 0)) !== 1 ? 's' : ''}</span>
-              <span className="w-1 h-1 rounded-full bg-text-muted/30" />
-              <span>{trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</span>
-            </div>
-          </div>
-
-          {/* ====== [B] ACTION ROW ====== */}
-          <div className="print-hide flex items-center gap-2 mb-5 flex-wrap">
+                  <span>{trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</span>
+                </div>
+              </div>
+              {/* ====== [B] ACTION BUTTONS (inline with title) ====== */}
+              <div className="print-hide flex items-center gap-2 flex-shrink-0">
             {!isReadOnly && (
             <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-border-subtle rounded-lg text-[13px] font-body font-medium text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors shadow-sm">
@@ -2277,6 +2278,8 @@ function DeepPlanPageContent() {
               Share
             </button>
             )}
+          </div>
+            </div>{/* close title + buttons flex row */}
           </div>
 
           {/* ====== [C] TRIP OVERVIEW CARD ====== */}
