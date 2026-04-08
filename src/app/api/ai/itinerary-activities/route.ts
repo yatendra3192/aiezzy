@@ -101,38 +101,40 @@ Rules:
     let text = '';
 
     if (openaiKey) {
-      const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 45_000);
-      try {
-        // Use Chat Completions API (better global connectivity than Responses API)
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          signal: ctrl.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openaiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4.1-mini',
-            max_tokens: 4096,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-          }),
-        });
+      // Retry up to 2 attempts — Railway asia-southeast1 has intermittent connectivity to OpenAI
+      for (let attempt = 0; attempt < 2 && !text; attempt++) {
+        const ctrl = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 30_000);
+        try {
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            signal: ctrl.signal,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${openaiKey}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4.1-mini',
+              max_tokens: 4096,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+            }),
+          });
 
-        if (response.ok) {
-          const data = await response.json();
-          text = data.choices?.[0]?.message?.content || '';
-        } else {
-          const errBody = await response.text().catch(() => '');
-          console.error('OpenAI itinerary-activities error:', response.status, errBody.slice(0, 200));
+          if (response.ok) {
+            const data = await response.json();
+            text = data.choices?.[0]?.message?.content || '';
+          } else {
+            const errBody = await response.text().catch(() => '');
+            console.error(`OpenAI itinerary-activities error (attempt ${attempt + 1}):`, response.status, errBody.slice(0, 200));
+          }
+        } catch (e: any) {
+          console.error(`OpenAI itinerary-activities timeout/error (attempt ${attempt + 1}):`, e.name === 'AbortError' ? 'timeout (30s)' : e.message);
+        } finally {
+          clearTimeout(timeout);
         }
-      } catch (e: any) {
-        console.error('OpenAI itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (45s)' : e.message);
-      } finally {
-        clearTimeout(timeout);
       }
     }
 
