@@ -143,7 +143,8 @@ function parseDistKm(d: string | undefined): number {
 const CATEGORY_LABELS: Record<string, string> = {
   landmark: 'Landmark', museum: 'Museum', park: 'Park', market: 'Market',
   experience: 'Experience', religious: 'Religious Site', neighborhood: 'Neighborhood',
-  viewpoint: 'Viewpoint',
+  viewpoint: 'Viewpoint', restaurant: 'Restaurant', cafe: 'Cafe', 'coffee shop': 'Cafe',
+  pub: 'Pub', bakery: 'Bakery', 'fine dining restaurant': 'Fine Dining',
 };
 
 /** Get timezone abbreviation for a city based on its country */
@@ -222,6 +223,10 @@ const CATEGORY_CARD_STYLES: Record<string, { bg: string; border: string; pill: s
   religious: { bg: 'bg-rose-50/60', border: 'border-rose-200/50', pill: 'bg-rose-100 text-rose-700' },
   neighborhood: { bg: 'bg-teal-50/60', border: 'border-teal-200/50', pill: 'bg-teal-100 text-teal-700' },
   viewpoint: { bg: 'bg-sky-50/60', border: 'border-sky-200/50', pill: 'bg-sky-100 text-sky-700' },
+  restaurant: { bg: 'bg-orange-50/60', border: 'border-orange-200/50', pill: 'bg-orange-100 text-orange-700' },
+  cafe: { bg: 'bg-amber-50/40', border: 'border-amber-200/40', pill: 'bg-amber-100 text-amber-700' },
+  'coffee shop': { bg: 'bg-amber-50/40', border: 'border-amber-200/40', pill: 'bg-amber-100 text-amber-700' },
+  pub: { bg: 'bg-orange-50/60', border: 'border-orange-200/50', pill: 'bg-orange-100 text-orange-700' },
 };
 const DEFAULT_CARD_STYLE = { bg: 'bg-slate-50/40', border: 'border-slate-200/30', pill: 'bg-slate-100 text-slate-600' };
 
@@ -3075,7 +3080,7 @@ function DeepPlanPageContent() {
                               );
                             })()}
 
-                            {stop.type === 'attraction' && !isMeal && !isCustom && (stop.category || stop.durationMin || stop.ticketPrice) && (
+                            {stop.type === 'attraction' && !isMeal && (stop.category || stop.durationMin || stop.ticketPrice) && (
                               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                                 {stop.category && (
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold font-body ${cardStyle?.pill || 'bg-slate-100 text-slate-600'}`}>
