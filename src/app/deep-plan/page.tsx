@@ -526,32 +526,29 @@ function DeepPlanPageContent() {
     const effectTripId = trip.tripId;
     const cancelledRef = { current: false };
 
-    // Fire all requests in parallel — save progressively after each city completes (don't wait for all)
-    const promises = citiesNeeded.map((c, i) =>
-      fetchAiActivities(c.cityName, c.country, c.days, c.userPlaces, c.hotel, c.timeWindows, cancelledRef).then(() => {
-        if (cancelledRef.current) return;
-        setAutoFillProgress(prev => {
-          if (!prev) return null;
-          const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
-          const doneCount = updated.filter(city => city.done).length;
-          const nextPending = updated.find(city => !city.done);
-          return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
-        });
-        // Progressive save: persist each city's activities as soon as they arrive
-        if (trip.tripId && trip.tripId === effectTripId) trip.saveTrip().catch(() => {});
-      }).catch(() => {
-        // Update progress even on failure so the overlay doesn't hang
-        if (cancelledRef.current) return;
-        setAutoFillProgress(prev => {
-          if (!prev) return null;
-          const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
-          const doneCount = updated.filter(city => city.done).length;
-          const nextPending = updated.find(city => !city.done);
-          return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
-        });
-      })
-    );
-    Promise.allSettled(promises).then(() => {
+    // Fetch cities sequentially (2 at a time) to avoid OpenAI rate limits / timeouts
+    const CONCURRENCY = 2;
+    const updateProgress = (i: number) => {
+      if (cancelledRef.current) return;
+      setAutoFillProgress(prev => {
+        if (!prev) return null;
+        const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
+        const doneCount = updated.filter(city => city.done).length;
+        const nextPending = updated.find(city => !city.done);
+        return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
+      });
+      if (trip.tripId && trip.tripId === effectTripId) trip.saveTrip().catch(() => {});
+    };
+    const queue = [...citiesNeeded.map((c, i) => ({ ...c, i }))];
+    const runNext = async (): Promise<void> => {
+      const item = queue.shift();
+      if (!item || cancelledRef.current) return;
+      await fetchAiActivities(item.cityName, item.country, item.days, item.userPlaces, item.hotel, item.timeWindows, cancelledRef).catch(() => {});
+      updateProgress(item.i);
+      return runNext();
+    };
+    // Start CONCURRENCY workers
+    Promise.all(Array.from({ length: CONCURRENCY }, () => runNext())).then(() => {
       if (cancelledRef.current) return;
       setTimeout(() => setAutoFillProgress(null), 800);
     });
