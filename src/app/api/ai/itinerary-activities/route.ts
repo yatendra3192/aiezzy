@@ -100,47 +100,9 @@ Rules:
   try {
     let text = '';
 
-    if (openaiKey) {
-      // Retry up to 3 attempts — Railway asia-southeast1 has intermittent connectivity to OpenAI
-      for (let attempt = 0; attempt < 3 && !text; attempt++) {
-        const ctrl = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 30_000);
-        try {
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            signal: ctrl.signal,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${openaiKey}`,
-            },
-            body: JSON.stringify({
-              model: 'gpt-4.1-mini',
-              max_tokens: 4096,
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt },
-              ],
-            }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            text = data.choices?.[0]?.message?.content || '';
-          } else {
-            const errBody = await response.text().catch(() => '');
-            console.error(`OpenAI itinerary-activities error (attempt ${attempt + 1}):`, response.status, errBody.slice(0, 200));
-          }
-        } catch (e: any) {
-          console.error(`OpenAI itinerary-activities timeout/error (attempt ${attempt + 1}):`, e.name === 'AbortError' ? 'timeout (30s)' : e.message);
-        } finally {
-          clearTimeout(timeout);
-        }
-      }
-    }
-
-    // Fallback to Gemini
+    // Primary: Gemini (fast, reliable from Railway asia-southeast1)
     const geminiKey = process.env.GEMINI_API_KEY;
-    if (!text && geminiKey) {
+    if (geminiKey) {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 30_000);
       try {
@@ -163,6 +125,42 @@ Rules:
         }
       } catch (e: any) {
         console.error('Gemini itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (30s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    // Fallback to OpenAI
+    if (!text && openaiKey) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 30_000);
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            max_tokens: 4096,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          text = data.choices?.[0]?.message?.content || '';
+        } else {
+          const errBody = await response.text().catch(() => '');
+          console.error('OpenAI itinerary-activities error:', response.status, errBody.slice(0, 200));
+        }
+      } catch (e: any) {
+        console.error('OpenAI itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (30s)' : e.message);
       } finally {
         clearTimeout(timeout);
       }
