@@ -2836,7 +2836,7 @@ function DeepPlanPageContent() {
                                               const cityKey = day.city;
                                               const existingActs = trip.deepPlanData?.cityActivities?.[cityKey] || [];
                                               if (!existingActs.some(a => a.name === r.name)) {
-                                                const mealDuration = mealType === 'breakfast' ? 30 : mealType === 'lunch' ? 45 : 60;
+                                                const mealDuration = stop.mealType === 'breakfast' ? 30 : stop.mealType === 'lunch' ? 45 : 60;
                                                 trip.updateDeepPlanData({ cityActivities: { [cityKey]: [...existingActs, { name: r.name, category: r.cuisineType || 'restaurant', durationMin: mealDuration, bestTime: 'anytime', lat: r.lat, lng: r.lng }] } });
                                               }
                                               setExpandedMealSlot(null);
