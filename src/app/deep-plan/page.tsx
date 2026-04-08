@@ -1720,24 +1720,30 @@ function DeepPlanPageContent() {
       if (hotelReturn) newStops.push({ ...hotelReturn, time: formatTime24(Math.min(hotelReturnTime, 22 * 60)) });
       if (sleepStop) newStops.push({ ...sleepStop, time: formatTime24(Math.min(sleepTime, 23 * 60 + 30)) });
 
-      // Inject custom activities before dinner
+      // Inject custom activities at the correct time position
       const customs = customActivities[day.day] || [];
       if (customs.length > 0) {
-        const dinnerIdx = newStops.findIndex(s => s.mealType === 'dinner');
-        const insertIdx = dinnerIdx >= 0 ? dinnerIdx : newStops.length - 1;
-
-        // Check which customs were pinned from AI (their name exists in the base day's AI stops)
         const baseAiNames = new Set(day.stops.filter(s => s.type === 'attraction' && !s.mealType).map(s => s.name.trim().toLowerCase()));
-        const customStops: DeepStop[] = customs.map((activity, ci) => ({
-          id: `custom-${day.day}-${ci}`,
-          name: activity.name,
-          type: 'attraction' as const,
-          time: activity.time,
-          transport: { icon: 'walk', duration: '', distance: '' },
-          isPinned: baseAiNames.has(activity.name.trim().toLowerCase()),
-        }));
-
-        newStops.splice(insertIdx, 0, ...customStops);
+        for (const activity of customs) {
+          // Skip if already in stops (pinned AI activity)
+          if (newStops.some(s => s.name === activity.name && s.type === 'attraction')) continue;
+          const customStop: DeepStop = {
+            id: `custom-${day.day}-${customs.indexOf(activity)}`,
+            name: activity.name,
+            type: 'attraction' as const,
+            time: activity.time,
+            transport: { icon: 'walk', duration: '', distance: '' },
+            isPinned: baseAiNames.has(activity.name.trim().toLowerCase()),
+          };
+          // Insert at correct time position
+          const customMin = parseTime(activity.time);
+          let insertIdx = newStops.length;
+          for (let si = 0; si < newStops.length; si++) {
+            if (!newStops[si].time) continue;
+            if (parseTime(newStops[si].time!) > customMin) { insertIdx = si; break; }
+          }
+          newStops.splice(insertIdx, 0, customStop);
+        }
       }
 
       return { ...day, stops: newStops };
