@@ -106,7 +106,7 @@ Rules:
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 30_000);
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`, {
           method: 'POST',
           signal: ctrl.signal,
           headers: { 'Content-Type': 'application/json' },
