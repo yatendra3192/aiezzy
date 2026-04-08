@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
       name: p.displayName?.text || '',
       rating: p.rating || 0,
       priceLevel: p.priceLevel || '',
-      cuisineType: (p.primaryType || '').replace(/_/g, ' '),
+      cuisineType: (p.primaryType || 'restaurant').replace(/_/g, ' '),
       lat: p.location?.latitude || 0,
       lng: p.location?.longitude || 0,
       address: p.formattedAddress || '',

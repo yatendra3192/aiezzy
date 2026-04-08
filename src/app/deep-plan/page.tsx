@@ -2836,7 +2836,8 @@ function DeepPlanPageContent() {
                                               const cityKey = day.city;
                                               const existingActs = trip.deepPlanData?.cityActivities?.[cityKey] || [];
                                               if (!existingActs.some(a => a.name === r.name)) {
-                                                trip.updateDeepPlanData({ cityActivities: { [cityKey]: [...existingActs, { name: r.name, category: r.cuisineType || 'restaurant', durationMin: 45, bestTime: 'anytime', lat: r.lat, lng: r.lng }] } });
+                                                const mealDuration = mealType === 'breakfast' ? 30 : mealType === 'lunch' ? 45 : 60;
+                                                trip.updateDeepPlanData({ cityActivities: { [cityKey]: [...existingActs, { name: r.name, category: r.cuisineType || 'restaurant', durationMin: mealDuration, bestTime: 'anytime', lat: r.lat, lng: r.lng }] } });
                                               }
                                               setExpandedMealSlot(null);
                                             }} className="flex-shrink-0 flex items-center gap-2 bg-white border border-orange-100 hover:border-orange-300 rounded-lg px-2.5 py-1.5 transition-colors shadow-sm hover:shadow group">
