@@ -2070,9 +2070,7 @@ function DeepPlanPageContent() {
           if (dayStops[i]?.lat && dayStops[i]?.lng) { lat = dayStops[i].lat; lng = dayStops[i].lng; break; }
         }
       }
-      if (!lat) { setMealSuggestionsLoading(prev => ({ ...prev, [mealKey]: false })); return; }
-
-      const res = await fetch(`/api/restaurants?lat=${lat}&lng=${lng}&mealType=${mealType}`);
+      const res = await fetch(lat ? `/api/restaurants?lat=${lat}&lng=${lng}&mealType=${mealType}` : `/api/restaurants?city=${encodeURIComponent(city)}&mealType=${mealType}`);
       if (res.ok) {
         const data = await res.json();
         setMealSuggestions(prev => ({ ...prev, [mealKey]: data.restaurants || [] }));

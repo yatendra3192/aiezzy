@@ -19,12 +19,25 @@ export async function GET(req: NextRequest) {
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const lat = parseFloat(searchParams.get('lat') || '');
-  const lng = parseFloat(searchParams.get('lng') || '');
+  let lat = parseFloat(searchParams.get('lat') || '');
+  let lng = parseFloat(searchParams.get('lng') || '');
+  const city = searchParams.get('city') || '';
   const mealType = searchParams.get('mealType') || 'lunch';
 
+  // Geocode city if lat/lng not provided
+  if ((isNaN(lat) || isNaN(lng)) && city && API_KEY) {
+    try {
+      const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${API_KEY}`, { signal: AbortSignal.timeout(5000) });
+      const geoData = await geoRes.json();
+      if (geoData.status === 'OK' && geoData.results?.[0]) {
+        lat = geoData.results[0].geometry.location.lat;
+        lng = geoData.results[0].geometry.location.lng;
+      }
+    } catch {}
+  }
+
   if (isNaN(lat) || isNaN(lng)) {
-    return NextResponse.json({ error: 'lat and lng required' }, { status: 400 });
+    return NextResponse.json({ restaurants: [] });
   }
 
   if (!API_KEY) {
