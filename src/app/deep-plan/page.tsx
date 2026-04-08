@@ -528,11 +528,13 @@ function DeepPlanPageContent() {
 
     // Fetch cities sequentially (2 at a time) to avoid OpenAI rate limits / timeouts
     const CONCURRENCY = 2;
-    const updateProgress = (i: number) => {
+    const updateProgress = (i: number, cityName: string) => {
       if (cancelledRef.current) return;
+      // Check if activities actually arrived for this city
+      const hasActivities = (trip.deepPlanData?.cityActivities?.[cityName]?.length || 0) > 0;
       setAutoFillProgress(prev => {
         if (!prev) return null;
-        const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true } : city);
+        const updated = prev.cities.map((city, idx) => idx === i ? { ...city, done: true, failed: !hasActivities } : city);
         const doneCount = updated.filter(city => city.done).length;
         const nextPending = updated.find(city => !city.done);
         return { ...prev, done: doneCount, current: nextPending?.name || 'Done', cities: updated };
@@ -544,7 +546,7 @@ function DeepPlanPageContent() {
       const item = queue.shift();
       if (!item || cancelledRef.current) return;
       await fetchAiActivities(item.cityName, item.country, item.days, item.userPlaces, item.hotel, item.timeWindows, cancelledRef).catch(() => {});
-      updateProgress(item.i);
+      updateProgress(item.i, item.cityName);
       return runNext();
     };
     // Start CONCURRENCY workers
@@ -2129,9 +2131,13 @@ function DeepPlanPageContent() {
             <div className="space-y-2">
               {autoFillProgress.cities.map((city, i) => (
                 <div key={city.name} className="flex items-center gap-2.5 text-[13px] font-body">
-                  {city.done ? (
+                  {city.done && !(city as any).failed ? (
                     <div className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                  ) : city.done && (city as any).failed ? (
+                    <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     </div>
                   ) : autoFillProgress.current === city.name ? (
                     <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">

@@ -101,8 +101,8 @@ Rules:
     let text = '';
 
     if (openaiKey) {
-      // Retry up to 2 attempts — Railway asia-southeast1 has intermittent connectivity to OpenAI
-      for (let attempt = 0; attempt < 2 && !text; attempt++) {
+      // Retry up to 3 attempts — Railway asia-southeast1 has intermittent connectivity to OpenAI
+      for (let attempt = 0; attempt < 3 && !text; attempt++) {
         const ctrl = new AbortController();
         const timeout = setTimeout(() => ctrl.abort(), 30_000);
         try {
