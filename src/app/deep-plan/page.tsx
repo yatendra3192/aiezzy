@@ -2476,9 +2476,10 @@ function DeepPlanPageContent() {
                           </div>
                         </div>
                       </div>
-                      {/* Gradient visual panel (desktop only) */}
-                      <div className="hidden md:flex items-center justify-center w-[120px] bg-gradient-to-br from-teal-100 via-cyan-100 to-blue-100 flex-shrink-0 overflow-hidden">
-                        <span className="text-[48px] font-display font-black text-white/30 tracking-tighter select-none">{cityDisplayName.slice(0, 3).toUpperCase()}</span>
+                      {/* City photo panel (desktop only) */}
+                      <div className="hidden md:block w-[160px] flex-shrink-0 relative overflow-hidden">
+                        <PlacePhoto name={cityDisplayName} city={cityCountry || ''} className="absolute inset-0 w-full h-full object-cover" fallbackIcon="" />
+                        <div className="absolute inset-0 bg-gradient-to-l from-transparent to-bg-surface/80" />
                       </div>
                     </div>
                   </div>
