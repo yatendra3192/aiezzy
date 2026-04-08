@@ -1,6 +1,28 @@
 
 import { Destination, TransportLeg } from '@/data/mockData';
 
+interface DayActivity {
+  name: string;
+  time: string | null;
+  category?: string;
+  durationMin?: number;
+  ticketPrice?: string;
+  openingHours?: string;
+  note?: string;
+  mealType?: 'breakfast' | 'lunch' | 'dinner';
+  type: string;
+  transport?: { icon: string; duration: string; distance: string } | null;
+}
+
+interface PDFDay {
+  day: number;
+  date: string;
+  type: 'travel' | 'explore' | 'departure' | 'arrival';
+  city: string;
+  stops: DayActivity[];
+  dayCost: number;
+}
+
 interface TripPDFData {
   from: { name: string; parentCity?: string; fullName?: string };
   fromAddress: string;
@@ -13,6 +35,17 @@ interface TripPDFData {
   tripType: 'roundTrip' | 'oneWay';
   currency: string;
   formatPrice: (amount: number) => string;
+  /** Rich day-by-day itinerary from deep plan */
+  days?: PDFDay[];
+  /** Budget breakdown amounts (in INR) */
+  budget?: {
+    flights: number;
+    trains: number;
+    hotels: number;
+    attractions: number;
+    food: number;
+    localTransport: number;
+  };
 }
 
 // Colors
@@ -467,6 +500,131 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
   }
 
   // ═══════════════════════════════════════════════════════════════════
+  // DAY-BY-DAY ITINERARY (from deep plan)
+  // ═══════════════════════════════════════════════════════════════════
+  if (data.days && data.days.length > 0) {
+    checkPage(15);
+    y += 5;
+    pdf.setTextColor(...DARK);
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Day-by-Day Itinerary', margin, y);
+    y += 3;
+    drawLine(y);
+    y += 5;
+
+    const DAY_TYPE_COLORS: Record<string, readonly [number, number, number]> = {
+      travel: [59, 130, 246],    // blue
+      explore: [22, 163, 74],    // green
+      departure: [234, 88, 12],  // orange
+      arrival: [139, 92, 246],   // violet
+    };
+
+    for (const day of data.days) {
+      checkPage(20);
+      const dayColor = DAY_TYPE_COLORS[day.type] || TEAL;
+      const dayLabel = day.type === 'travel' ? 'Travel' : day.type === 'explore' ? 'Explore' : day.type === 'departure' ? 'Departure' : 'Arrival';
+
+      // Day header bar
+      pdf.setFillColor(dayColor[0], dayColor[1], dayColor[2]);
+      pdf.roundedRect(margin, y, contentW, 8, 1.5, 1.5, 'F');
+      pdf.setTextColor(...WHITE);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Day ${day.day} - ${day.date}`, margin + 3, y + 5.5);
+      pdf.setFontSize(7);
+      pdf.text(`${dayLabel}  |  ${day.city}`, W - margin - 3, y + 5.5, { align: 'right' });
+      y += 11;
+
+      // Stops/activities
+      const activities = day.stops.filter(s => s.type === 'attraction' || s.type === 'hotel' || s.mealType);
+      for (const stop of activities) {
+        if (stop.name === 'Rest / Sleep') continue;
+
+        checkPage(12);
+        const timeStr = stop.time || '';
+
+        if (stop.mealType) {
+          // Meal row — compact
+          const mealEmoji = stop.mealType === 'breakfast' ? 'Breakfast' : stop.mealType === 'lunch' ? 'Lunch' : 'Dinner';
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(...GRAY);
+          pdf.text(`${timeStr}  ${mealEmoji}`, margin + 5, y + 3);
+          y += 5;
+        } else if (stop.type === 'hotel' && stop.name !== 'Return to hotel') {
+          // Hotel stop — compact
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(...DARK);
+          pdf.text(`${timeStr}  ${truncate(stop.name, contentW - 20, 7)}`, margin + 5, y + 3);
+          y += 5;
+        } else if (stop.type === 'attraction' && !stop.mealType && !stop.name.startsWith('Free time')) {
+          // Activity card — rich details
+          pdf.setFillColor(250, 248, 245);
+          const cardH = stop.note ? 14 : 10;
+          pdf.roundedRect(margin + 3, y, contentW - 6, cardH, 1, 1, 'F');
+
+          // Time + Name
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(dayColor[0], dayColor[1], dayColor[2]);
+          pdf.text(timeStr, margin + 5, y + 4);
+          pdf.setTextColor(...DARK);
+          pdf.setFontSize(8);
+          pdf.text(truncate(stop.name, contentW - 70, 8), margin + 18, y + 4);
+
+          // Category + Duration + Ticket Price (right side)
+          const details: string[] = [];
+          if (stop.category) details.push(stop.category.charAt(0).toUpperCase() + stop.category.slice(1));
+          if (stop.durationMin) {
+            const h = Math.floor(stop.durationMin / 60);
+            const m = stop.durationMin % 60;
+            details.push(h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`);
+          }
+          if (stop.ticketPrice) details.push(stop.ticketPrice.replace(/[^\x00-\x7F]/g, ''));
+          if (details.length > 0) {
+            pdf.setFontSize(6);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(...TEAL);
+            pdf.text(details.join('  |  '), W - margin - 5, y + 4, { align: 'right' });
+          }
+
+          // Opening hours + Note
+          if (stop.openingHours || stop.note) {
+            pdf.setFontSize(6);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(...GRAY);
+            const subLine: string[] = [];
+            if (stop.openingHours) subLine.push(stop.openingHours);
+            if (stop.note) subLine.push(stop.note);
+            pdf.text(truncate(subLine.join('  |  '), contentW - 15, 6), margin + 18, y + 8.5);
+          }
+
+          y += cardH + 2;
+
+          // Travel between activities
+          if (stop.transport && stop.transport.duration && stop.transport.duration !== '') {
+            pdf.setFontSize(5.5);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setTextColor(180, 180, 180);
+            const tIcon = stop.transport.icon === 'walk' ? 'Walk' : stop.transport.icon === 'drive' ? 'Drive' : 'Transit';
+            pdf.text(`${tIcon} ${stop.transport.duration} - ${stop.transport.distance}`, margin + 18, y + 1.5);
+            y += 3;
+          }
+        } else if (stop.name === 'Return to hotel') {
+          pdf.setFontSize(7);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(...GRAY);
+          pdf.text(`${timeStr}  Return to hotel`, margin + 5, y + 3);
+          y += 5;
+        }
+      }
+      y += 3;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
   // COST BREAKDOWN TABLE
   // ═══════════════════════════════════════════════════════════════════
   checkPage(40);
@@ -581,7 +739,35 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
     });
   });
 
+  // Budget estimate rows (attractions, food, local transport)
+  if (data.budget) {
+    const budgetRows = [
+      { label: 'Attractions', amount: data.budget.attractions },
+      { label: 'Food (est.)', amount: data.budget.food },
+      { label: 'Local Transport (est.)', amount: data.budget.localTransport },
+    ];
+    for (const row of budgetRows) {
+      if (row.amount <= 0) continue;
+      checkPage(7);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...DARK);
+      pdf.text(row.label, col1, y + 3);
+      pdf.setTextColor(...GRAY);
+      pdf.text('Estimated', col2, y + 3);
+      pdf.text('', col3, y + 3, { align: 'right' });
+      pdf.setTextColor(...DARK);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(fp(row.amount), col4, y + 3, { align: 'right' });
+      y += 6;
+      drawLine(y - 1, [230, 230, 225]);
+    }
+  }
+
   // Total row
+  const grandTotal = data.budget
+    ? totalCost + data.budget.attractions + data.budget.food + data.budget.localTransport
+    : totalCost;
   y += 2;
   pdf.setFillColor(...CORAL);
   pdf.rect(margin, y, contentW, 8, 'F');
@@ -589,7 +775,7 @@ export async function exportTripPDFFromData(data: TripPDFData, filename: string)
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'bold');
   pdf.text('ESTIMATED TOTAL', margin + 3, y + 5.5);
-  pdf.text(fp(totalCost), W - margin - 5, y + 5.5, { align: 'right' });
+  pdf.text(fp(grandTotal), W - margin - 5, y + 5.5, { align: 'right' });
 
   y += 14;
 

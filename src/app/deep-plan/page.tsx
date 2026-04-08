@@ -2226,6 +2226,27 @@ function DeepPlanPageContent() {
                     tripType: trip.tripType,
                     currency,
                     formatPrice: (amount: number) => formatPrice(amount, currency),
+                    days: adjustedDays.map(d => ({
+                      day: d.day,
+                      date: d.date,
+                      type: d.type,
+                      city: d.city,
+                      dayCost: d.dayCost,
+                      stops: d.stops.map(s => ({
+                        name: s.name, time: s.time, type: s.type,
+                        category: s.category, durationMin: s.durationMin,
+                        ticketPrice: s.ticketPrice, openingHours: s.openingHours,
+                        note: s.note, mealType: s.mealType, transport: s.transport,
+                      })),
+                    })),
+                    budget: {
+                      flights: trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult * trip.adults, 0),
+                      trains: trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * (trip.adults + (trip.children || 0)), 0),
+                      hotels: trip.destinations.filter(d => d.selectedHotel).reduce((s, d) => s + d.selectedHotel!.pricePerNight * d.nights, 0),
+                      attractions: attractionCost,
+                      food: foodCost,
+                      localTransport: localTransportCost,
+                    },
                   }, `AIEzzy-DeepPlan${cityNames ? '-' + cityNames : ''}.pdf`);
                 } catch (e) {
                   console.error('PDF export failed:', e);
