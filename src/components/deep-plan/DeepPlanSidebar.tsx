@@ -115,17 +115,27 @@ export default memo(function DeepPlanSidebar({
 
   // Booking progress
   const { booked, total, pct, needAttention } = useMemo(() => {
-    const bookedTransport = transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
-    const bookedHotels = destinations.filter(d => d.nights > 0 && d.selectedHotel).length;
-    const bookedDocs = (bookingDocs || []).length;
-    const totalTransport = transportLegs.length;
-    const totalHotels = destinations.filter(d => d.nights > 0).length;
-    const b = bookedTransport + bookedHotels + bookedDocs;
+    const docs = bookingDocs || [];
+    const totalTransport = transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
+    const totalHotels = destinations.filter(d => d.nights > 0 && d.selectedHotel).length;
     const t = totalTransport + totalHotels;
+    // Count items as "booked" only if they have an uploaded booking document
+    const bookedTransport = transportLegs.filter((l, i) => {
+      if (!l.selectedFlight && !l.selectedTrain) return false;
+      const fromCity = i === 0 ? '' : (destinations[Math.min(i - 1, destinations.length - 1)]?.city?.parentCity || destinations[Math.min(i - 1, destinations.length - 1)]?.city?.name || '');
+      const toCity = i < destinations.length ? (destinations[i]?.city?.parentCity || destinations[i]?.city?.name || '') : '';
+      return docs.some((d: any) => d.docType === 'transport' && d.matchCities?.some((c: string) => c.toLowerCase().includes(fromCity.toLowerCase()) || c.toLowerCase().includes(toCity.toLowerCase())));
+    }).length;
+    const bookedHotels = destinations.filter(d => {
+      if (d.nights <= 0 || !d.selectedHotel) return false;
+      const cityKey = (d.city.parentCity || d.city.name).toLowerCase();
+      return docs.some((doc: any) => doc.docType === 'hotel' && doc.matchCities?.some((c: string) => c.toLowerCase().includes(cityKey) || cityKey.includes(c.toLowerCase())));
+    }).length;
+    const b = bookedTransport + bookedHotels;
     return {
       booked: b, total: t,
       pct: t > 0 ? Math.round((b / t) * 100) : 0,
-      needAttention: (totalTransport - bookedTransport) + (totalHotels - bookedHotels),
+      needAttention: t - b,
     };
   }, [transportLegs, destinations, bookingDocs]);
 
