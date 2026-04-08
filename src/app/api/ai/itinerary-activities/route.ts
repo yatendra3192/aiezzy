@@ -138,6 +138,36 @@ Rules:
       }
     }
 
+    // Fallback to Gemini
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!text && geminiKey) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 30_000);
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        } else {
+          const errBody = await response.text().catch(() => '');
+          console.error('Gemini itinerary-activities error:', response.status, errBody.slice(0, 200));
+        }
+      } catch (e: any) {
+        console.error('Gemini itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (30s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
     // Fallback to Anthropic
     if (!text && anthropicKey) {
       const ctrl = new AbortController();
