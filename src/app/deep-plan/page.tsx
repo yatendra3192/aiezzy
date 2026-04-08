@@ -2335,51 +2335,7 @@ function DeepPlanPageContent() {
             </div>{/* close title + buttons flex row */}
           </div>
 
-          {/* ====== [C] TRIP OVERVIEW CARD ====== */}
-          {adjustedDays.length > 0 && (
-            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 mb-5 shadow-sm print-hide">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  </div>
-                  <div>
-                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{adjustedDays.length}</p>
-                    <p className="text-[11px] text-text-muted font-body mt-0.5">Days</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-teal-50 flex items-center justify-center flex-shrink-0">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                  </div>
-                  <div>
-                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{trip.destinations.length}</p>
-                    <p className="text-[11px] text-text-muted font-body mt-0.5">{trip.destinations.length === 1 ? 'City' : 'Cities'}</p>
-                  </div>
-                </div>
-                {(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost) > 0 && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-accent-cyan/10 flex items-center justify-center flex-shrink-0">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                    </div>
-                    <div>
-                      <p className="text-[16px] font-mono font-bold text-accent-cyan leading-none">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost, currency)}</p>
-                      <p className="text-[11px] text-text-muted font-body mt-0.5">Est. Budget</p>
-                    </div>
-                  </div>
-                )}
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center flex-shrink-0">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                  </div>
-                  <div>
-                    <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{trip.adults + (trip.children || 0) + (trip.infants || 0)}</p>
-                    <p className="text-[11px] text-text-muted font-body mt-0.5">Travelers</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Trip overview stats moved to sidebar Trip Progress — removed duplicate here */}
 
           {/* ====== [D] STICKY DAY NAVIGATION ====== */}
           {adjustedDays.length > 1 && (
