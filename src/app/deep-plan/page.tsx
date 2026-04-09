@@ -2510,6 +2510,16 @@ function DeepPlanPageContent() {
                                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/15 backdrop-blur-md text-white font-body border border-white/10">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
                               </div>
                               <span className="text-[11px] text-white/60 font-body">{cityActivityCount} {cityActivityCount === 1 ? 'place' : 'places'} to explore</span>
+                              {/* Highlight chips — auto-generated from activity categories */}
+                              {(() => {
+                                const cats = new Set<string>();
+                                adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).forEach(d => d.stops.forEach(s => { if (s.category) cats.add(s.category); }));
+                                const chipMap: Record<string, string> = { museum: 'Culture', landmark: 'Landmarks', park: 'Nature', market: 'Shopping', religious: 'Spiritual', experience: 'Experiences', viewpoint: 'Scenic', restaurant: 'Food', neighborhood: 'Local Life' };
+                                const chips = Array.from(cats).map(c => chipMap[c]).filter(Boolean).slice(0, 3);
+                                return chips.length > 0 ? (
+                                  <div className="flex gap-1.5">{chips.map(c => <span key={c} className="px-2 py-0.5 rounded-full text-[9px] font-body font-medium bg-white/10 text-white/70 border border-white/10">{c}</span>)}</div>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
                         </div>
@@ -2669,16 +2679,27 @@ function DeepPlanPageContent() {
                             </span>
                           )}
                         </div>
-                        {/* Activity highlights with mini route */}
+                        {/* Mini photo strip + route preview */}
                         {topAttractions.length > 0 && (
-                          <div className="flex items-center gap-1 text-[11px] text-text-muted font-body overflow-hidden">
-                            {topAttractions.map((s, ai) => (
-                              <span key={ai} className="flex items-center gap-0.5 flex-shrink-0">
-                                {ai > 0 && <span className="text-text-muted/30 mx-0.5">&rsaquo;</span>}
-                                <span className="truncate max-w-[120px]">{s.name}</span>
-                              </span>
-                            ))}
-                            {more && <span className="text-text-muted/50 flex-shrink-0 ml-0.5">{more}</span>}
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            {/* Tiny photo thumbnails */}
+                            <div className="flex -space-x-1.5 flex-shrink-0">
+                              {topAttractions.slice(0, 3).map((s, ai) => (
+                                <div key={ai} className="w-7 h-7 rounded-full overflow-hidden border-2 border-white shadow-sm">
+                                  <PlacePhoto name={s.name} city={day.city} className="w-full h-full object-cover" fallbackIcon="" />
+                                </div>
+                              ))}
+                            </div>
+                            {/* Route names */}
+                            <div className="flex items-center gap-1 text-[11px] text-text-muted font-body overflow-hidden flex-1 min-w-0">
+                              {topAttractions.map((s, ai) => (
+                                <span key={ai} className="flex items-center gap-0.5 flex-shrink-0">
+                                  {ai > 0 && <span className="text-text-muted/30 mx-0.5">&rsaquo;</span>}
+                                  <span className="truncate max-w-[100px]">{s.name}</span>
+                                </span>
+                              ))}
+                              {more && <span className="text-text-muted/50 flex-shrink-0 ml-0.5">{more}</span>}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2946,7 +2967,7 @@ function DeepPlanPageContent() {
                               </div>
                             </div>
                           )}
-                          <div className={`flex-1${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-2.5` : ''}`}>
+                          <div className={`flex-1 group${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-3` : ''}`}>
                             <div className={isAttractionCard ? 'flex gap-3 items-start' : ''}>
                             {isAttractionCard && (
                               <div data-drag-handle style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing" onDragStart={e => e.preventDefault()} draggable={false}>
@@ -2987,7 +3008,7 @@ function DeepPlanPageContent() {
                                 )}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setOpenActivityMenu(openActivityMenu === stop.id ? null : stop.id); }}
-                                  className="p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
+                                  className={`p-1 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-card transition-all ${openActivityMenu === stop.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'}`}
                                   aria-label="Activity actions"
                                 >
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
@@ -3210,7 +3231,7 @@ function DeepPlanPageContent() {
                             const isNextDayArr = hasReliableDates || (arrHour < depHour && durH > 2) || durH >= 24;
                             return (
                               <div className="pl-4 py-1">
-                                <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                                <div className="ml-2 border-l border-dashed border-gray-200 pl-4 py-0.5">
                                   <div className="bg-blue-50/50 border border-blue-200/60 border-l-[3px] border-l-blue-500 rounded-xl p-3">
                                     {/* Header: icon + title + badges */}
                                     <div className="flex items-center justify-between mb-2.5">
@@ -3319,7 +3340,7 @@ function DeepPlanPageContent() {
                             const transportLabel = isBus ? 'Bus' : isDrive ? 'Drive' : 'Train';
                             return (
                               <div className="pl-4 py-1">
-                                <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                                <div className="ml-2 border-l border-dashed border-gray-200 pl-4 py-0.5">
                                   <div className={`${transportStyle} border-l-[3px] rounded-xl p-3`}>
                                     {/* Header */}
                                     <div className="flex items-center justify-between mb-2.5">
@@ -3432,7 +3453,7 @@ function DeepPlanPageContent() {
 
                           return (
                             <div className="pl-4 py-1">
-                              <div className="ml-2 border-l-2 border-dashed border-border-subtle pl-4 py-1">
+                              <div className="ml-2 border-l border-dashed border-gray-200 pl-4 py-0.5">
                                 {legIdx !== undefined ? (
                                   isReadOnly ? (
                                   <div className="flex items-center gap-2 text-text-secondary">
