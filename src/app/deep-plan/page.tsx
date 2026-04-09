@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, Reorder, AnimatePresence, useDragControls } from 'framer-motion';
+import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub } from '@/data/mockData';
 import { getCityPricing, calcTaxiCost } from '@/data/cityPricing';
@@ -247,10 +247,6 @@ function DeepPlanPageContent() {
   const { currency, setCurrency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  // Long-press drag: which stop ID is currently drag-enabled (null = none)
-  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressPointerRef = useRef<{ x: number; y: number; pointerId: number; pointerType: string } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   // Meal restaurant suggestions
   const [mealSuggestions, setMealSuggestions] = useState<Record<string, Array<{ placeId: string; name: string; rating: number; priceLevel?: string; cuisineType?: string; lat: number; lng: number; photoRef?: string }>>>({});
@@ -2855,9 +2851,25 @@ function DeepPlanPageContent() {
                               </div>
                             )}
                           </div>
-                          {/* Drag handle indicator — long-press the card to activate drag */}
+                          {/* Drag handle — touch/hold this to drag reorder. Larger touch target on mobile */}
                           {isDraggableActivity && !isReadOnly && (
-                            <div className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 mt-1.5 -mr-1 select-none" aria-label="Long-press to drag">
+                            <div
+                              className="print-hide flex flex-col justify-center items-center gap-[2px] opacity-40 hover:opacity-80 active:opacity-100 flex-shrink-0 cursor-grab active:cursor-grabbing select-none w-6 min-h-[40px] -ml-1 mr-0.5 rounded"
+                              style={{ touchAction: 'none' }}
+                              onPointerDown={(e: React.PointerEvent) => {
+                                // Dispatch pointerdown on the parent Reorder.Item to start drag
+                                e.stopPropagation();
+                                const reorderItem = (e.currentTarget as HTMLElement).closest('.select-none');
+                                if (reorderItem) {
+                                  reorderItem.dispatchEvent(new PointerEvent('pointerdown', {
+                                    clientX: e.clientX, clientY: e.clientY,
+                                    pointerId: e.pointerId, pointerType: e.pointerType,
+                                    bubbles: true, cancelable: true,
+                                  }));
+                                }
+                              }}
+                              aria-label="Drag to reorder"
+                            >
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
@@ -3472,39 +3484,14 @@ function DeepPlanPageContent() {
                     );
 
                     if (useReorder && isDraggableActivity) {
-                      const isDragActive = dragActiveId === stop.id;
                       return (
                         <Reorder.Item
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className={`relative select-none ${isDragActive ? 'ring-2 ring-accent-cyan/40 rounded-xl z-10' : ''}`}
-                          style={isDragActive ? { touchAction: 'none' } : undefined}
-                          dragListener={!isReadOnly}
+                          className="relative select-none"
+                          dragListener={false}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
-                          onDragStart={() => {
-                            // Only allow drag if long-press activated it
-                            if (!isDragActive && !longPressTimerRef.current) {
-                              setDragActiveId(null);
-                            }
-                          }}
-                          onDragEnd={() => setDragActiveId(null)}
-                          onTouchStart={isReadOnly ? undefined : () => {
-                            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-                            const stopId = stop.id;
-                            longPressTimerRef.current = setTimeout(() => {
-                              if (navigator.vibrate) navigator.vibrate(50);
-                              setDragActiveId(stopId);
-                            }, 400);
-                          }}
-                          onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
-                          onTouchMove={() => {
-                            // Cancel long-press if finger moves (scrolling)
-                            if (longPressTimerRef.current && !isDragActive) {
-                              clearTimeout(longPressTimerRef.current);
-                              longPressTimerRef.current = null;
-                            }
-                          }}
                         >
                           {stopContent}
                         </Reorder.Item>
