@@ -2215,7 +2215,7 @@ function DeepPlanPageContent() {
   }
 
   return (
-    <div className="min-h-screen flex justify-center p-4 py-6 deep-plan-page">
+    <div className="min-h-screen flex justify-center p-4 py-6 deep-plan-page bg-bg-primary">
       {/* Auto-fill progress overlay */}
       {autoFillProgress && (
         <motion.div
