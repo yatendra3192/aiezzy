@@ -2403,9 +2403,11 @@ function DeepPlanPageContent() {
 
           {/* ====== [D] STICKY DAY NAVIGATION ====== */}
           {adjustedDays.length > 1 && (
-            <div className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-sm py-2.5 mb-5 border-b border-border-subtle/50 print-hide">
+            <div className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-sm py-3 mb-5 border-b border-border-subtle/30 print-hide">
               <div className="relative">
-                <div className="flex gap-1.5 overflow-x-auto pb-1.5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
+                {/* Connecting rail behind chips */}
+                <div className="absolute top-1/2 left-3 right-3 h-[2px] bg-gray-200/60 -translate-y-1/2 rounded-full" />
+                <div className="relative flex gap-1.5 overflow-x-auto pb-1.5" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
                   {adjustedDays.map(d => {
                     const s = DAY_TYPE_STYLES[d.type];
                     const cityLabel = d.city ? (trip.destinations.find(dest => dest.city.name === d.city || (dest.city.parentCity || dest.city.name) === d.city)?.city.parentCity || d.city) : '';
@@ -2735,6 +2737,37 @@ function DeepPlanPageContent() {
                     )}
                   </div>
                 )}
+
+                {/* Day Summary Block — editorial feel for explore days */}
+                {isDayExpanded(day.day) && day.type === 'explore' && (() => {
+                  const dayAttractions = day.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time'));
+                  const themes = trip.deepPlanData?.dayThemes?.[day.city] || trip.deepPlanData?.dayThemes?.[trip.destinations.find(d => d.city.name === day.city)?.city.parentCity || ''];
+                  const theme = themes && typeof day.exploreDayIndex === 'number' ? themes[day.exploreDayIndex] : null;
+                  const transportStops = day.stops.filter(s => s.transport?.duration && s.transport.duration !== '');
+                  const totalWalkKm = transportStops.reduce((sum, s) => {
+                    if (s.transport?.icon !== 'walk') return sum;
+                    return sum + parseDistKm(s.transport?.distance || '');
+                  }, 0);
+                  if (dayAttractions.length === 0) return null;
+                  return (
+                    <div className="mx-4 mb-3 px-4 py-3 bg-gradient-to-r from-gray-50 to-transparent rounded-xl border border-gray-100/60">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 text-[11px] font-body text-text-muted">
+                          {theme && <span className="text-text-secondary font-medium italic">{theme}</span>}
+                          <span className="flex items-center gap-1">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            {dayAttractions.length} stops
+                          </span>
+                          {totalWalkKm > 0.5 && <span className="flex items-center gap-1">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 3a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm-1.5 18l-2.4-8.5 2.9-2v8.5h-1l.5 2zm3-18l-1 4 3 3v7h-2v-5l-3-3 1-4 5 2v-2z"/></svg>
+                            {totalWalkKm.toFixed(1)} km walk
+                          </span>}
+                        </div>
+                        {day.dayCost > 0 && <span className="text-[11px] font-mono text-text-muted">{formatPrice(day.dayCost, currency)}</span>}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Timeline — solid line = confirmed plan */}
                 {(() => {
