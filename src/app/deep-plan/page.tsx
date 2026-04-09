@@ -1764,12 +1764,24 @@ function DeepPlanPageContent() {
             transport: { icon: 'walk', duration: '', distance: '' },
             isPinned: baseAiNames.has(activity.name.trim().toLowerCase()),
           };
-          // Insert at correct time position
+          // If this is a meal venue, insert right AFTER the corresponding meal chip
+          const allMealVenues = trip.deepPlanData?.selectedMealVenues || {};
+          const isMealVenue = Object.values(allMealVenues).some((v: any) => v?.name === activity.name);
           const customMin = parseTime(activity.time);
           let insertIdx = newStops.length;
-          for (let si = 0; si < newStops.length; si++) {
-            if (!newStops[si].time) continue;
-            if (parseTime(newStops[si].time!) > customMin) { insertIdx = si; break; }
+          if (isMealVenue) {
+            // Find the meal chip with the same time and insert after it
+            for (let si = 0; si < newStops.length; si++) {
+              if (newStops[si].mealType && newStops[si].time && parseTime(newStops[si].time!) === customMin) {
+                insertIdx = si + 1;
+                break;
+              }
+            }
+          } else {
+            for (let si = 0; si < newStops.length; si++) {
+              if (!newStops[si].time) continue;
+              if (parseTime(newStops[si].time!) > customMin) { insertIdx = si; break; }
+            }
           }
           newStops.splice(insertIdx, 0, customStop);
         }
