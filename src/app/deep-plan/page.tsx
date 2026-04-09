@@ -3481,7 +3481,7 @@ function DeepPlanPageContent() {
                           dragListener={isDragActive}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
                           onDragEnd={() => setDragActiveId(null)}
-                          onPointerDown={isReadOnly ? undefined : (e) => {
+                          onPointerDown={isReadOnly ? undefined : (e: React.PointerEvent) => {
                             // Start long-press timer (500ms) to activate drag
                             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
                             longPressTimerRef.current = setTimeout(() => {
