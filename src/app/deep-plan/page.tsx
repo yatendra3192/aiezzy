@@ -272,6 +272,11 @@ function DeepPlanPageContent() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  // Place info modal
+  const [placeInfoModal, setPlaceInfoModal] = useState<{ name: string; city: string } | null>(null);
+  const [placeInfoData, setPlaceInfoData] = useState<{ photos: string[]; description: string; keyFacts: string[]; address: string; rating: number } | null>(null);
+  const [placeInfoLoading, setPlaceInfoLoading] = useState(false);
+  const [placeInfoPhotoIdx, setPlaceInfoPhotoIdx] = useState(0);
   // Meal restaurant suggestions
   const [mealSuggestions, setMealSuggestions] = useState<Record<string, Array<{ placeId: string; name: string; rating: number; priceLevel?: string; cuisineType?: string; lat: number; lng: number; photoRef?: string }>>>({});
   const [mealSuggestionsLoading, setMealSuggestionsLoading] = useState<Record<string, boolean>>({});
@@ -1986,6 +1991,25 @@ function DeepPlanPageContent() {
     return '16:00';
   };
 
+  // Open place info modal
+  const openPlaceInfo = useCallback(async (name: string, city: string) => {
+    setPlaceInfoModal({ name, city });
+    setPlaceInfoData(null);
+    setPlaceInfoPhotoIdx(0);
+    setPlaceInfoLoading(true);
+    try {
+      const res = await fetch(`/api/place-info?place=${encodeURIComponent(name)}&city=${encodeURIComponent(city)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPlaceInfoData(data);
+      }
+    } catch (e) {
+      console.error('Place info fetch failed:', e);
+    } finally {
+      setPlaceInfoLoading(false);
+    }
+  }, []);
+
   const handleAddActivity = (dayNumber: number) => {
     const text = activityInputText[dayNumber]?.trim();
     if (!text) return;
@@ -2914,7 +2938,7 @@ function DeepPlanPageContent() {
                                       </button>
                                     );
                                   })()}
-                                  <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : stop.name}</h3>
+                                  <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : isAttractionCard ? (<button onClick={() => openPlaceInfo(stop.name, day.city)} className="text-left hover:text-accent-cyan transition-colors">{stop.name}</button>) : stop.name}</h3>
                                 </div>
                               </div>
                               {/* Action menu — three-dot with dropdown */}
@@ -3987,6 +4011,120 @@ function DeepPlanPageContent() {
           view="deepplan"
         />
       )}
+
+      {/* Place Info Modal */}
+      <AnimatePresence>
+        {placeInfoModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={() => setPlaceInfoModal(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-bg-surface rounded-2xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Photo carousel */}
+              <div className="relative w-full h-[220px] bg-gray-100 flex-shrink-0">
+                {placeInfoLoading ? (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="w-8 h-8 border-3 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : placeInfoData?.photos?.length ? (
+                  <>
+                    <img src={placeInfoData.photos[placeInfoPhotoIdx]} alt={placeInfoModal.name} className="w-full h-full object-cover" />
+                    {placeInfoData.photos.length > 1 && (
+                      <>
+                        <button onClick={() => setPlaceInfoPhotoIdx(i => (i - 1 + placeInfoData.photos.length) % placeInfoData.photos.length)} className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                        </button>
+                        <button onClick={() => setPlaceInfoPhotoIdx(i => (i + 1) % placeInfoData.photos.length)} className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                          {placeInfoData.photos.map((_: string, i: number) => (
+                            <button key={i} onClick={() => setPlaceInfoPhotoIdx(i)} className={`w-2 h-2 rounded-full transition-colors ${i === placeInfoPhotoIdx ? 'bg-white' : 'bg-white/40'}`} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-text-muted">
+                    <PlacePhoto name={placeInfoModal.name} city={placeInfoModal.city} className="w-full h-full object-cover" fallbackIcon="" />
+                  </div>
+                )}
+                <button onClick={() => setPlaceInfoModal(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 z-10">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-5">
+                <h2 className="font-display text-[20px] font-bold text-text-primary mb-1">{placeInfoModal.name}</h2>
+                {placeInfoData?.address && (
+                  <p className="text-[12px] text-text-muted font-body mb-3 flex items-center gap-1">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    {placeInfoData.address}
+                  </p>
+                )}
+                {placeInfoData?.rating ? (
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="flex items-center gap-1 text-[12px] font-body">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                      <span className="font-mono font-bold">{placeInfoData.rating}</span>
+                    </span>
+                  </div>
+                ) : null}
+
+                {placeInfoLoading ? (
+                  <div className="space-y-3">
+                    <div className="h-3 bg-gray-100 rounded animate-pulse w-3/4" />
+                    <div className="h-3 bg-gray-100 rounded animate-pulse w-full" />
+                    <div className="h-3 bg-gray-100 rounded animate-pulse w-5/6" />
+                  </div>
+                ) : (
+                  <>
+                    {placeInfoData?.keyFacts && placeInfoData.keyFacts.length > 0 && (
+                      <div className="mb-4">
+                        <h3 className="font-display font-bold text-[14px] text-text-primary mb-2">Key facts</h3>
+                        <ul className="space-y-1.5">
+                          {placeInfoData.keyFacts.map((fact: string, i: number) => (
+                            <li key={i} className="text-[12px] font-body text-text-secondary flex items-start gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-accent-cyan mt-1.5 flex-shrink-0" />
+                              {fact}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {placeInfoData?.description && (
+                      <div className="text-[13px] font-body text-text-secondary leading-relaxed whitespace-pre-line">
+                        {placeInfoData.description}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-border-subtle">
+                  <a href={`https://www.google.com/maps/search/${encodeURIComponent(placeInfoModal.name + ', ' + placeInfoModal.city)}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-[11px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    View on map
+                  </a>
+                  <a href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(placeInfoModal.name + ' ' + placeInfoModal.city)}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-[11px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                    Book tickets
+                  </a>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Hidden file input for booking doc uploads */}
       {!isReadOnly && <input ref={uploadRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleUploadBooking} />}
