@@ -2557,7 +2557,7 @@ function DeepPlanPageContent() {
                 <div
                   className={`bg-bg-surface border rounded-xl shadow-sm transition-all overflow-visible ${isDayExpanded(day.day) ? `border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-accent-cyan/20 border-r-accent-cyan/20 border-b-accent-cyan/20` : 'border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
                 >
-                  <div className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleDay(day.day)}>
+                  <div className={`px-4 py-3 cursor-pointer select-none ${isDayExpanded(day.day) ? dayStyle.bg + '/30' : ''} transition-colors`} onClick={() => toggleDay(day.day)}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -2646,21 +2646,23 @@ function DeepPlanPageContent() {
                     const previewNames = attractions.slice(0, 3).map(s => s.name === 'Rest / Sleep' ? 'Overnight' : s.name);
                     const more = attractions.length > 3 ? ` +${attractions.length - 3} more` : '';
                     return (
-                      <div className="mt-1.5 pl-7 flex items-center gap-2 flex-wrap">
-                        {attractions.length > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-bg-card rounded-full text-[10px] font-body text-text-muted">
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                            {attractions.length} {attractions.length === 1 ? 'stop' : 'stops'}
-                          </span>
-                        )}
-                        {totalTravelMin > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-bg-card rounded-full text-[10px] font-mono text-text-muted">
-                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                            {totalTravelMin >= 60 ? `${Math.floor(totalTravelMin / 60)}h ${totalTravelMin % 60}m` : `${totalTravelMin}m`} travel
-                          </span>
-                        )}
+                      <div className="mt-2 pl-7 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {attractions.length > 0 && (
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-body font-medium ${dayStyle.bg} ${dayStyle.text}`}>
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                              {attractions.length} {attractions.length === 1 ? 'stop' : 'stops'}
+                            </span>
+                          )}
+                          {totalTravelMin > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 rounded-full text-[10px] font-mono text-text-muted">
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                              {totalTravelMin >= 60 ? `${Math.floor(totalTravelMin / 60)}h ${totalTravelMin % 60}m` : `${totalTravelMin}m`} travel
+                            </span>
+                          )}
+                        </div>
                         {previewNames.length > 0 && (
-                          <p className="text-[10px] text-text-muted font-body truncate flex-1 min-w-0">
+                          <p className="text-[11px] text-text-muted font-body truncate">
                             {previewNames.join(' \u2022 ')}{more}
                           </p>
                         )}
