@@ -194,7 +194,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **City cards:** White card with Google Places city photo on right panel (desktop), country label, dates, nights, hotel info, "View on map" and "Explore suggestions" buttons. **Shown only once per city** — uses a `Set` to track shown cities so re-entering the same city after a travel day doesn't duplicate the card.
 
-**Booking Progress:** Only counts items as "booked" when matching booking documents are uploaded — NOT when selections are made. Prevents misleading 100% for trips without uploaded docs.
+**Booking Progress + Checklist:** Three states: green checkmark = booking doc uploaded (truly booked), blue checkmark = selected but no doc (pending upload), amber warning = not selected. Both the progress bar and checklist use the same doc-matching logic. The `section` prop on `DeepPlanSidebar` controls mobile layout: `'top'` renders Trip Companion only (above day nav), `'bottom'` renders Checklist + Essentials (after all days). Desktop shows all (no `section` prop). Sidebar has no scroll constraint — full span, no scrollbar.
 
 **Empty states:** Travel days with free time show "Auto-plan this day" card. Explore days with no attractions show "Add places" + "Auto-plan" buttons.
 
