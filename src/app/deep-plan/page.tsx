@@ -247,6 +247,9 @@ function DeepPlanPageContent() {
   const { currency, setCurrency } = useCurrency();
   const [isRestoring, setIsRestoring] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  // Long-press drag: which stop ID is currently drag-enabled (null = none)
+  const [dragActiveId, setDragActiveId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   // Meal restaurant suggestions
   const [mealSuggestions, setMealSuggestions] = useState<Record<string, Array<{ placeId: string; name: string; rating: number; priceLevel?: string; cuisineType?: string; lat: number; lng: number; photoRef?: string }>>>({});
@@ -2851,25 +2854,9 @@ function DeepPlanPageContent() {
                               </div>
                             )}
                           </div>
-                          {/* Drag handle — only this element triggers drag reorder (not the whole card) */}
+                          {/* Drag handle indicator — long-press the card to activate drag */}
                           {isDraggableActivity && !isReadOnly && (
-                            <div
-                              className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5 -mr-1 select-none reorder-drag-handle"
-                              style={{ touchAction: 'none' }}
-                              onPointerDown={(e) => {
-                                // Re-dispatch the pointer event on the Reorder.Item parent so Framer picks it up
-                                e.stopPropagation();
-                                const reorderItem = (e.currentTarget as HTMLElement).closest('[style]')?.parentElement;
-                                if (reorderItem) {
-                                  reorderItem.dispatchEvent(new PointerEvent('pointerdown', {
-                                    clientX: e.clientX, clientY: e.clientY,
-                                    pointerId: e.pointerId, pointerType: e.pointerType,
-                                    bubbles: true, cancelable: true,
-                                  }));
-                                }
-                              }}
-                              aria-label="Hold and drag to reorder"
-                            >
+                            <div className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 mt-1.5 -mr-1 select-none" aria-label="Long-press to drag">
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
@@ -3484,14 +3471,34 @@ function DeepPlanPageContent() {
                     );
 
                     if (useReorder && isDraggableActivity) {
+                      const isDragActive = dragActiveId === stop.id;
                       return (
                         <Reorder.Item
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className={`relative ${isReadOnly ? '' : 'md:cursor-grab md:active:cursor-grabbing md:active:z-10'} select-none`}
-                          dragListener={false}
+                          className={`relative select-none ${isDragActive ? 'ring-2 ring-accent-cyan/40 rounded-xl z-10 cursor-grabbing' : ''}`}
+                          dragListener={isDragActive}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
+                          onDragEnd={() => setDragActiveId(null)}
+                          onPointerDown={isReadOnly ? undefined : (e) => {
+                            // Start long-press timer (500ms) to activate drag
+                            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                            longPressTimerRef.current = setTimeout(() => {
+                              setDragActiveId(stop.id);
+                              // Vibrate on mobile for haptic feedback
+                              if (navigator.vibrate) navigator.vibrate(50);
+                            }, 500);
+                          }}
+                          onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                          onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                          onPointerMove={(e) => {
+                            // Cancel long-press if user moves finger (they're scrolling)
+                            if (longPressTimerRef.current && !isDragActive) {
+                              clearTimeout(longPressTimerRef.current);
+                              longPressTimerRef.current = null;
+                            }
+                          }}
                         >
                           {stopContent}
                         </Reorder.Item>
