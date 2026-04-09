@@ -2411,7 +2411,13 @@ function DeepPlanPageContent() {
             </div>
             {(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost) > 0 && (
               <div className="flex items-center justify-between pt-2 border-t border-border-subtle/50">
-                <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
+                  <select value={currency} onChange={e => setCurrency(e.target.value as any)}
+                    className="text-[10px] font-mono bg-transparent border border-border-subtle rounded px-1 py-0.5 text-text-muted cursor-pointer outline-none">
+                    {['INR','USD','EUR','GBP','JPY','AUD','CAD','SGD','AED','THB'].map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
                 <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost, currency)}</span>
               </div>
             )}
