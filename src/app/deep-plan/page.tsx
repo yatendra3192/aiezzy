@@ -2275,7 +2275,7 @@ function DeepPlanPageContent() {
         </motion.div>
       )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[960px]">
-        <div className="border border-border-subtle rounded-[2rem] p-5 md:p-8 relative">
+        <div className="border-2 border-border-subtle rounded-[2rem] p-5 md:p-8 relative">
           {/* ====== [A] TRIP HEADER ====== */}
           <div className="mb-5">
             {!isReadOnly && (
