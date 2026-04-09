@@ -189,16 +189,15 @@ export default memo(function DeepPlanSidebar({
         </div>
       )}
 
-      {/* Booking Warnings */}
+      {/* Booking Warnings — softer amber */}
       {(destinations.some(d => d.nights > 0 && !d.selectedHotel) || (transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay)) && (
-        <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-4">
-          <h3 className="font-display font-bold text-[13px] text-amber-800 mb-2 flex items-center gap-1.5">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            Incomplete
-          </h3>
-          <div className="space-y-1.5 text-[11px] text-amber-700 font-body">
-            {destinations.some(d => d.nights > 0 && !d.selectedHotel) && <p>Missing hotel for some destinations</p>}
-            {transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay && <p>Missing transport for some legs</p>}
+        <div className="bg-amber-50/50 border border-amber-200/30 rounded-xl p-3">
+          <div className="flex items-start gap-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div className="text-[11px] text-amber-700/80 font-body space-y-0.5">
+              {destinations.some(d => d.nights > 0 && !d.selectedHotel) && <p>Some destinations need a hotel</p>}
+              {transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay && <p>Some transport legs are unselected</p>}
+            </div>
           </div>
         </div>
       )}
@@ -277,67 +276,49 @@ export default memo(function DeepPlanSidebar({
         </div>
       )}
 
-      {/* Weather Forecast Grid */}
-      {adjustedDays.length > 0 && (
-        <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
-          <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Weather Forecast</h3>
-          <div className="grid grid-cols-5 gap-1.5">
-            {adjustedDays.slice(0, 5).map(d => {
-              const dIso = toIsoDate(d.date);
-              const dayLabel = (() => {
-                const parts = d.date.split('-');
-                if (parts.length !== 3) return '';
-                const dt = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-                return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()] || '';
-              })();
-              const cityLabel = d.city ? (destinations.find(dest => dest.city.name === d.city || (dest.city.parentCity || dest.city.name) === d.city)?.city.parentCity || d.city) : '';
-              return (
-                <div key={`wf-${d.day}`} className="flex flex-col items-center text-center">
-                  <span className="text-[10px] font-body font-semibold text-text-primary">{dayLabel}</span>
-                  <div className="my-1">{d.city ? <WeatherBadge city={d.city} date={dIso} shareToken={shareToken} /> : <span className="text-[10px] text-text-muted">--</span>}</div>
-                  <span className="text-[8px] text-text-muted font-body truncate w-full">{cityLabel.length > 6 ? cityLabel.slice(0, 5) + '\u2026' : cityLabel}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Local Info Card */}
+      {/* Destination Essentials — merged weather + local info */}
       {(() => {
         const firstDest = destinations[0];
         const country = firstDest?.city?.country || '';
         const info = LOCAL_INFO[country];
-        if (!info) return null;
         return (
-          <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
-            <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Local Info &mdash; {country}</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div><p className="text-[10px] text-text-muted font-body uppercase tracking-wider mb-0.5">Currency</p><p className="text-[12px] text-text-primary font-body font-medium">{info.currency}</p></div>
-              <div><p className="text-[10px] text-text-muted font-body uppercase tracking-wider mb-0.5">Timezone</p><p className="text-[12px] text-text-primary font-body font-medium">{info.timezone}</p></div>
-              <div><p className="text-[10px] text-text-muted font-body uppercase tracking-wider mb-0.5">Emergency</p><p className="text-[12px] text-text-primary font-body font-medium">{info.emergency}</p></div>
-              <div><p className="text-[10px] text-text-muted font-body uppercase tracking-wider mb-0.5">Language</p><p className="text-[12px] text-text-primary font-body font-medium">{info.language}</p></div>
-            </div>
+          <div className="bg-gradient-to-br from-bg-surface to-blue-50/30 border border-border-subtle rounded-xl p-4 shadow-sm">
+            <h3 className="font-display font-bold text-[14px] text-text-primary mb-3 flex items-center gap-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              Destination Essentials
+            </h3>
+            {/* Weather strip */}
+            {adjustedDays.length > 0 && (
+              <div className="grid grid-cols-5 gap-1.5 mb-3 pb-3 border-b border-border-subtle/50">
+                {adjustedDays.slice(0, 5).map(d => {
+                  const dIso = toIsoDate(d.date);
+                  const dayLabel = (() => {
+                    const parts = d.date.split('-');
+                    if (parts.length !== 3) return '';
+                    const dt = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+                    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()] || '';
+                  })();
+                  return (
+                    <div key={`wf-${d.day}`} className="flex flex-col items-center text-center">
+                      <span className="text-[10px] font-body font-semibold text-text-primary">{dayLabel}</span>
+                      <div className="my-1">{d.city ? <WeatherBadge city={d.city} date={dIso} shareToken={shareToken} /> : <span className="text-[10px] text-text-muted">--</span>}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Local info grid */}
+            {info && (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="flex items-center gap-2"><span className="text-[14px]">💱</span><div><p className="text-[10px] text-text-muted font-body">Currency</p><p className="text-[11px] text-text-primary font-body font-medium">{info.currency}</p></div></div>
+                <div className="flex items-center gap-2"><span className="text-[14px]">🕐</span><div><p className="text-[10px] text-text-muted font-body">Timezone</p><p className="text-[11px] text-text-primary font-body font-medium">{info.timezone}</p></div></div>
+                <div className="flex items-center gap-2"><span className="text-[14px]">🚨</span><div><p className="text-[10px] text-text-muted font-body">Emergency</p><p className="text-[11px] text-text-primary font-body font-medium">{info.emergency}</p></div></div>
+                <div className="flex items-center gap-2"><span className="text-[14px]">🗣️</span><div><p className="text-[10px] text-text-muted font-body">Language</p><p className="text-[11px] text-text-primary font-body font-medium">{info.language}</p></div></div>
+              </div>
+            )}
           </div>
         );
       })()}
-
-      {/* Quick Links */}
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
-        <h3 className="font-display font-bold text-[14px] text-text-primary mb-2">Quick Links</h3>
-        <div className="space-y-2">
-          {!isReadOnly && (
-          <button onClick={() => router.push(tripId ? `/route?id=${tripId}` : '/route')} className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-            Back to Route
-          </button>
-          )}
-          <button onClick={() => window.print()} className="w-full text-left text-[12px] font-body text-text-secondary hover:text-accent-cyan transition-colors flex items-center gap-2">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            Print Itinerary
-          </button>
-        </div>
-      </div>
     </aside>
   );
 });

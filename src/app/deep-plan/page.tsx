@@ -2652,28 +2652,34 @@ function DeepPlanPageContent() {
                       const mins = mLong ? parseInt(mLong[1]) : mShort ? parseInt(mShort[1]) : 0;
                       return sum + hours * 60 + mins;
                     }, 0);
-                    const previewNames = attractions.slice(0, 3).map(s => s.name === 'Rest / Sleep' ? 'Overnight' : s.name);
-                    const more = attractions.length > 3 ? ` +${attractions.length - 3} more` : '';
+                    const topAttractions = attractions.slice(0, 4);
+                    const more = attractions.length > 4 ? `+${attractions.length - 4} more` : '';
                     return (
-                      <div className="mt-2 pl-7 space-y-1.5">
+                      <div className="mt-2 pl-7 space-y-2">
+                        {/* Stats row */}
                         <div className="flex items-center gap-2 flex-wrap">
                           {attractions.length > 0 && (
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-body font-medium ${dayStyle.bg} ${dayStyle.text}`}>
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                               {attractions.length} {attractions.length === 1 ? 'stop' : 'stops'}
                             </span>
                           )}
                           {totalTravelMin > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 rounded-full text-[10px] font-mono text-text-muted">
-                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 rounded-full text-[10px] font-mono text-gray-400">
                               {totalTravelMin >= 60 ? `${Math.floor(totalTravelMin / 60)}h ${totalTravelMin % 60}m` : `${totalTravelMin}m`} travel
                             </span>
                           )}
                         </div>
-                        {previewNames.length > 0 && (
-                          <p className="text-[11px] text-text-muted font-body truncate">
-                            {previewNames.join(' \u2022 ')}{more}
-                          </p>
+                        {/* Activity highlights with mini route */}
+                        {topAttractions.length > 0 && (
+                          <div className="flex items-center gap-1 text-[11px] text-text-muted font-body overflow-hidden">
+                            {topAttractions.map((s, ai) => (
+                              <span key={ai} className="flex items-center gap-0.5 flex-shrink-0">
+                                {ai > 0 && <span className="text-text-muted/30 mx-0.5">&rsaquo;</span>}
+                                <span className="truncate max-w-[120px]">{s.name}</span>
+                              </span>
+                            ))}
+                            {more && <span className="text-text-muted/50 flex-shrink-0 ml-0.5">{more}</span>}
+                          </div>
                         )}
                       </div>
                     );
