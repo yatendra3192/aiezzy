@@ -3478,38 +3478,28 @@ function DeepPlanPageContent() {
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          id={`reorder-${stop.id}`}
                           className={`relative select-none ${isDragActive ? 'ring-2 ring-accent-cyan/40 rounded-xl z-10' : ''}`}
-                          dragListener={isDragActive}
+                          style={isDragActive ? { touchAction: 'none' } : undefined}
+                          dragListener={!isReadOnly}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
+                          onDragStart={() => {
+                            // Only allow drag if long-press activated it
+                            if (!isDragActive && !longPressTimerRef.current) {
+                              setDragActiveId(null);
+                            }
+                          }}
                           onDragEnd={() => setDragActiveId(null)}
-                          onPointerDown={isReadOnly ? undefined : (e: React.PointerEvent) => {
-                            if (isDragActive) return; // already active, let Framer handle
-                            // Store pointer info for re-dispatch after long-press
-                            longPressPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType };
+                          onTouchStart={isReadOnly ? undefined : () => {
                             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
                             const stopId = stop.id;
                             longPressTimerRef.current = setTimeout(() => {
                               if (navigator.vibrate) navigator.vibrate(50);
                               setDragActiveId(stopId);
-                              // After React re-renders with dragListener=true, dispatch a pointerdown
-                              // so Framer picks up the existing touch as a drag start
-                              requestAnimationFrame(() => {
-                                const el = document.getElementById(`reorder-${stopId}`);
-                                const ptr = longPressPointerRef.current;
-                                if (el && ptr) {
-                                  el.dispatchEvent(new PointerEvent('pointerdown', {
-                                    clientX: ptr.x, clientY: ptr.y,
-                                    pointerId: ptr.pointerId, pointerType: ptr.pointerType,
-                                    bubbles: true, cancelable: true,
-                                  }));
-                                }
-                              });
-                            }, 500);
+                            }, 400);
                           }}
-                          onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } if (!isDragActive) setDragActiveId(null); }}
-                          onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
-                          onPointerMove={(_e: React.PointerEvent) => {
+                          onTouchEnd={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                          onTouchMove={() => {
+                            // Cancel long-press if finger moves (scrolling)
                             if (longPressTimerRef.current && !isDragActive) {
                               clearTimeout(longPressTimerRef.current);
                               longPressTimerRef.current = null;
