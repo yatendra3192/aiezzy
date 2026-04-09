@@ -2576,7 +2576,7 @@ function DeepPlanPageContent() {
                 })()}
                 {/* Day header — click to expand/collapse */}
                 <div
-                  className={`bg-bg-surface border rounded-xl shadow-sm transition-all overflow-visible ${isDayExpanded(day.day) ? `border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-accent-cyan/20 border-r-accent-cyan/20 border-b-accent-cyan/20` : 'border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
+                  className={`bg-white border rounded-xl transition-all overflow-visible ${isDayExpanded(day.day) ? `shadow-md border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-border-subtle/60 border-r-border-subtle/60 border-b-border-subtle/60` : 'shadow-sm border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
                 >
                   <div className={`px-4 py-3 cursor-pointer select-none ${isDayExpanded(day.day) ? dayStyle.bg + '/30' : ''} transition-colors`} onClick={() => toggleDay(day.day)}>
                   <div className="flex items-center justify-between gap-2">

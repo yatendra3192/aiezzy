@@ -147,7 +147,7 @@ export default memo(function DeepPlanSidebar({
   return (
     <aside className="hidden md:block md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
       {/* Trip Progress */}
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+      <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
         <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Trip Progress</h3>
         <div className="space-y-2.5">
           <div className="flex justify-between text-[12px] font-body"><span className="text-text-secondary">Days</span><span className="font-mono font-semibold text-text-primary">{adjustedDays.length}</span></div>
@@ -159,7 +159,7 @@ export default memo(function DeepPlanSidebar({
 
       {/* Budget Summary */}
       {grandTotal > 0 && (
-        <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+        <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-display font-bold text-[14px] text-text-primary">Budget</h3>
             {setCurrency && (
@@ -203,7 +203,7 @@ export default memo(function DeepPlanSidebar({
       )}
 
       {/* Progress Ring */}
-      <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+      <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
         <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Booking Progress</h3>
         <div className="flex items-center gap-4">
           <div className="relative w-20 h-20 flex-shrink-0">
@@ -232,7 +232,7 @@ export default memo(function DeepPlanSidebar({
 
       {/* Booking Checklist */}
       {(transportLegs.length > 0 || destinations.some(d => d.nights > 0)) && (
-        <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+        <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
           <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Booking Checklist</h3>
           <div className="space-y-2 max-h-[260px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
             {transportLegs.map((leg, li) => {

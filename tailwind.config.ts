@@ -24,7 +24,7 @@ const config: Config = {
           muted: '#94A3B8',
         },
         border: {
-          subtle: '#E2E8F0',
+          subtle: '#E8E4DE',
           active: '#E8654A',
         },
       },
