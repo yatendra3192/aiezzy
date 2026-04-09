@@ -2053,6 +2053,12 @@ function DeepPlanPageContent() {
     if (idx >= 0) {
       handleDeleteActivity(dayNumber, idx);
     }
+    // Clear meal venue selection if this was a restaurant pick
+    const venues = trip.deepPlanData?.selectedMealVenues || {};
+    const venueKey = Object.keys(venues).find(k => k.startsWith(`day_${dayNumber}_`) && (venues as any)[k]?.name === stopName);
+    if (venueKey) {
+      trip.updateDeepPlanData({ selectedMealVenues: { [venueKey]: undefined as any } });
+    }
 
     // Always track removal so AI activities don't reappear on rebuild
     const dayData = adjustedDays.find(d => d.day === dayNumber);
