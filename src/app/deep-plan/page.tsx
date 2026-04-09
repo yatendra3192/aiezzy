@@ -3172,8 +3172,7 @@ function DeepPlanPageContent() {
                                   </span>
                                 ) : null}
                                 {stop.ticketPrice && (
-                                  <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold font-body ${stop.ticketPrice.toLowerCase().includes('free') ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'}`}>
-                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-body ${stop.ticketPrice.toLowerCase().includes('free') ? 'bg-gray-100 text-gray-500 font-medium' : 'text-violet-600 font-semibold'}`}>
                                     {stop.ticketPrice}
                                   </span>
                                 )}
@@ -3637,11 +3636,15 @@ function DeepPlanPageContent() {
                   );
                 })()}
 
-                {/* Empty state for explore days with no attractions */}
+                {/* Empty state for explore days with no attractions — AI assistant card */}
                 {!isReadOnly && day.type === 'explore' && day.stops.filter(s => s.type === 'attraction' && !s.mealType).length === 0 && !showActivityInput[day.day] && (
                   <div className="print-hide ml-4 pl-4 mt-3">
-                    <div className="bg-gradient-to-r from-emerald-50/50 to-transparent border border-emerald-200/30 rounded-xl p-3 text-center">
-                      <p className="text-[12px] text-text-secondary font-body mb-2">This day is still open. Add some activities?</p>
+                    <div className="bg-gradient-to-br from-accent-cyan/5 via-violet-50/30 to-amber-50/20 border border-accent-cyan/15 rounded-xl p-4 text-center">
+                      <div className="w-10 h-10 rounded-full bg-accent-cyan/10 flex items-center justify-center mx-auto mb-2">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#E8654A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      </div>
+                      <p className="text-[13px] text-text-primary font-body font-semibold mb-0.5">This day is waiting for you</p>
+                      <p className="text-[11px] text-text-muted font-body mb-3">Let AI suggest the best activities for {day.city}</p>
                       <div className="flex items-center justify-center gap-2 flex-wrap">
                         <button
                           onClick={() => setShowActivityInput(prev => ({ ...prev, [day.day]: true }))}
