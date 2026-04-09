@@ -121,6 +121,8 @@ Two data flows:
 - `/api/booking-docs` — Upload/delete/refresh-URLs for booking documents in Supabase Storage.
 - `/api/admin/migrate` — DB migrations.
 
+- `/api/place-info` — Google Places photos (up to 5) + Gemini AI description + key facts for a place. Used by the place info popup modal. 1-hour server cache per place.
+
 ### External Scraper API
 
 Self-hosted at `FLIGHTS_API_URL` (Railway). Repo: `api4Aiezzy2`. Hotel parser extracts images, links, descriptions, amenities from Google Hotels HTML via cheerio.
@@ -161,7 +163,9 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Smart itinerary generation:** Explore days use AI-generated activities with real durations instead of hardcoded 2-hour blocks. Activity source priority: user places (90min default) → AI-cached `cityActivities` (with GPS coordinates). No static fallback — empty days show "Auto-plan" prompt. Activities scheduled into morning (start→12:30) and afternoon (13:15→18:30) blocks with 30min travel gaps, respecting `bestTime` preference and `durationMin`. Multi-day trips get themed days via `dayIndex` assignment. Ticket prices shown as prominent colored pills on each activity card (green=Free, violet=paid).
 
-**Activity cards:** Three-dot action menu with: View on map, Directions, Save activity, Book tickets, Move up/down, Remove. Category-colored cards with photo thumbnails. Drag-to-reorder on explore AND arrival days via **Framer Motion `Reorder.Group`/`Reorder.Item`** (same as plan page). `Reorder.Item` must only render inside `Reorder.Group` (days with 2+ activities) — single-activity days use regular divs to avoid "Cannot destructure property 'axis'" crash. Pin/save promotes AI activities to custom (survives refreshes).
+**Activity cards:** Three-dot action menu with: View on map, Directions, Save activity, Book tickets, Move up/down, Remove. Category-colored cards with photo thumbnails. **Click activity name** to open place info popup (photos carousel + AI-generated description + key facts from `/api/place-info`). Drag-to-reorder on explore AND arrival days via `DraggableReorderItem` wrapper using **Framer Motion `useDragControls`** + `Reorder.Group`/`Reorder.Item`. **Desktop:** full card draggable (`dragListener={true}`). **Mobile:** `dragListener={false}` + `dragControls` — drag only from grip dots and photo (`data-drag-handle` + `touch-action: none`), text area allows normal scrolling (`touch-action: pan-y`). Photo has `draggable={false}` + `pointer-events-none` to prevent native image drag. `Reorder.Item` must only render inside `Reorder.Group` (days with 2+ activities) — single-activity days use regular divs. Pin/save promotes AI activities to custom (survives refreshes).
+
+**Place info popup:** Click any activity name to open a modal with photo carousel (up to 5 Google Places photos), key facts, and AI-generated description from `/api/place-info` (Gemini). 1-hour server cache. Includes View on map + Book tickets actions.
 
 **Transport cards:** Vertical route stepper (DEP dot → journey line → ARR dot) for flights and trains. Color-coded: blue (flight), amber (train), orange (bus), slate (drive). Booking status badges (Booked/Pending) matched by city names in `bookingDocs`. "Replace" button opens full `TransportCompareModal` (same as route page).
 
@@ -169,7 +173,6 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx` (wrapped in `React.memo`). Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
 
-**City cards:** White card with gradient visual panel (city code watermark), hotel rating+price, action buttons (View on map, Explore suggestions), activity/day count stats.
 
 **Start time adjustment:** Changing start time re-runs the full scheduling algorithm (not a flat offset). Activities are re-sorted and re-fit into morning/afternoon blocks based on new start time.
 
@@ -189,7 +192,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Hotel cards (rich):** Show check-in/check-out dates, price breakdown (per-night × nights × rooms = total), Book link (Booking.com with dates pre-filled), Pending/Booked status based on uploaded booking docs, Change button.
 
-**City cards:** White card with Google Places city photo on right panel (desktop), country label, dates, nights, hotel info, "View on map" and "Explore suggestions" buttons.
+**City cards:** White card with Google Places city photo on right panel (desktop), country label, dates, nights, hotel info, "View on map" and "Explore suggestions" buttons. **Shown only once per city** — uses a `Set` to track shown cities so re-entering the same city after a travel day doesn't duplicate the card.
 
 **Booking Progress:** Only counts items as "booked" when matching booking documents are uploaded — NOT when selections are made. Prevents misleading 100% for trips without uploaded docs.
 
