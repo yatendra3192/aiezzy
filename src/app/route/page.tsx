@@ -973,9 +973,9 @@ function RoutePageContent() {
   }
 
   return (
-    <div className="min-h-screen flex justify-center p-4 py-8">
+    <div className="min-h-screen flex justify-center p-4 py-8 bg-bg-primary">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[760px]">
-        <div id="trip-content" className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-6 md:p-8 relative">
+        <div id="trip-content" className="border-2 border-border-subtle rounded-[2rem] p-6 md:p-8 relative">
           {/* Nav */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
@@ -1443,7 +1443,7 @@ function RoutePageContent() {
                               checkOut.setDate(checkOut.getDate() + stay.nights);
                               const totalPrice = stay.hotel.pricePerNight * stay.nights * rooms;
                               return (
-                                <div key={idx} className="bg-bg-card border border-border-subtle rounded-lg p-2.5 space-y-1">
+                                <div key={idx} className="bg-white border border-border-subtle rounded-lg shadow-sm p-2.5 space-y-1">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-display font-bold text-text-primary">{stay.hotel.name}</span>
                                     <button onClick={() => trip.removeAdditionalHotel(dest.id, idx)}
@@ -1548,7 +1548,7 @@ function RoutePageContent() {
                         {!leg.selectedFlight && !leg.selectedTrain && !(leg.type === 'drive' && leg.duration && leg.duration !== '~') && (
                           <button
                             onClick={() => setTransportModal({ legIndex: i })}
-                            className="flex items-center gap-1.5 mt-1 px-2.5 py-1.5 rounded-lg border border-red-200 bg-red-50 text-red-600 text-[11px] font-body hover:bg-red-100 transition-colors"
+                            className="flex items-center gap-1.5 mt-1 px-2.5 py-1.5 rounded-lg border border-amber-200/50 bg-amber-50/50 text-amber-700 text-[11px] font-body hover:bg-amber-50 transition-colors"
                           >
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -1786,7 +1786,7 @@ function RoutePageContent() {
           {/* Sidebar: Cost + Actions */}
           <div className="md:sticky md:top-8 md:self-start">
           {/* Cost Summary */}
-          <div className="mt-6 p-4 bg-bg-card border border-border-subtle rounded-xl">
+          <div className="mt-6 p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-display font-bold text-xs text-accent-gold uppercase tracking-widest">Trip Estimate</h3>
               <select
@@ -1865,7 +1865,7 @@ function RoutePageContent() {
 
             {/* My Documents */}
             {trip.bookingDocs?.length > 0 && (
-              <div className="bg-bg-card border border-border-subtle rounded-xl p-3">
+              <div className="bg-white border border-border-subtle rounded-xl shadow-sm p-3">
                 <p className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider mb-2">My Documents</p>
                 <div className="space-y-1.5">
                   {trip.bookingDocs.map(doc => (
