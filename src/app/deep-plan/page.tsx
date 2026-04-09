@@ -2555,13 +2555,13 @@ function DeepPlanPageContent() {
                 })()}
                 {/* Day header — click to expand/collapse */}
                 <div
-                  className={`bg-bg-surface border rounded-xl shadow-sm transition-colors overflow-visible ${isDayExpanded(day.day) ? 'border-accent-cyan/30' : 'border-border-subtle hover:border-accent-cyan/20'}`}
+                  className={`bg-bg-surface border rounded-xl shadow-sm transition-all overflow-visible ${isDayExpanded(day.day) ? `border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-accent-cyan/20 border-r-accent-cyan/20 border-b-accent-cyan/20` : 'border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
                 >
                   <div className="px-4 py-3 cursor-pointer select-none" onClick={() => toggleDay(day.day)}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                        className={`text-text-muted transition-transform flex-shrink-0 ${isDayExpanded(day.day) ? 'rotate-90' : ''}`}>
+                        className={`transition-transform flex-shrink-0 ${isDayExpanded(day.day) ? `${dayStyle.text} rotate-90` : 'text-text-muted'}`}>
                         <path d="M9 18l6-6-6-6" />
                       </svg>
                       <h2 className="font-display font-bold text-[16px] text-text-primary whitespace-nowrap">Day {day.day} &mdash; {formatDateNice(day.date)}</h2>
