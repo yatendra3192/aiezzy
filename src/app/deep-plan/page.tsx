@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, Reorder, AnimatePresence } from 'framer-motion';
+import { motion, Reorder, AnimatePresence, useDragControls } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub } from '@/data/mockData';
 import { getCityPricing, calcTaxiCost } from '@/data/cityPricing';
@@ -2851,9 +2851,25 @@ function DeepPlanPageContent() {
                               </div>
                             )}
                           </div>
-                          {/* Drag handle for explore day activities */}
-                          {isDraggableActivity && (
-                            <div className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5 -mr-1 select-none" aria-label="Drag to reorder">
+                          {/* Drag handle — only this element triggers drag reorder (not the whole card) */}
+                          {isDraggableActivity && !isReadOnly && (
+                            <div
+                              className="print-hide flex flex-col gap-[2px] opacity-30 hover:opacity-70 flex-shrink-0 cursor-grab active:cursor-grabbing mt-1.5 -mr-1 select-none reorder-drag-handle"
+                              style={{ touchAction: 'none' }}
+                              onPointerDown={(e) => {
+                                // Re-dispatch the pointer event on the Reorder.Item parent so Framer picks it up
+                                e.stopPropagation();
+                                const reorderItem = (e.currentTarget as HTMLElement).closest('[style]')?.parentElement;
+                                if (reorderItem) {
+                                  reorderItem.dispatchEvent(new PointerEvent('pointerdown', {
+                                    clientX: e.clientX, clientY: e.clientY,
+                                    pointerId: e.pointerId, pointerType: e.pointerType,
+                                    bubbles: true, cancelable: true,
+                                  }));
+                                }
+                              }}
+                              aria-label="Hold and drag to reorder"
+                            >
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                               <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
@@ -3473,8 +3489,8 @@ function DeepPlanPageContent() {
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className={`relative ${isReadOnly ? '' : 'cursor-grab active:cursor-grabbing active:z-10'} select-none`}
-                          dragListener={!isReadOnly}
+                          className={`relative ${isReadOnly ? '' : 'md:cursor-grab md:active:cursor-grabbing md:active:z-10'} select-none`}
+                          dragListener={false}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
                         >
                           {stopContent}
