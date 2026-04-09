@@ -2485,22 +2485,31 @@ function DeepPlanPageContent() {
                   const cityActivityCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).reduce((n, d) => n + d.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).length, 0);
                   const cityDayCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).length;
                   return (
-                  <div className="mb-4">
+                  <div className="mb-6">
                     <div className="rounded-2xl shadow-lg overflow-hidden">
-                      {/* Hero photo with overlay */}
-                      <div className="relative h-[140px] md:h-[160px]">
+                      {/* Hero photo with overlay — taller, more dramatic */}
+                      <div className="relative h-[180px] md:h-[220px]">
                         <PlacePhoto name={cityDisplayName} city={cityCountry || ''} className="absolute inset-0 w-full h-full object-cover" fallbackIcon="" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
-                        {/* City name + country overlay */}
-                        <div className="absolute bottom-0 left-0 right-0 p-4">
-                          <div className="flex items-end justify-between gap-3">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
+                        {/* City name + vibe overlay */}
+                        <div className="absolute bottom-0 left-0 right-0 p-5 md:p-6">
+                          <div className="flex items-end justify-between gap-4">
                             <div>
-                              {cityCountry && <p className="text-[10px] text-white/70 font-body font-bold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
-                              <h2 className="font-display text-[24px] md:text-[28px] font-bold text-white tracking-tight leading-none drop-shadow-lg">{cityDisplayName}</h2>
+                              {cityCountry && <p className="text-[10px] text-white/60 font-body font-bold uppercase tracking-[0.2em] mb-1">{cityCountry}</p>}
+                              <h2 className="font-display text-[28px] md:text-[36px] font-bold text-white tracking-tight leading-none drop-shadow-lg">{cityDisplayName}</h2>
+                              {/* AI-generated city vibe from day themes */}
+                              {(() => {
+                                const themes = trip.deepPlanData?.dayThemes?.[cityDisplayName] || trip.deepPlanData?.dayThemes?.[day.city];
+                                const vibe = themes?.slice(0, 2).join(', ');
+                                return vibe ? <p className="text-[12px] text-white/70 font-body italic mt-1.5 drop-shadow">{vibe}</p> : null;
+                              })()}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {cityNights > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-sm text-white font-body">{cityNights} nights</span>}
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-accent-cyan/80 backdrop-blur-sm text-white font-body">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
+                            <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                              <div className="flex items-center gap-2">
+                                {cityNights > 0 && <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/15 backdrop-blur-md text-white font-body border border-white/10">{cityNights} nights</span>}
+                                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/15 backdrop-blur-md text-white font-body border border-white/10">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
+                              </div>
+                              <span className="text-[11px] text-white/60 font-body">{cityActivityCount} {cityActivityCount === 1 ? 'place' : 'places'} to explore</span>
                             </div>
                           </div>
                         </div>
@@ -2935,7 +2944,7 @@ function DeepPlanPageContent() {
                             <div className={isAttractionCard ? 'flex gap-3 items-start' : ''}>
                             {isAttractionCard && (
                               <div data-drag-handle style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing" onDragStart={e => e.preventDefault()} draggable={false}>
-                                <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14 pointer-events-none" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
+                                <PlacePhoto name={stop.name} city={day.city} className="w-16 h-16 md:w-[72px] md:h-[72px] rounded-lg pointer-events-none" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
                               </div>
                             )}
                             <div className={isAttractionCard ? 'flex-1 min-w-0' : ''} style={{ touchAction: 'pan-y' }}>
@@ -3043,15 +3052,21 @@ function DeepPlanPageContent() {
                               </div>}
                             </div>
                             {stop.note && (() => {
-                              const isUrgent = /Leave by|Board |Check-in /i.test(stop.note);
+                              const isUrgent = /Leave by|Board /i.test(stop.note);
+                              const isImportant = /Check-in |Arriving before|early check-in/i.test(stop.note);
                               return isUrgent ? (
-                                <div className="flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200/60 border-l-[3px] border-l-red-500 rounded-lg mt-1">
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                  <span className="text-[12px] text-red-700 font-body font-medium">{stop.note}</span>
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-50/80 border border-amber-200/40 rounded-lg mt-1">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                  <span className="text-[11px] text-amber-700 font-body font-medium">{stop.note}</span>
+                                </div>
+                              ) : isImportant ? (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50/60 border border-blue-200/30 rounded-lg mt-1">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                  <span className="text-[11px] text-blue-600 font-body">{stop.note}</span>
                                 </div>
                               ) : (
-                                <p className="text-[11px] text-amber-700 font-body mt-0.5 flex items-start gap-1">
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                <p className="text-[11px] text-text-muted font-body mt-0.5 flex items-start gap-1">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-px opacity-50"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                                   {stop.note}
                                 </p>
                               );
