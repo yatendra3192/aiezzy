@@ -2401,7 +2401,7 @@ function DeepPlanPageContent() {
 
           {/* Trip overview stats moved to sidebar Trip Progress — removed duplicate here */}
 
-          {/* ====== Mobile Trip Companion (same as sidebar, shown on mobile only) ====== */}
+          {/* ====== Mobile: Trip Companion at top (budget/stats only) ====== */}
           <div className="md:hidden mb-4 print-hide">
             <DeepPlanSidebar
               adjustedDays={adjustedDays} destinations={trip.destinations} transportLegs={trip.transportLegs}
@@ -2409,7 +2409,7 @@ function DeepPlanPageContent() {
               totalDays={adjustedDays.length} flightCost={flightCost} trainCost={trainCost} hotelCost={hotelCost}
               attractionCost={attractionCost} foodCost={foodCost} localTransportCost={localTransportCost}
               currency={currency} setCurrency={setCurrency} isLocalStay={isLocalStay} isReadOnly={isReadOnly}
-              tripId={trip.tripId} shareToken={shareToken || undefined}
+              tripId={trip.tripId} shareToken={shareToken || undefined} section="top"
             />
           </div>
 
@@ -3988,6 +3988,17 @@ function DeepPlanPageContent() {
             )}
           </div>
 
+          {/* ====== Mobile: Booking Checklist + Destination Essentials at bottom ====== */}
+          <div className="md:hidden mt-4 print-hide">
+            <DeepPlanSidebar
+              adjustedDays={adjustedDays} destinations={trip.destinations} transportLegs={trip.transportLegs}
+              from={trip.from} bookingDocs={trip.bookingDocs} totalNights={trip.destinations.reduce((s, d) => s + d.nights, 0)}
+              totalDays={adjustedDays.length} flightCost={flightCost} trainCost={trainCost} hotelCost={hotelCost}
+              attractionCost={attractionCost} foodCost={foodCost} localTransportCost={localTransportCost}
+              currency={currency} setCurrency={setCurrency} isLocalStay={isLocalStay} isReadOnly={isReadOnly}
+              tripId={trip.tripId} shareToken={shareToken || undefined} section="bottom"
+            />
+          </div>
           </div>{/* end main itinerary column */}
 
           {/* ====== [F] SIDEBAR — Desktop Only (mobile version rendered above day nav) ====== */}

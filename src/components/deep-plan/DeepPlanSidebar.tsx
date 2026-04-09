@@ -95,13 +95,15 @@ interface SidebarProps {
   setCurrency?: (c: CurrencyCode) => void;
   isReadOnly?: boolean;
   shareToken?: string;
+  /** Mobile layout: 'top' shows only Trip Companion, 'bottom' shows Checklist + Essentials, undefined shows all */
+  section?: 'top' | 'bottom';
 }
 
 export default memo(function DeepPlanSidebar({
   adjustedDays, tripId, destinations, transportLegs, from, bookingDocs,
   totalNights, isLocalStay,
   flightCost, trainCost, hotelCost, attractionCost, foodCost, localTransportCost,
-  totalDays, currency, setCurrency, isReadOnly, shareToken,
+  totalDays, currency, setCurrency, isReadOnly, shareToken, section,
 }: SidebarProps) {
   const router = useRouter();
 
@@ -146,7 +148,8 @@ export default memo(function DeepPlanSidebar({
 
   return (
     <aside className="w-full md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
-      {/* ═══ Trip Companion — hero utility card ═══ */}
+      {/* ═══ Trip Companion — hero utility card (hidden in 'bottom' section) ═══ */}
+      {section !== 'bottom' && (<>
       <div className="bg-gradient-to-br from-white to-gray-50/50 border border-border-subtle rounded-2xl shadow-md overflow-hidden">
         {/* Top section: stats grid */}
         <div className="px-4 pt-4 pb-3">
@@ -222,6 +225,10 @@ export default memo(function DeepPlanSidebar({
       )}
 
 
+      </>)}
+
+      {/* ═══ Booking Checklist + Essentials (hidden in 'top' section) ═══ */}
+      {section !== 'top' && (<>
       {/* Booking Checklist */}
       {(transportLegs.length > 0 || destinations.some(d => d.nights > 0)) && (
         <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
@@ -311,6 +318,7 @@ export default memo(function DeepPlanSidebar({
           </div>
         );
       })()}
+      </>)}
     </aside>
   );
 });
