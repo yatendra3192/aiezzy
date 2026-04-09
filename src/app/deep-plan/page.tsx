@@ -2467,68 +2467,69 @@ function DeepPlanPageContent() {
                   const cityActivityCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).reduce((n, d) => n + d.stops.filter(s => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).length, 0);
                   const cityDayCount = adjustedDays.filter(d => d.city === day.city || d.city === cityDisplayName).length;
                   return (
-                  <div className="mb-3">
-                    <div className="bg-bg-surface border border-border-subtle rounded-xl shadow-sm overflow-hidden flex">
-                      <div className="flex-1 px-4 py-3 min-w-0">
+                  <div className="mb-4">
+                    <div className="rounded-2xl shadow-lg overflow-hidden">
+                      {/* Hero photo with overlay */}
+                      <div className="relative h-[140px] md:h-[160px]">
+                        <PlacePhoto name={cityDisplayName} city={cityCountry || ''} className="absolute inset-0 w-full h-full object-cover" fallbackIcon="" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
+                        {/* City name + country overlay */}
+                        <div className="absolute bottom-0 left-0 right-0 p-4">
+                          <div className="flex items-end justify-between gap-3">
+                            <div>
+                              {cityCountry && <p className="text-[10px] text-white/70 font-body font-bold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
+                              <h2 className="font-display text-[24px] md:text-[28px] font-bold text-white tracking-tight leading-none drop-shadow-lg">{cityDisplayName}</h2>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {cityNights > 0 && <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-white/20 backdrop-blur-sm text-white font-body">{cityNights} nights</span>}
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-accent-cyan/80 backdrop-blur-sm text-white font-body">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Info bar */}
+                      <div className="bg-bg-surface px-4 py-3 border-x border-b border-border-subtle rounded-b-2xl">
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            {cityCountry && <p className="text-[10px] text-accent-gold font-body font-bold uppercase tracking-widest mb-0.5">{cityCountry}</p>}
-                            <h2 className="font-display text-[20px] font-bold text-text-primary tracking-tight leading-tight">{cityDisplayName}</h2>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap text-[12px] text-text-secondary font-body">
+                            <div className="flex items-center gap-2 flex-wrap text-[12px] text-text-secondary font-body">
                               <span className="flex items-center gap-1">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-gold"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                                 {formatDateNice(day.date)}{lastCityDayIdx > dayIdx ? ` \u2014 ${formatDateNice(adjustedDays[lastCityDayIdx].date)}` : ''}
                               </span>
-                              {cityNights > 0 && (
-                                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-100/70 text-teal-700 font-body">{cityNights}N</span>
-                              )}
+                              <span className="text-accent-gold font-semibold">{cityActivityCount} {cityActivityCount === 1 ? 'place' : 'places'}</span>
                             </div>
                             {cityHotel && (
-                              <div className="mt-1">
-                                <p className="flex items-center gap-1 text-[11px] text-text-muted font-body truncate">
+                              <div className="flex items-center gap-2 mt-1 text-[11px] text-text-muted font-body">
+                                <span className="flex items-center gap-1 truncate">
                                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose-400 flex-shrink-0"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                                   {cityHotel}
-                                </p>
-                                {/* Hotel rating + price */}
-                                {cityDest?.selectedHotel && (
-                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-text-muted font-body">
-                                    {(cityDest.selectedHotel.rating || 0) > 0 && (
-                                      <span className="flex items-center gap-0.5">
-                                        <svg width="9" height="9" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-                                        <span className="font-mono font-medium">{cityDest.selectedHotel.rating}</span>
-                                      </span>
-                                    )}
-                                    {(cityDest.selectedHotel.pricePerNight || 0) > 0 && (
-                                      <span className="font-mono">{formatPrice(cityDest.selectedHotel.pricePerNight, currency)}/night</span>
-                                    )}
-                                  </div>
+                                </span>
+                                {cityDest?.selectedHotel && (cityDest.selectedHotel.rating || 0) > 0 && (
+                                  <span className="flex items-center gap-0.5 flex-shrink-0">
+                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="1"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                                    <span className="font-mono font-medium text-[10px]">{cityDest.selectedHotel.rating}</span>
+                                  </span>
+                                )}
+                                {cityDest?.selectedHotel && (cityDest.selectedHotel.pricePerNight || 0) > 0 && (
+                                  <span className="font-mono text-[10px] flex-shrink-0">{formatPrice(cityDest.selectedHotel.pricePerNight, currency)}/night</span>
                                 )}
                               </div>
                             )}
-                            {/* City action buttons */}
-                            <div className="flex items-center gap-2 mt-2 print-hide">
-                              <a href={`https://www.google.com/maps/search/${encodeURIComponent(cityDisplayName + (cityCountry ? ', ' + cityCountry : ''))}`} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-bg-card border border-border-subtle rounded-lg text-[10px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                                View on map
-                              </a>
-                              <a href={`https://www.google.com/search?q=things+to+do+in+${encodeURIComponent(cityDisplayName)}`} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-1 bg-bg-card border border-border-subtle rounded-lg text-[10px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                                Explore suggestions
-                              </a>
-                            </div>
                           </div>
-                          <div className="flex flex-col items-end gap-1.5 flex-shrink-0 text-[11px] font-body">
-                            <span className="text-accent-gold font-semibold">{cityActivityCount} {cityActivityCount === 1 ? 'place' : 'places'}</span>
-                            <span className="text-text-muted">{cityDayCount} {cityDayCount === 1 ? 'day' : 'days'}</span>
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1.5 flex-shrink-0 print-hide">
+                            <a href={`https://www.google.com/maps/search/${encodeURIComponent(cityDisplayName + (cityCountry ? ', ' + cityCountry : ''))}`} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-[10px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                              Map
+                            </a>
+                            <a href={`https://www.google.com/search?q=things+to+do+in+${encodeURIComponent(cityDisplayName)}`} target="_blank" rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-bg-card border border-border-subtle rounded-lg text-[10px] font-body text-text-secondary hover:text-accent-cyan hover:border-accent-cyan/40 transition-colors">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                              Explore
+                            </a>
                           </div>
                         </div>
-                      </div>
-                      {/* City photo panel (desktop only) */}
-                      <div className="hidden md:block w-[160px] flex-shrink-0 relative overflow-hidden">
-                        <PlacePhoto name={cityDisplayName} city={cityCountry || ''} className="absolute inset-0 w-full h-full object-cover" fallbackIcon="" />
-                        <div className="absolute inset-0 bg-gradient-to-l from-transparent to-bg-surface/80" />
                       </div>
                     </div>
                   </div>
