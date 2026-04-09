@@ -2275,7 +2275,7 @@ function DeepPlanPageContent() {
         </motion.div>
       )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[960px]">
-        <div className="bg-bg-surface border border-border-subtle rounded-[2rem] card-warm-lg p-5 md:p-8 relative">
+        <div className="bg-white border border-border-subtle rounded-[2rem] card-warm-lg p-5 md:p-8 relative">
           {/* ====== [A] TRIP HEADER ====== */}
           <div className="mb-5">
             {!isReadOnly && (
@@ -2321,7 +2321,7 @@ function DeepPlanPageContent() {
               <div className="print-hide flex items-center gap-2 flex-shrink-0">
             {!isReadOnly && (
             <button onClick={() => router.push(trip.tripId ? `/route?id=${trip.tripId}` : '/route')}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm">
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
               Edit Route
             </button>
@@ -2374,7 +2374,7 @@ function DeepPlanPageContent() {
                 }
               }}
               disabled={pdfLoading}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
               {pdfLoading ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
@@ -2390,7 +2390,7 @@ function DeepPlanPageContent() {
             {!isReadOnly && (
             <button onClick={() => setShowShareModal(true)}
               disabled={!trip.tripId}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-bg-surface border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm disabled:opacity-50">
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-gray-300 rounded-lg text-[13px] font-body font-medium text-text-primary hover:text-accent-cyan hover:border-accent-cyan transition-colors shadow-sm disabled:opacity-50">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
               Share
             </button>
@@ -2403,7 +2403,7 @@ function DeepPlanPageContent() {
 
           {/* ====== [D] STICKY DAY NAVIGATION ====== */}
           {adjustedDays.length > 1 && (
-            <div className="sticky top-0 z-30 bg-[#F5F1EB]/95 backdrop-blur-sm py-3 mb-5 border-b border-border-subtle/30 print-hide">
+            <div className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-sm py-3 mb-5 border-b border-border-subtle/30 print-hide">
               <div className="relative">
                 {/* Connecting rail behind chips */}
                 <div className="absolute top-1/2 left-3 right-3 h-[2px] bg-gray-200/60 -translate-y-1/2 rounded-full" />
@@ -2576,7 +2576,7 @@ function DeepPlanPageContent() {
                 })()}
                 {/* Day header — click to expand/collapse */}
                 <div
-                  className={`bg-bg-surface border rounded-xl transition-all overflow-visible ${isDayExpanded(day.day) ? `shadow-md border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-border-subtle/60 border-r-border-subtle/60 border-b-border-subtle/60` : 'shadow-sm border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
+                  className={`bg-white border rounded-xl transition-all overflow-visible ${isDayExpanded(day.day) ? `shadow-md border-l-[3px] ${dayStyle.line.replace('border-', 'border-l-')} border-t border-r border-b border-t-border-subtle/60 border-r-border-subtle/60 border-b-border-subtle/60` : 'shadow-sm border-border-subtle hover:border-accent-cyan/20 hover:shadow-md'}`}
                 >
                   <div className={`px-4 py-3 cursor-pointer select-none ${isDayExpanded(day.day) ? dayStyle.bg + '/30' : ''} transition-colors`} onClick={() => toggleDay(day.day)}>
                   <div className="flex items-center justify-between gap-2">
@@ -2840,7 +2840,7 @@ function DeepPlanPageContent() {
                       return (
                         <div key={stop.id} className="relative">
                           <div className="flex items-center gap-3 py-1 pl-4">
-                            <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-bg-surface border-2 border-orange-200" />
+                            <div className="absolute -left-[5px] w-2.5 h-2.5 rounded-full bg-white border-2 border-orange-200" />
                             <div className="inline-flex flex-col">
                               <div className="inline-flex items-center gap-1.5 bg-orange-50/60 border border-orange-100/60 rounded-full px-3 py-0.5">
                                 {stop.time && (() => {
@@ -2940,7 +2940,7 @@ function DeepPlanPageContent() {
                                                 trip.updateDeepPlanData({ cityActivities: { [cityKey]: [...existingActs, { name: r.name, category: r.cuisineType || 'restaurant', durationMin: mealDuration, bestTime: 'anytime', lat: r.lat, lng: r.lng }] } });
                                               }
                                               setExpandedMealSlot(null);
-                                            }} className="flex-shrink-0 flex items-center gap-2 bg-bg-surface border border-orange-100 hover:border-orange-300 rounded-lg px-2.5 py-1.5 transition-colors shadow-sm hover:shadow group">
+                                            }} className="flex-shrink-0 flex items-center gap-2 bg-white border border-orange-100 hover:border-orange-300 rounded-lg px-2.5 py-1.5 transition-colors shadow-sm hover:shadow group">
                                               <PlacePhoto name={r.name} city={day.city} className="w-9 h-9 rounded" fallbackIcon="" />
                                               <div className="text-left">
                                                 <p className="text-[10px] font-body font-semibold text-text-primary leading-tight max-w-[100px] truncate">{r.name}</p>
@@ -3056,7 +3056,7 @@ function DeepPlanPageContent() {
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
                                 </button>
                                 {openActivityMenu === stop.id && (
-                                  <div onClick={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 z-50 bg-bg-surface border border-border-subtle rounded-xl shadow-xl py-1.5 min-w-[160px]">
+                                  <div onClick={e => e.stopPropagation()} className="absolute right-0 top-full mt-1 z-50 bg-white border border-border-subtle rounded-xl shadow-xl py-1.5 min-w-[160px]">
                                     {/* View on map */}
                                     {(stop.type === 'attraction' || stop.type === 'hotel') && !isMeal && (
                                       <a href={mapsUrl(stop.name, day.city)} target="_blank" rel="noopener noreferrer"
@@ -3596,7 +3596,7 @@ function DeepPlanPageContent() {
                                     </div>
                                     {/* Directions dropdown */}
                                     {isDropdownOpen && travelData && (
-                                      <div className="absolute left-0 top-full mt-1 z-50 bg-bg-surface border border-border-subtle rounded-lg shadow-xl p-2 min-w-[200px] space-y-1">
+                                      <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-border-subtle rounded-lg shadow-xl p-2 min-w-[200px] space-y-1">
                                         {([['walk', '🚶', 'Walk'], ['transit', '🚌', 'Transit'], ['drive', '🚗', 'Drive']] as const).map(([mode, emoji, label]) => {
                                           const d = travelData[mode];
                                           return (
@@ -3778,7 +3778,7 @@ function DeepPlanPageContent() {
                           autoFocus
                         />
                         {suggestions.length > 0 && (
-                          <div className="absolute left-0 top-full mt-1 w-full bg-bg-surface border border-border-subtle rounded-lg shadow-2xl z-[100] overflow-hidden">
+                          <div className="absolute left-0 top-full mt-1 w-full bg-white border border-border-subtle rounded-lg shadow-2xl z-[100] overflow-hidden">
                             {suggestions.map((s: any, i: number) => (
                               <button key={i} onClick={() => {
                                 setActivityInputText(prev => ({ ...prev, [day.day]: s.name }));
@@ -3882,7 +3882,7 @@ function DeepPlanPageContent() {
           }); })()}
 
           {/* Trip Summary — mobile only (sidebar handles desktop) */}
-          <div className="md:hidden mt-6 bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+          <div className="md:hidden mt-6 bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
             <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Trip Summary</h3>
             <div className="grid grid-cols-3 gap-3 text-center mb-3">
               <div><p className="text-accent-cyan font-mono font-bold text-[18px]">{adjustedDays.length}</p><p className="text-text-muted text-[11px] font-body">Days</p></div>

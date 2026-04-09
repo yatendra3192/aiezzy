@@ -147,7 +147,7 @@ export default memo(function DeepPlanSidebar({
   return (
     <aside className="hidden md:block md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
       {/* ═══ Trip Companion — hero utility card ═══ */}
-      <div className="bg-gradient-to-br from-bg-surface to-bg-card/50 border border-border-subtle rounded-2xl shadow-md overflow-hidden">
+      <div className="bg-gradient-to-br from-white to-gray-50/50 border border-border-subtle rounded-2xl shadow-md overflow-hidden">
         {/* Top section: stats grid */}
         <div className="px-4 pt-4 pb-3">
           <div className="grid grid-cols-4 gap-1 text-center">
@@ -183,7 +183,7 @@ export default memo(function DeepPlanSidebar({
 
         {/* Budget — total spend hero */}
         {grandTotal > 0 && (
-          <div className="border-t border-border-subtle/60 px-4 py-3 bg-bg-surface/80">
+          <div className="border-t border-border-subtle/60 px-4 py-3 bg-white/80">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
               {setCurrency && (
@@ -224,7 +224,7 @@ export default memo(function DeepPlanSidebar({
 
       {/* Booking Checklist */}
       {(transportLegs.length > 0 || destinations.some(d => d.nights > 0)) && (
-        <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
+        <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
           <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Booking Checklist</h3>
           <div className="space-y-2 max-h-[260px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
             {transportLegs.map((leg, li) => {

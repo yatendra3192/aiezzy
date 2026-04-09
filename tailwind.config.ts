@@ -6,8 +6,8 @@ const config: Config = {
     extend: {
       colors: {
         bg: {
-          primary: '#F5F1EB',
-          surface: '#FAF7F2',
+          primary: '#FAF7F2',
+          surface: '#FFFFFF',
           card: '#F3EFE8',
           elevated: '#FFFFFF',
         },
