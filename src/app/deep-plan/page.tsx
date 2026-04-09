@@ -2408,7 +2408,6 @@ function DeepPlanPageContent() {
               bookingDocs={trip.bookingDocs} totalNights={trip.destinations.reduce((s, d) => s + d.nights, 0)}
               totalDays={adjustedDays.length} flightCost={flightCost} trainCost={trainCost} hotelCost={hotelCost}
               attractionCost={attractionCost} foodCost={foodCost} localTransportCost={localTransportCost}
-              grandTotal={flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost}
               currency={currency} setCurrency={setCurrency} isLocalStay={isLocalStay} isReadOnly={isReadOnly}
               tripId={trip.tripId} shareToken={shareToken || undefined}
             />
