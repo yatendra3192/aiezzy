@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion, Reorder, AnimatePresence } from 'framer-motion';
+import { motion, Reorder, AnimatePresence, useDragControls } from 'framer-motion';
 import { useTrip } from '@/context/TripContext';
 import { getDepartureHub, getArrivalHub } from '@/data/mockData';
 import { getCityPricing, calcTaxiCost } from '@/data/cityPricing';
@@ -59,6 +59,30 @@ interface DayPlan {
   dayCost: number;
   /** Cost label */
   costLabel: string;
+}
+
+/** Wrapper for Reorder.Item that only allows drag from elements with data-drag-handle */
+function DraggableReorderItem({ id, children, isReadOnly }: { id: string; children: React.ReactNode; isReadOnly?: boolean }) {
+  const controls = useDragControls();
+  return (
+    <Reorder.Item
+      value={id}
+      as="div"
+      className="relative select-none"
+      dragListener={false}
+      dragControls={controls}
+      whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
+      onPointerDown={(e: React.PointerEvent) => {
+        // Only start drag if pointer is on a drag handle (grip dots or photo)
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-drag-handle]')) {
+          controls.start(e);
+        }
+      }}
+    >
+      {children}
+    </Reorder.Item>
+  );
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -2851,9 +2875,9 @@ function DeepPlanPageContent() {
                               </div>
                             )}
                           </div>
-                          {/* Drag handle — grip dots + photo area is the drag zone */}
+                          {/* Drag handle — grip dots area is a drag zone */}
                           {isDraggableActivity && !isReadOnly && (
-                            <div className="print-hide flex items-center justify-center flex-shrink-0 select-none w-5 self-stretch -ml-0.5 mr-1 rounded opacity-30 hover:opacity-70 active:opacity-100 cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} aria-label="Drag to reorder">
+                            <div data-drag-handle className="print-hide flex items-center justify-center flex-shrink-0 select-none w-5 self-stretch -ml-0.5 mr-1 rounded opacity-30 hover:opacity-70 active:opacity-100 cursor-grab active:cursor-grabbing" style={{ touchAction: 'none' }} aria-label="Drag to reorder">
                               <div className="flex flex-col gap-[2px]">
                                 <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
                                 <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
@@ -2864,7 +2888,7 @@ function DeepPlanPageContent() {
                           <div className={`flex-1${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-2.5` : ''}`}>
                             <div className={isAttractionCard ? 'flex gap-3 items-start' : ''}>
                             {isAttractionCard && (
-                              <div style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing">
+                              <div data-drag-handle style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing">
                                 <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
                               </div>
                             )}
@@ -3473,16 +3497,9 @@ function DeepPlanPageContent() {
 
                     if (useReorder && isDraggableActivity) {
                       return (
-                        <Reorder.Item
-                          key={stop.id}
-                          value={stop.id}
-                          as="div"
-                          className={`relative select-none ${!isReadOnly ? 'cursor-grab active:cursor-grabbing active:z-10' : ''}`}
-                          dragListener={!isReadOnly}
-                          whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
-                        >
+                        <DraggableReorderItem key={stop.id} id={stop.id} isReadOnly={isReadOnly}>
                           {stopContent}
-                        </Reorder.Item>
+                        </DraggableReorderItem>
                       );
                     }
 
