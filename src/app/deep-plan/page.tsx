@@ -250,6 +250,7 @@ function DeepPlanPageContent() {
   // Long-press drag: which stop ID is currently drag-enabled (null = none)
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressPointerRef = useRef<{ x: number; y: number; pointerId: number; pointerType: string } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   // Meal restaurant suggestions
   const [mealSuggestions, setMealSuggestions] = useState<Record<string, Array<{ placeId: string; name: string; rating: number; priceLevel?: string; cuisineType?: string; lat: number; lng: number; photoRef?: string }>>>({});
@@ -3477,23 +3478,38 @@ function DeepPlanPageContent() {
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className={`relative select-none ${isDragActive ? 'ring-2 ring-accent-cyan/40 rounded-xl z-10 cursor-grabbing' : ''}`}
+                          id={`reorder-${stop.id}`}
+                          className={`relative select-none ${isDragActive ? 'ring-2 ring-accent-cyan/40 rounded-xl z-10' : ''}`}
                           dragListener={isDragActive}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
                           onDragEnd={() => setDragActiveId(null)}
                           onPointerDown={isReadOnly ? undefined : (e: React.PointerEvent) => {
-                            // Start long-press timer (500ms) to activate drag
+                            if (isDragActive) return; // already active, let Framer handle
+                            // Store pointer info for re-dispatch after long-press
+                            longPressPointerRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType };
                             if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                            const stopId = stop.id;
                             longPressTimerRef.current = setTimeout(() => {
-                              setDragActiveId(stop.id);
-                              // Vibrate on mobile for haptic feedback
                               if (navigator.vibrate) navigator.vibrate(50);
+                              setDragActiveId(stopId);
+                              // After React re-renders with dragListener=true, dispatch a pointerdown
+                              // so Framer picks up the existing touch as a drag start
+                              requestAnimationFrame(() => {
+                                const el = document.getElementById(`reorder-${stopId}`);
+                                const ptr = longPressPointerRef.current;
+                                if (el && ptr) {
+                                  el.dispatchEvent(new PointerEvent('pointerdown', {
+                                    clientX: ptr.x, clientY: ptr.y,
+                                    pointerId: ptr.pointerId, pointerType: ptr.pointerType,
+                                    bubbles: true, cancelable: true,
+                                  }));
+                                }
+                              });
                             }, 500);
                           }}
-                          onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
+                          onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } if (!isDragActive) setDragActiveId(null); }}
                           onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
                           onPointerMove={(_e: React.PointerEvent) => {
-                            // Cancel long-press if user moves finger (they're scrolling)
                             if (longPressTimerRef.current && !isDragActive) {
                               clearTimeout(longPressTimerRef.current);
                               longPressTimerRef.current = null;
