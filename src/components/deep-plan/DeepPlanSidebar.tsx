@@ -146,48 +146,67 @@ export default memo(function DeepPlanSidebar({
 
   return (
     <aside className="hidden md:block md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
-      {/* Trip Progress */}
-      <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
-        <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Trip Progress</h3>
-        <div className="space-y-2.5">
-          <div className="flex justify-between text-[12px] font-body"><span className="text-text-secondary">Days</span><span className="font-mono font-semibold text-text-primary">{adjustedDays.length}</span></div>
-          <div className="flex justify-between text-[12px] font-body"><span className="text-text-secondary">Cities</span><span className="font-mono font-semibold text-text-primary">{destinations.length}</span></div>
-          <div className="flex justify-between text-[12px] font-body"><span className="text-text-secondary">Nights</span><span className="font-mono font-semibold text-text-primary">{totalNights}</span></div>
-          <div className="flex justify-between text-[12px] font-body"><span className="text-text-secondary">Activities</span><span className="font-mono font-semibold text-text-primary">{activityCount}</span></div>
-        </div>
-      </div>
-
-      {/* Budget Summary */}
-      {grandTotal > 0 && (
-        <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-display font-bold text-[14px] text-text-primary">Budget</h3>
-            {setCurrency && (
-              <select
-                value={currency}
-                onChange={e => setCurrency(e.target.value as CurrencyCode)}
-                className="text-[11px] font-mono bg-bg-card border border-border-subtle rounded-lg px-2 py-1 text-text-secondary cursor-pointer outline-none focus:border-accent-cyan"
-              >
-                {(['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED', 'THB'] as CurrencyCode[]).map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div className="space-y-2.5">
-            {flightCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" /> Flights</span><span className="font-mono text-text-primary">{formatPrice(flightCost, currency)}</span></div>}
-            {trainCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> Trains</span><span className="font-mono text-text-primary">{formatPrice(trainCost, currency)}</span></div>}
-            {hotelCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-400" /> Hotels ({totalNights}N)</span><span className="font-mono text-text-primary">{formatPrice(hotelCost, currency)}</span></div>}
-            {attractionCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Attractions</span><span className="font-mono text-text-primary">{formatPrice(attractionCost, currency)}</span></div>}
-            {foodCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-400" /> Food ({totalDays}D)</span><span className="font-mono text-text-primary">{formatPrice(foodCost, currency)}</span></div>}
-            {localTransportCost > 0 && <div className="flex justify-between items-center text-[12px]"><span className="text-text-secondary font-body flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-violet-400" /> Local Transport</span><span className="font-mono text-text-primary">{formatPrice(localTransportCost, currency)}</span></div>}
-            <div className="flex justify-between items-center pt-2.5 border-t border-border-subtle">
-              <span className="text-[13px] text-text-primary font-body font-semibold">Total</span>
-              <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(grandTotal, currency)}</span>
+      {/* ═══ Trip Companion — hero utility card ═══ */}
+      <div className="bg-gradient-to-br from-white to-gray-50/50 border border-border-subtle rounded-2xl shadow-md overflow-hidden">
+        {/* Top section: stats grid */}
+        <div className="px-4 pt-4 pb-3">
+          <div className="grid grid-cols-4 gap-1 text-center">
+            <div>
+              <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{adjustedDays.length}</p>
+              <p className="text-[9px] text-text-muted font-body mt-0.5">Days</p>
+            </div>
+            <div>
+              <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{destinations.length}</p>
+              <p className="text-[9px] text-text-muted font-body mt-0.5">Cities</p>
+            </div>
+            <div>
+              <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{totalNights}</p>
+              <p className="text-[9px] text-text-muted font-body mt-0.5">Nights</p>
+            </div>
+            <div>
+              <p className="text-[18px] font-mono font-bold text-text-primary leading-none">{activityCount}</p>
+              <p className="text-[9px] text-text-muted font-body mt-0.5">Activities</p>
             </div>
           </div>
         </div>
-      )}
+
+        {/* Booking progress bar */}
+        <div className="px-4 pb-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] text-text-muted font-body">{booked}/{total} booked</span>
+            {pct === 100 ? <span className="text-[10px] text-emerald-600 font-body font-medium">All set!</span> : needAttention > 0 ? <span className="text-[10px] text-amber-600 font-body">{needAttention} pending</span> : null}
+          </div>
+          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+            <div className={`h-full rounded-full transition-all duration-700 ${pct === 100 ? 'bg-emerald-400' : 'bg-accent-cyan'}`} style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+
+        {/* Budget — total spend hero */}
+        {grandTotal > 0 && (
+          <div className="border-t border-border-subtle/60 px-4 py-3 bg-white/60">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
+              {setCurrency && (
+                <select value={currency} onChange={e => setCurrency(e.target.value as CurrencyCode)}
+                  className="text-[10px] font-mono bg-transparent border border-border-subtle rounded px-1.5 py-0.5 text-text-muted cursor-pointer outline-none focus:border-accent-cyan">
+                  {(['INR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CAD', 'SGD', 'AED', 'THB'] as CurrencyCode[]).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="text-accent-cyan font-mono font-bold text-[20px] leading-none mb-2">{formatPrice(grandTotal, currency)}</p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              {flightCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" />Flights</span><span className="font-mono text-text-secondary">{formatPrice(flightCost, currency)}</span></div>}
+              {trainCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" />Trains</span><span className="font-mono text-text-secondary">{formatPrice(trainCost, currency)}</span></div>}
+              {hotelCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-rose-400" />Hotels</span><span className="font-mono text-text-secondary">{formatPrice(hotelCost, currency)}</span></div>}
+              {attractionCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Attractions</span><span className="font-mono text-text-secondary">{formatPrice(attractionCost, currency)}</span></div>}
+              {foodCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-orange-400" />Food</span><span className="font-mono text-text-secondary">{formatPrice(foodCost, currency)}</span></div>}
+              {localTransportCost > 0 && <div className="flex justify-between text-[10px]"><span className="text-text-muted font-body flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" />Transport</span><span className="font-mono text-text-secondary">{formatPrice(localTransportCost, currency)}</span></div>}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Booking Warnings — softer amber */}
       {(destinations.some(d => d.nights > 0 && !d.selectedHotel) || (transportLegs.some(l => !l.selectedFlight && !l.selectedTrain) && !isLocalStay)) && (
@@ -202,33 +221,6 @@ export default memo(function DeepPlanSidebar({
         </div>
       )}
 
-      {/* Progress Ring */}
-      <div className="bg-white border border-border-subtle rounded-xl p-4 shadow-sm">
-        <h3 className="font-display font-bold text-[14px] text-text-primary mb-3">Booking Progress</h3>
-        <div className="flex items-center gap-4">
-          <div className="relative w-20 h-20 flex-shrink-0">
-            <svg width="80" height="80" viewBox="0 0 80 80" className="-rotate-90">
-              <circle cx="40" cy="40" r="36" fill="none" stroke="#e5e7eb" strokeWidth="6" />
-              <circle cx="40" cy="40" r="36" fill="none" stroke={pct === 100 ? '#10b981' : '#E8654A'} strokeWidth="6"
-                strokeLinecap="round" strokeDasharray={String(circumference)} strokeDashoffset={String(dashOffset)}
-                className="transition-all duration-700" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[18px] font-mono font-bold text-text-primary">{pct}%</span>
-            </div>
-          </div>
-          <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[12px] font-body text-text-secondary"><span className="font-semibold text-text-primary">{booked}</span> of <span className="font-semibold text-text-primary">{total}</span> booked</p>
-            {needAttention > 0 && (
-              <p className="text-[11px] font-body text-amber-600 flex items-center gap-1">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                {needAttention} need{needAttention === 1 ? 's' : ''} attention
-              </p>
-            )}
-            {pct === 100 && <p className="text-[11px] font-body text-emerald-600 font-medium">All set!</p>}
-          </div>
-        </div>
-      </div>
 
       {/* Booking Checklist */}
       {(transportLegs.length > 0 || destinations.some(d => d.nights > 0)) && (
