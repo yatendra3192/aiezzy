@@ -2401,6 +2401,22 @@ function DeepPlanPageContent() {
 
           {/* Trip overview stats moved to sidebar Trip Progress — removed duplicate here */}
 
+          {/* ====== Mobile Trip Summary (hidden on desktop — sidebar shows there) ====== */}
+          <div className="md:hidden mb-4 bg-white border border-border-subtle rounded-xl p-3 shadow-sm print-hide">
+            <div className="grid grid-cols-4 gap-1 text-center mb-2">
+              <div><p className="text-[16px] font-mono font-bold text-text-primary">{adjustedDays.length}</p><p className="text-[8px] text-text-muted font-body">Days</p></div>
+              <div><p className="text-[16px] font-mono font-bold text-text-primary">{trip.destinations.length}</p><p className="text-[8px] text-text-muted font-body">Cities</p></div>
+              <div><p className="text-[16px] font-mono font-bold text-text-primary">{trip.destinations.reduce((s, d) => s + d.nights, 0)}</p><p className="text-[8px] text-text-muted font-body">Nights</p></div>
+              <div><p className="text-[16px] font-mono font-bold text-text-primary">{adjustedDays.reduce((n, d) => n + d.stops.filter((s: any) => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')).length, 0)}</p><p className="text-[8px] text-text-muted font-body">Activities</p></div>
+            </div>
+            {(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost) > 0 && (
+              <div className="flex items-center justify-between pt-2 border-t border-border-subtle/50">
+                <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
+                <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost, currency)}</span>
+              </div>
+            )}
+          </div>
+
           {/* ====== [D] STICKY DAY NAVIGATION ====== */}
           {adjustedDays.length > 1 && (
             <div className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-sm py-3 mb-5 border-b border-border-subtle/30 print-hide">
