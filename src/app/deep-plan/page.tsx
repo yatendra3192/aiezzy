@@ -3492,7 +3492,7 @@ function DeepPlanPageContent() {
                           }}
                           onPointerUp={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
                           onPointerCancel={() => { if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; } }}
-                          onPointerMove={(e) => {
+                          onPointerMove={(_e: React.PointerEvent) => {
                             // Cancel long-press if user moves finger (they're scrolling)
                             if (longPressTimerRef.current && !isDragActive) {
                               clearTimeout(longPressTimerRef.current);
