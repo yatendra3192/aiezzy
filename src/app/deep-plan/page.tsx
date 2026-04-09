@@ -2401,26 +2401,17 @@ function DeepPlanPageContent() {
 
           {/* Trip overview stats moved to sidebar Trip Progress — removed duplicate here */}
 
-          {/* ====== Mobile Trip Summary (hidden on desktop — sidebar shows there) ====== */}
-          <div className="md:hidden mb-4 bg-white border border-border-subtle rounded-xl p-3 shadow-sm print-hide">
-            <div className="grid grid-cols-4 gap-1 text-center mb-2">
-              <div><p className="text-[16px] font-mono font-bold text-text-primary">{adjustedDays.length}</p><p className="text-[8px] text-text-muted font-body">Days</p></div>
-              <div><p className="text-[16px] font-mono font-bold text-text-primary">{trip.destinations.length}</p><p className="text-[8px] text-text-muted font-body">Cities</p></div>
-              <div><p className="text-[16px] font-mono font-bold text-text-primary">{trip.destinations.reduce((s, d) => s + d.nights, 0)}</p><p className="text-[8px] text-text-muted font-body">Nights</p></div>
-              <div><p className="text-[16px] font-mono font-bold text-text-primary">{adjustedDays.reduce((n, d) => n + d.stops.filter((s: any) => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time')).length, 0)}</p><p className="text-[8px] text-text-muted font-body">Activities</p></div>
-            </div>
-            {(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost) > 0 && (
-              <div className="flex items-center justify-between pt-2 border-t border-border-subtle/50">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-text-muted font-body">Est. Budget</span>
-                  <select value={currency} onChange={e => setCurrency(e.target.value as any)}
-                    className="text-[10px] font-mono bg-transparent border border-border-subtle rounded px-1 py-0.5 text-text-muted cursor-pointer outline-none">
-                    {['INR','USD','EUR','GBP','JPY','AUD','CAD','SGD','AED','THB'].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <span className="text-accent-cyan font-mono font-bold text-[15px]">{formatPrice(flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost, currency)}</span>
-              </div>
-            )}
+          {/* ====== Mobile Trip Companion (same as sidebar, shown on mobile only) ====== */}
+          <div className="md:hidden mb-4 print-hide">
+            <DeepPlanSidebar
+              adjustedDays={adjustedDays} destinations={trip.destinations} transportLegs={trip.transportLegs}
+              bookingDocs={trip.bookingDocs} totalNights={trip.destinations.reduce((s, d) => s + d.nights, 0)}
+              totalDays={adjustedDays.length} flightCost={flightCost} trainCost={trainCost} hotelCost={hotelCost}
+              attractionCost={attractionCost} foodCost={foodCost} localTransportCost={localTransportCost}
+              grandTotal={flightCost + trainCost + hotelCost + attractionCost + foodCost + localTransportCost}
+              currency={currency} setCurrency={setCurrency} isLocalStay={isLocalStay} isReadOnly={isReadOnly}
+              tripId={trip.tripId} shareToken={shareToken || undefined}
+            />
           </div>
 
           {/* ====== [D] STICKY DAY NAVIGATION ====== */}
@@ -3986,7 +3977,8 @@ function DeepPlanPageContent() {
 
           </div>{/* end main itinerary column */}
 
-          {/* ====== [F] SIDEBAR — Desktop Only ====== */}
+          {/* ====== [F] SIDEBAR — Desktop Only (mobile version rendered above day nav) ====== */}
+          <div className="hidden md:block">
           <DeepPlanSidebar
             adjustedDays={adjustedDays}
             tripId={trip.tripId}
@@ -4008,6 +4000,7 @@ function DeepPlanPageContent() {
             isReadOnly={isReadOnly}
             shareToken={shareToken || undefined}
           />
+          </div>
 
           </div>{/* end 2-column layout */}
         </div>

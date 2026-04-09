@@ -145,7 +145,7 @@ export default memo(function DeepPlanSidebar({
   const activityCount = adjustedDays.reduce((n, d) => n + d.stops.filter((s: any) => s.type === 'attraction' && !s.mealType && !s.name.startsWith('Free time') && !s.name.startsWith('Morning in')).length, 0);
 
   return (
-    <aside className="hidden md:block md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
+    <aside className="w-full md:w-[280px] md:flex-shrink-0 md:sticky md:top-16 space-y-4 print-hide md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1" style={{ scrollbarWidth: 'thin', scrollbarColor: '#d1d5db transparent' }}>
       {/* ═══ Trip Companion — hero utility card ═══ */}
       <div className="bg-gradient-to-br from-white to-gray-50/50 border border-border-subtle rounded-2xl shadow-md overflow-hidden">
         {/* Top section: stats grid */}
