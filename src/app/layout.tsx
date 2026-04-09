@@ -58,7 +58,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${syne.variable} ${jakarta.variable} ${spaceMono.variable}`}>
-      <body className="font-body antialiased min-h-screen">
+      <body className="font-body antialiased min-h-screen bg-bg-primary">
         <GoogleAnalytics />
         <ServiceWorkerRegister />
         <ErrorReporterInit />
