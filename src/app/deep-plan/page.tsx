@@ -2944,18 +2944,27 @@ function DeepPlanPageContent() {
                         <div className="flex items-start gap-3 pl-4 py-1.5">
                           {/* Timeline circle — category icon for attractions, plain dot otherwise */}
                           <div className="absolute -left-[7px] mt-1">
-                            {stop.category && CATEGORY_ICONS[stop.category] ? (
-                              <div className="w-4 h-4 rounded-full flex items-center justify-center relative z-10 border-2 border-white"
-                                style={{ backgroundColor: stopColor }}>
-                                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d={CATEGORY_ICONS[stop.category]} />
-                                </svg>
-                              </div>
-                            ) : (
-                              <div className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-mono font-bold relative z-10 border-2 border-white"
-                                style={{ backgroundColor: stopColor }}>
-                              </div>
-                            )}
+                            {(() => {
+                              // Type-specific timeline icons
+                              const STOP_ICONS: Record<string, string> = {
+                                airport: 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z',
+                                station: 'M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0h16M8 22h8',
+                                hotel: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z',
+                                home: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z',
+                              };
+                              const iconPath = stop.category && CATEGORY_ICONS[stop.category] ? CATEGORY_ICONS[stop.category] : STOP_ICONS[stop.type] || '';
+                              return iconPath ? (
+                                <div className="w-4 h-4 rounded-full flex items-center justify-center relative z-10 border-2 border-white shadow-sm"
+                                  style={{ backgroundColor: stopColor }}>
+                                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d={iconPath} />
+                                  </svg>
+                                </div>
+                              ) : (
+                                <div className="w-3 h-3 rounded-full relative z-10 border-2 border-white shadow-sm"
+                                  style={{ backgroundColor: stopColor }} />
+                              );
+                            })()}
                           </div>
                           {/* Drag handle — grip dots area is a drag zone */}
                           {isDraggableActivity && !isReadOnly && (
@@ -2996,7 +3005,7 @@ function DeepPlanPageContent() {
                                       </button>
                                     );
                                   })()}
-                                  <h3 className="font-display font-bold text-[15px] text-text-primary leading-tight line-clamp-2 min-w-0" title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : isAttractionCard ? (<button onClick={() => openPlaceInfo(stop.name, day.city)} className="text-left hover:text-accent-cyan transition-colors">{stop.name}</button>) : stop.name}</h3>
+                                  <h3 className={`font-display font-bold leading-tight line-clamp-2 min-w-0 ${isAttractionCard ? 'text-[16px]' : 'text-[14px]'} text-text-primary`} title={stop.name}>{stop.name === 'Rest / Sleep' ? (<span className="flex items-center gap-1.5"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 flex-shrink-0"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Overnight</span>) : isAttractionCard ? (<button onClick={() => openPlaceInfo(stop.name, day.city)} className="text-left hover:text-accent-cyan transition-colors">{stop.name}</button>) : stop.name}</h3>
                                 </div>
                               </div>
                               {/* Action menu — three-dot with dropdown */}
@@ -3169,10 +3178,11 @@ function DeepPlanPageContent() {
                                           </button>}
                                         </>
                                       )}
-                                      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="print-hide text-accent-cyan text-[11px] font-body font-semibold hover:underline flex items-center gap-0.5">
-                                        Book<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="print-hide px-2 py-0.5 rounded-md text-[10px] font-body font-semibold text-accent-cyan border border-accent-cyan/30 hover:bg-accent-cyan/5 transition-colors flex items-center gap-1">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                        Book
                                       </a>
-                                      {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide text-text-muted text-[11px] font-body font-semibold hover:text-accent-cyan hover:underline">Change</button>}
+                                      {!isReadOnly && <button onClick={() => setHotelModal({ destIndex: stop.destIndex! })} className="print-hide px-2 py-0.5 rounded-md text-[10px] font-body text-text-muted hover:text-text-primary hover:bg-gray-100 transition-colors">Change</button>}
                                     </div>
                                   </div>
                                   <p className="text-[10px] text-text-muted font-body">
