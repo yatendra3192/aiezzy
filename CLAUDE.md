@@ -171,7 +171,7 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 **Meal blocks:** Orange pill/chip design with distinct emojis (coffee=breakfast, plate=lunch, moon=dinner) and contextual hints. Warning boxes (red) for "Leave by" and "Board" time-sensitive notes.
 
-**Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx` (wrapped in `React.memo`). Trip Progress stats, Budget breakdown (color-coded dots), Booking Progress ring (SVG circle with percentage), Booking Checklist (per-item ✓/! for transport+hotels), Weather Forecast grid (5-day), Local Info (currency/timezone/emergency/language for 50+ countries), Quick Links. Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
+**Sidebar (desktop):** Extracted to `src/components/deep-plan/DeepPlanSidebar.tsx` (wrapped in `React.memo`). Consolidated into 3 cards (per UI/UX designer): **Trip Companion** hero card (stats grid + booking progress bar + budget total with 2-col breakdown), **Booking Checklist** (per-item checkmarks), **Destination Essentials** (weather strip + local info with emoji icons merged into one card). Quick Links removed (low visual value). Receives computed values as props. Sidebar scrolls independently with `max-h-[calc(100vh-80px)]`.
 
 
 **Start time adjustment:** Changing start time re-runs the full scheduling algorithm (not a flat offset). Activities are re-sorted and re-fit into morning/afternoon blocks based on new start time.
@@ -232,7 +232,13 @@ Users add places/attractions. `PlacesAutocomplete` resolves `parentCity` with mu
 
 ### Styling
 
-Light theme. Tailwind: `bg-primary` (#FAF7F2), `accent-cyan` (#E8654A coral), `accent-gold` (#0D9488 teal). Fonts: Syne/Plus Jakarta Sans/Space Mono.
+Light theme with warm premium feel. **Page background:** `#FAF7F2` (warm beige, set on `<body>` via inline style). **Cards:** `bg-white` with `shadow-sm` floating on the warm background. **Borders:** `#E8E4DE` (warm gray matching the palette). **Design system** (per UI/UX designer review): 3 pill styles only (Status: blue/purple, Category: soft colors, Meta: neutral gray). Warnings use amber/blue severity levels (not red). Three-dot menus hidden until hover. City banners are full-width hero photos with dark gradient overlay.
+
+Tailwind colors: `bg-primary` (#FAF7F2), `bg-surface` (#FFFFFF), `accent-cyan` (#E8654A coral), `accent-gold` (#0D9488 teal). Fonts: Syne (display), Plus Jakarta Sans (body), Space Mono (mono/prices).
+
+**Photo quality:** Place photos fetched at 800x800px max from Google Places API (not 256px). Hero images for city cards use `PlacePhoto` component.
+
+**Ticket price display:** Shows original currency + converted amount in user's selected currency using live exchange rates from `getForeignToINR()` (convRates).
 
 ### Environment Variables
 
