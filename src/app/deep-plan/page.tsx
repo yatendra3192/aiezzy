@@ -61,24 +61,24 @@ interface DayPlan {
   costLabel: string;
 }
 
-/** Wrapper for Reorder.Item that only allows drag from elements with data-drag-handle */
+/** Wrapper for Reorder.Item: desktop = full card drag, mobile = grip/photo only */
 function DraggableReorderItem({ id, children, isReadOnly }: { id: string; children: React.ReactNode; isReadOnly?: boolean }) {
   const controls = useDragControls();
+  const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
   return (
     <Reorder.Item
       value={id}
       as="div"
-      className="relative select-none"
-      dragListener={false}
-      dragControls={controls}
+      className={`relative select-none ${!isReadOnly && !isTouchDevice ? 'cursor-grab active:cursor-grabbing active:z-10' : ''}`}
+      dragListener={!isReadOnly && !isTouchDevice}
+      dragControls={isTouchDevice ? controls : undefined}
       whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
-      onPointerDown={(e: React.PointerEvent) => {
-        // Only start drag if pointer is on a drag handle (grip dots or photo)
+      onPointerDown={isTouchDevice && !isReadOnly ? (e: React.PointerEvent) => {
         const target = e.target as HTMLElement;
         if (target.closest('[data-drag-handle]')) {
           controls.start(e);
         }
-      }}
+      } : undefined}
     >
       {children}
     </Reorder.Item>
