@@ -2913,8 +2913,8 @@ function DeepPlanPageContent() {
                           <div className={`flex-1${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-2.5` : ''}`}>
                             <div className={isAttractionCard ? 'flex gap-3 items-start' : ''}>
                             {isAttractionCard && (
-                              <div data-drag-handle style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing">
-                                <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
+                              <div data-drag-handle style={{ touchAction: 'none' }} className="flex-shrink-0 cursor-grab active:cursor-grabbing" onDragStart={e => e.preventDefault()} draggable={false}>
+                                <PlacePhoto name={stop.name} city={day.city} className="w-14 h-14 pointer-events-none" fallbackIcon={CATEGORY_ICONS[stop.category || 'landmark']} />
                               </div>
                             )}
                             <div className={isAttractionCard ? 'flex-1 min-w-0' : ''} style={{ touchAction: 'pan-y' }}>
