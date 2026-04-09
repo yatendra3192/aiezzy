@@ -2405,7 +2405,7 @@ function DeepPlanPageContent() {
           <div className="md:hidden mb-4 print-hide">
             <DeepPlanSidebar
               adjustedDays={adjustedDays} destinations={trip.destinations} transportLegs={trip.transportLegs}
-              bookingDocs={trip.bookingDocs} totalNights={trip.destinations.reduce((s, d) => s + d.nights, 0)}
+              from={trip.from} bookingDocs={trip.bookingDocs} totalNights={trip.destinations.reduce((s, d) => s + d.nights, 0)}
               totalDays={adjustedDays.length} flightCost={flightCost} trainCost={trainCost} hotelCost={hotelCost}
               attractionCost={attractionCost} foodCost={foodCost} localTransportCost={localTransportCost}
               currency={currency} setCurrency={setCurrency} isLocalStay={isLocalStay} isReadOnly={isReadOnly}
