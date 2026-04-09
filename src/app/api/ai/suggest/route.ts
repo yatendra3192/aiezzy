@@ -55,47 +55,63 @@ Rules:
 - Include a mix of popular and offbeat destinations when possible
 - Tips should be specific and actionable, not generic`;
 
-  // Try OpenAI first, then Anthropic (with per-provider timeouts)
+  // Try Gemini first (fast, reliable from Railway), then OpenAI, then Anthropic
   try {
     let text = '';
 
-    if (openaiKey) {
+    // Primary: Gemini
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
       const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), 15_000);
+      const timeout = setTimeout(() => ctrl.abort(), 20_000);
       try {
-        const response = await fetch('https://api.openai.com/v1/responses', {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiKey}`, {
           method: 'POST',
           signal: ctrl.signal,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openaiKey}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'gpt-5.4',
-            input: [
-              { role: 'user', content: [{ type: 'input_text', text: systemPrompt + '\n\n' + userPrompt }] },
-            ],
-            text: { format: { type: 'text' } },
-            reasoning: { effort: 'medium', summary: 'auto' },
-            store: true,
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
           }),
         });
-
         if (response.ok) {
           const data = await response.json();
-          text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
-            || data.output?.[0]?.content?.[0]?.text || '';
+          text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         } else {
-          console.error('OpenAI API error:', response.status);
+          console.error('Gemini suggest error:', response.status);
         }
       } catch (e: any) {
-        console.error('OpenAI suggest timeout/error:', e.name === 'AbortError' ? 'timeout (15s)' : e.message);
+        console.error('Gemini suggest timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);
       } finally {
         clearTimeout(timeout);
       }
     }
 
-    // Fallback to Anthropic if OpenAI failed
+    // Fallback: OpenAI Chat Completions
+    if (!text && openaiKey) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 20_000);
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          signal: ctrl.signal,
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+          body: JSON.stringify({ model: 'gpt-4.1-mini', max_tokens: 2048, messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }] }),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          text = data.choices?.[0]?.message?.content || '';
+        } else {
+          console.error('OpenAI suggest error:', response.status);
+        }
+      } catch (e: any) {
+        console.error('OpenAI suggest timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    // Fallback: Anthropic
     if (!text && anthropicKey) {
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 15_000);
