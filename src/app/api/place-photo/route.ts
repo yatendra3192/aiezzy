@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
     // Build direct photo URL (same pattern as /api/nearby hotel enrichment)
     const photoName = photos[0].name;
-    const url = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=256&maxWidthPx=256&key=${API_KEY}`;
+    const url = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=800&maxWidthPx=800&key=${API_KEY}`;
 
     photoCache.set(query, { url, ts: Date.now() });
 
