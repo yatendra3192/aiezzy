@@ -3244,6 +3244,18 @@ function DeepPlanPageContent() {
                                 {stop.ticketPrice && (
                                   <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-body ${stop.ticketPrice.toLowerCase().includes('free') ? 'bg-gray-100 text-gray-500 font-medium' : 'text-violet-600 font-semibold'}`}>
                                     {stop.ticketPrice}
+                                    {(() => {
+                                      if (stop.ticketPrice.toLowerCase().includes('free')) return null;
+                                      const priceMatch = stop.ticketPrice.match(/([€$£¥₹]|CZK|THB|JPY|USD|EUR|GBP|INR|AED)\s*([\d,.]+)/);
+                                      if (!priceMatch) return null;
+                                      const sym = priceMatch[1];
+                                      const amount = parseFloat(priceMatch[2].replace(',', ''));
+                                      if (isNaN(amount)) return null;
+                                      const rates: Record<string, number> = { '€': 93, '$': 85, '£': 108, '¥': 0.57, '₹': 1, CZK: 3.5, THB: 2.4, JPY: 0.57, USD: 85, EUR: 93, GBP: 108, INR: 1, AED: 23 };
+                                      const inr = Math.round(amount * (rates[sym] || 1));
+                                      if (currency === 'INR' && sym === '₹') return null;
+                                      return <span className="text-text-muted font-normal ml-0.5">~{formatPrice(inr, currency)}</span>;
+                                    })()}
                                   </span>
                                 )}
                               </div>
