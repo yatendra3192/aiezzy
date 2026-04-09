@@ -2851,28 +2851,14 @@ function DeepPlanPageContent() {
                               </div>
                             )}
                           </div>
-                          {/* Drag handle — touch/hold this to drag reorder. Larger touch target on mobile */}
+                          {/* Drag handle — hold and drag this to reorder */}
                           {isDraggableActivity && !isReadOnly && (
-                            <div
-                              className="print-hide flex flex-col justify-center items-center gap-[2px] opacity-40 hover:opacity-80 active:opacity-100 flex-shrink-0 cursor-grab active:cursor-grabbing select-none w-6 min-h-[40px] -ml-1 mr-0.5 rounded"
-                              style={{ touchAction: 'none' }}
-                              onPointerDown={(e: React.PointerEvent) => {
-                                // Dispatch pointerdown on the parent Reorder.Item to start drag
-                                e.stopPropagation();
-                                const reorderItem = (e.currentTarget as HTMLElement).closest('.select-none');
-                                if (reorderItem) {
-                                  reorderItem.dispatchEvent(new PointerEvent('pointerdown', {
-                                    clientX: e.clientX, clientY: e.clientY,
-                                    pointerId: e.pointerId, pointerType: e.pointerType,
-                                    bubbles: true, cancelable: true,
-                                  }));
-                                }
-                              }}
-                              aria-label="Drag to reorder"
-                            >
-                              <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
-                              <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
-                              <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
+                            <div className="print-hide flex items-center justify-center flex-shrink-0 select-none w-5 self-stretch -ml-0.5 mr-1 rounded opacity-30 hover:opacity-70 active:opacity-100 cursor-grab active:cursor-grabbing" aria-label="Drag to reorder">
+                              <div className="flex flex-col gap-[2px]">
+                                <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
+                                <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
+                                <div className="flex gap-[2px]"><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /><div className="w-[3px] h-[3px] rounded-full bg-text-muted" /></div>
+                              </div>
                             </div>
                           )}
                           <div className={`flex-1${cardStyle ? ` ${cardStyle.bg} ${cardStyle.border} border rounded-xl p-2.5` : ''}`}>
@@ -3484,13 +3470,15 @@ function DeepPlanPageContent() {
                     );
 
                     if (useReorder && isDraggableActivity) {
+                      // Desktop: drag anywhere on card. Mobile: use Move up/down in menu (drag breaks scroll)
+                      const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
                       return (
                         <Reorder.Item
                           key={stop.id}
                           value={stop.id}
                           as="div"
-                          className="relative select-none"
-                          dragListener={false}
+                          className={`relative select-none ${!isReadOnly && !isTouchDevice ? 'cursor-grab active:cursor-grabbing active:z-10' : ''}`}
+                          dragListener={!isReadOnly && !isTouchDevice}
                           whileDrag={isReadOnly ? undefined : { scale: 1.02, boxShadow: '0 8px 25px rgba(232,101,74,0.15)', background: '#FFFFFF', borderRadius: '12px', zIndex: 50 }}
                         >
                           {stopContent}
