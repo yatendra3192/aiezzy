@@ -2441,6 +2441,20 @@ function DeepPlanPageContent() {
                 {adjustedDays.length > 7 && (
                   <div className="absolute right-0 top-0 bottom-1.5 w-8 bg-gradient-to-l from-[#FAF7F2] to-transparent pointer-events-none" />
                 )}
+              {/* Expand / Collapse all */}
+              <div className="flex items-center gap-1 ml-auto flex-shrink-0 pl-2">
+                <button onClick={() => { const all: Record<number, boolean> = {}; adjustedDays.forEach(d => { all[d.day] = true; }); setExpandedDays(all); }}
+                  className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors px-1.5 py-0.5 rounded hover:bg-accent-cyan/5"
+                  title="Expand all days">
+                  Expand all
+                </button>
+                <span className="text-text-muted/30 text-[10px]">|</span>
+                <button onClick={() => setExpandedDays({})}
+                  className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors px-1.5 py-0.5 rounded hover:bg-accent-cyan/5"
+                  title="Collapse all days">
+                  Collapse
+                </button>
+              </div>
               </div>
             </div>
           )}
