@@ -3246,14 +3246,17 @@ function DeepPlanPageContent() {
                                     {stop.ticketPrice}
                                     {(() => {
                                       if (stop.ticketPrice.toLowerCase().includes('free')) return null;
-                                      const priceMatch = stop.ticketPrice.match(/([€$£¥₹]|CZK|THB|JPY|USD|EUR|GBP|INR|AED)\s*([\d,.]+)/);
+                                      const priceMatch = stop.ticketPrice.match(/([€$£¥₹]|CZK|THB|JPY|USD|EUR|GBP|INR|AED|SGD|AUD|CAD|KRW|VND|IDR|MYR|PHP|HUF|PLN|SEK|NOK|DKK|CHF|NZD|HKD|TWD)\s*([\d,.]+)/i);
                                       if (!priceMatch) return null;
                                       const sym = priceMatch[1];
                                       const amount = parseFloat(priceMatch[2].replace(',', ''));
                                       if (isNaN(amount)) return null;
-                                      const rates: Record<string, number> = { '€': 93, '$': 85, '£': 108, '¥': 0.57, '₹': 1, CZK: 3.5, THB: 2.4, JPY: 0.57, USD: 85, EUR: 93, GBP: 108, INR: 1, AED: 23 };
-                                      const inr = Math.round(amount * (rates[sym] || 1));
-                                      if (currency === 'INR' && sym === '₹') return null;
+                                      // Use live conversion rates (same as budget calculations)
+                                      const symToCode: Record<string, string> = { '€': 'EUR', '$': 'USD', '£': 'GBP', '¥': 'JPY', '₹': 'INR' };
+                                      const code = symToCode[sym] || sym.toUpperCase();
+                                      const rate = convRates[code] || 1;
+                                      const inr = Math.round(amount * rate);
+                                      if (currency === 'INR' && code === 'INR') return null;
                                       return <span className="text-text-muted font-normal ml-0.5">~{formatPrice(inr, currency)}</span>;
                                     })()}
                                   </span>
