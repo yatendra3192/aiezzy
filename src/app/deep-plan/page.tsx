@@ -2418,7 +2418,7 @@ function DeepPlanPageContent() {
           {/* Main itinerary column */}
           <div className="flex-1 min-w-0">
 
-          {adjustedDays.map((day, dayIdx) => {
+          {(() => { const shownCityCards = new Set<string>(); return adjustedDays.map((day, dayIdx) => {
             const dayStyle = DAY_TYPE_STYLES[day.type];
             const isoDate = toIsoDate(day.date);
             const isCustomDeletable = (stopName: string) => (customActivities[day.day] || []).some(c => c.name === stopName);
@@ -2430,8 +2430,9 @@ function DeepPlanPageContent() {
             const overnightHotelName = prevLastHotelStop && currFirstHotelStop &&
               prevLastHotelStop.name === currFirstHotelStop.name ? prevLastHotelStop.name : null;
 
-            // City chapter header: show when entering a new city
-            const isNewCity = !!(day.city && day.city !== '' && day.city !== prevDay?.city && day.type !== 'departure');
+            // City chapter header: show ONCE per city (not on re-entry after travel days)
+            const isNewCity = !!(day.city && day.city !== '' && day.city !== prevDay?.city && day.type !== 'departure' && !shownCityCards.has(day.city));
+            if (isNewCity) shownCityCards.add(day.city);
             const cityDest = isNewCity ? trip.destinations.find(d => d.city.name === day.city || (d.city.parentCity || d.city.name) === day.city) : null;
             const cityDisplayName = cityDest ? (cityDest.city.parentCity || cityDest.city.name) : day.city;
             const cityCountry = cityDest?.city.country;
@@ -3769,7 +3770,7 @@ function DeepPlanPageContent() {
                 </div>{/* end day card */}
               </div>
             );
-          })}
+          }); })()}
 
           {/* Trip Summary — mobile only (sidebar handles desktop) */}
           <div className="md:hidden mt-6 bg-bg-surface border border-border-subtle rounded-xl p-4 shadow-sm">
