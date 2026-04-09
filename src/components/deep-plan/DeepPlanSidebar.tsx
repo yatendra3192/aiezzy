@@ -238,36 +238,44 @@ export default memo(function DeepPlanSidebar({
               const { fromCity: fc, toCity: tc } = getLegCities(li);
               const fcName = fc?.parentCity || fc?.name || '?';
               const tcName = tc?.parentCity || tc?.name || '?';
-              const isBooked = !!(leg.selectedFlight || leg.selectedTrain);
+              const hasSelection = !!(leg.selectedFlight || leg.selectedTrain);
+              const docs = bookingDocs || [];
+              const isBooked = hasSelection && docs.some((d: any) => d.docType === 'transport' && d.matchCities?.some((c: string) => c.toLowerCase().includes(fcName.toLowerCase()) || c.toLowerCase().includes(tcName.toLowerCase())));
               const transportType = leg.selectedFlight ? 'Flight' : leg.selectedTrain ? 'Train' : leg.type === 'bus' ? 'Bus' : 'Transport';
               return (
                 <div key={`cl-t-${li}`} className="flex items-center gap-2 text-[11px] font-body">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${isBooked ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${isBooked ? 'bg-emerald-100' : hasSelection ? 'bg-blue-100' : 'bg-amber-100'}`}>
                     {isBooked ? (
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : hasSelection ? (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                     ) : (
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     )}
                   </span>
-                  <span className={`truncate ${isBooked ? 'text-text-secondary' : 'text-amber-700'}`}>
+                  <span className={`truncate ${isBooked ? 'text-text-secondary' : hasSelection ? 'text-blue-600' : 'text-amber-700'}`}>
                     {transportType}: {fcName.length > 8 ? fcName.slice(0, 7) + '\u2026' : fcName} &rarr; {tcName.length > 8 ? tcName.slice(0, 7) + '\u2026' : tcName}
                   </span>
                 </div>
               );
             })}
             {destinations.filter(d => d.nights > 0).map((dest, di) => {
-              const isBooked = !!dest.selectedHotel;
               const cName = dest.city.parentCity || dest.city.name;
+              const docs = bookingDocs || [];
+              const isBooked = !!dest.selectedHotel && docs.some((d: any) => d.docType === 'hotel' && d.matchCities?.some((c: string) => c.toLowerCase().includes(cName.toLowerCase()) || cName.toLowerCase().includes(c.toLowerCase())));
+              const hasHotel = !!dest.selectedHotel;
               return (
                 <div key={`cl-h-${di}`} className="flex items-center gap-2 text-[11px] font-body">
-                  <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${isBooked ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${isBooked ? 'bg-emerald-100' : hasHotel ? 'bg-blue-100' : 'bg-amber-100'}`}>
                     {isBooked ? (
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    ) : hasHotel ? (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                     ) : (
                       <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                     )}
                   </span>
-                  <span className={`truncate ${isBooked ? 'text-text-secondary' : 'text-amber-700'}`}>Hotel in {cName}</span>
+                  <span className={`truncate ${isBooked ? 'text-text-secondary' : hasHotel ? 'text-blue-600' : 'text-amber-700'}`}>Hotel in {cName}</span>
                 </div>
               );
             })}
