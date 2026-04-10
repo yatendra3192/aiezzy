@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       .from('trips')
       .select('*', { count: 'exact', head: true });
 
-    // Get trips with details
+    // Get trips with details (display list, limited to 50)
     const { data: trips } = await supabase
       .from('trips')
       .select(`
@@ -51,6 +51,15 @@ export async function GET(req: NextRequest) {
       `)
       .order('created_at', { ascending: false })
       .limit(50);
+
+    // Lightweight query for funnel stats (all trips, no limit)
+    const { data: allTripsForFunnel } = await supabase
+      .from('trips')
+      .select(`
+        user_id, deep_plan_data,
+        trip_destinations(selected_hotel),
+        trip_transport_legs(selected_flight)
+      `);
 
     // Process trips
     const tripList = (trips || []).map(t => {
@@ -66,6 +75,7 @@ export async function GET(req: NextRequest) {
 
       return {
         id: t.id,
+        userId: t.user_id,
         title: t.title,
         userName: user?.name || profile?.display_name || user?.email || profile?.email || 'Unknown',
         userEmail: user?.email || profile?.email || '',
@@ -90,6 +100,56 @@ export async function GET(req: NextRequest) {
     const tripsWithFlights = tripList.filter(t => t.flightCost > 0).length;
     const tripsWithHotels = tripList.filter(t => t.hotelCost > 0).length;
     const totalTripValue = tripList.reduce((s, t) => s + t.totalCost, 0);
+
+    // Funnel stats — computed from ALL trips (not just the 50 display trips)
+    const funnelTrips = allTripsForFunnel || [];
+    const funnelUserIdsWithTrips = new Set<string>();
+    const funnelUserIdsWithFlights = new Set<string>();
+    const funnelUserIdsWithHotels = new Set<string>();
+    const funnelUserIdsWithDeepPlan = new Set<string>();
+
+    for (const ft of funnelTrips) {
+      if (ft.user_id) funnelUserIdsWithTrips.add(ft.user_id);
+
+      const ftLegs: Array<{ selected_flight: unknown }> = (ft.trip_transport_legs as Array<{ selected_flight: unknown }>) || [];
+      const hasFlights = ftLegs.some((l) => l.selected_flight != null);
+      if (hasFlights && ft.user_id) funnelUserIdsWithFlights.add(ft.user_id);
+
+      const ftDests: Array<{ selected_hotel: unknown }> = (ft.trip_destinations as Array<{ selected_hotel: unknown }>) || [];
+      const hasHotels = ftDests.some((d) => d.selected_hotel != null);
+      if (hasHotels && ft.user_id) funnelUserIdsWithHotels.add(ft.user_id);
+
+      // deep_plan_data is considered "used" if it's not null and has at least one key with content
+      const dpd = ft.deep_plan_data as Record<string, unknown> | null;
+      if (dpd && ft.user_id) {
+        const hasContent = Object.keys(dpd).some(k => {
+          const val = dpd[k];
+          if (val == null) return false;
+          if (typeof val === 'object' && Object.keys(val as Record<string, unknown>).length === 0) return false;
+          return true;
+        });
+        if (hasContent) funnelUserIdsWithDeepPlan.add(ft.user_id);
+      }
+    }
+
+    // Popular routes — origin → first destination
+    const routeCounts: Record<string, number> = {};
+    for (const t of tripList) {
+      if (t.fromAddress && t.destinations.length > 0) {
+        // Extract city from fromAddress: use part before first comma
+        const originParts = t.fromAddress.split(',');
+        const originCity = originParts[0].trim();
+        const destCity = t.destinations[0];
+        if (originCity && destCity) {
+          const routeKey = `${originCity} → ${destCity}`;
+          routeCounts[routeKey] = (routeCounts[routeKey] || 0) + 1;
+        }
+      }
+    }
+    const popularRoutes = Object.entries(routeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([route, count]) => ({ route, count }));
 
     // Signups per day (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -153,6 +213,12 @@ export async function GET(req: NextRequest) {
         avgCities,
         tripsToday,
         tripsThisWeek,
+        // Funnel stats (from all trips, not just display 50)
+        funnelUsersWithTrips: funnelUserIdsWithTrips.size,
+        usersWithFlights: funnelUserIdsWithFlights.size,
+        usersWithHotels: funnelUserIdsWithHotels.size,
+        usersWithDeepPlan: funnelUserIdsWithDeepPlan.size,
+        popularRoutes,
       },
       signupsByDay,
       users: userList,
