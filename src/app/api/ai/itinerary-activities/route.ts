@@ -112,7 +112,7 @@ Rules:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-            generationConfig: { maxOutputTokens: 4096, temperature: 0.7 },
+            generationConfig: { maxOutputTokens: 8192, temperature: 0.7 },
           }),
         });
 
@@ -206,7 +206,28 @@ Rules:
       return NextResponse.json({ activities: [] });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    let jsonStr = jsonMatch[0];
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      // AI response was truncated — try to repair by closing open brackets
+      // Remove trailing incomplete object (cut off mid-property)
+      jsonStr = jsonStr.replace(/,\s*\{[^}]*$/, '');
+      // Close any open arrays and objects
+      const opens = (jsonStr.match(/\[/g) || []).length;
+      const closes = (jsonStr.match(/\]/g) || []).length;
+      jsonStr += ']'.repeat(opens - closes);
+      const openBraces = (jsonStr.match(/\{/g) || []).length;
+      const closeBraces = (jsonStr.match(/\}/g) || []).length;
+      jsonStr += '}'.repeat(openBraces - closeBraces);
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch (repairErr) {
+        console.error('AI itinerary-activities JSON repair failed:', repairErr);
+        return NextResponse.json({ activities: [] });
+      }
+    }
     const activities: ItineraryActivity[] = (parsed.activities || []).map((a: any) => ({
       name: String(a.name || ''),
       category: String(a.category || 'landmark'),

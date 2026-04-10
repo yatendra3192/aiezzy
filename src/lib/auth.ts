@@ -138,5 +138,13 @@ export const authOptions: NextAuthOptions = {
       name: 'next-auth.session-token',
       options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
     },
+    state: {
+      name: 'next-auth.state',
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true, maxAge: 900 },
+    },
+    pkceCodeVerifier: {
+      name: 'next-auth.pkce.code_verifier',
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true, maxAge: 900 },
+    },
   },
 };
