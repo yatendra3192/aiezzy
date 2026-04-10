@@ -1064,7 +1064,7 @@ function RoutePageContent() {
             </div>
           </div>
 
-          {/* Local stay banner — prompt to go to Deep Plan */}
+          {/* Local stay banner — prompt to go to Plan Itinerary */}
           {isLocalStay && trip.destinations.some(d => d.selectedHotel) && (
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
               <div>
@@ -1075,7 +1075,7 @@ function RoutePageContent() {
                 onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
                 className="px-4 py-2 bg-emerald-600 text-white font-display font-bold text-sm rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
               >
-                Deep Plan →
+                Plan Itinerary →
               </button>
             </div>
           )}
@@ -1850,7 +1850,7 @@ function RoutePageContent() {
                   <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalCost, currency)}</span>
                 </div>
                 <p className="text-text-muted text-[10px] font-body mt-2 leading-relaxed">
-                  Want a detailed hour-by-hour itinerary with activities, meals, and a complete budget? Use <span className="text-accent-cyan font-semibold">Deep Plan</span> below.
+                  Want a detailed hour-by-hour itinerary with activities, meals, and a complete budget? Use <span className="text-accent-cyan font-semibold">Plan Itinerary</span> below.
                 </p>
                 </>
               ) : (
@@ -1900,7 +1900,7 @@ function RoutePageContent() {
               router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan');
             }}
               className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
-              Deep Plan
+              Plan Itinerary
             </motion.button>
             {/* Secondary actions row */}
             <div className="flex gap-2 mt-2">
