@@ -1,0 +1,66 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { createServiceClient } from '@/lib/supabase/server';
+import { rateLimit } from '@/lib/rateLimit';
+import { validatePassword } from '@/lib/validatePassword';
+
+/** POST /api/auth/change-password - Change user password */
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const userId = (session.user as any).supabaseUserId;
+  if (!userId) {
+    return NextResponse.json({ error: 'No user ID' }, { status: 401 });
+  }
+
+  // Rate limit: 5 password change attempts per user per 15 minutes
+  const rl = rateLimit(`changepw:${userId}`, 5, 15 * 60 * 1000);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: 'Too many attempts. Please try again later.' }, { status: 429 });
+  }
+
+  const body = await req.json();
+  const { currentPassword, newPassword } = body;
+
+  if (!currentPassword || !newPassword) {
+    return NextResponse.json({ error: 'Both current and new passwords are required' }, { status: 400 });
+  }
+
+  const pwError = validatePassword(newPassword);
+  if (pwError) {
+    return NextResponse.json({ error: pwError }, { status: 400 });
+  }
+
+  const supabase = createServiceClient();
+  const email = session.user.email;
+
+  if (!email) {
+    return NextResponse.json({ error: 'No email found in session' }, { status: 400 });
+  }
+
+  // Verify current password by attempting sign-in
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  });
+
+  if (signInError) {
+    return NextResponse.json({ error: 'Current password is incorrect' }, { status: 403 });
+  }
+
+  // Update password via admin API
+  const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+    password: newPassword,
+  });
+
+  if (updateError) {
+    console.error('[change-password] updateUser error:', updateError.message);
+    return NextResponse.json({ error: 'Failed to update password. Please try again.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}

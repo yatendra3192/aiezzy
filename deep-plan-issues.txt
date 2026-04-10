@@ -1,0 +1,114 @@
+Deep Plan Page — Issues & Improvements
+======================================
+Reviewed: 2026-03-21
+
+=== BUGS (Must Fix) ===
+
+1. AIRPORT NAME BUG — "Silver Oak Prestige residency Airport"
+   Location: line 243
+   Issue: `depHub?.name || `${fromCity.name} Airport`` — when departure hub is null (home address
+   doesn't match a known city), `fromCity.name` is the full home address, not a city name.
+   Fix: Use `fromCity.parentCity || fromCity.name` or get airport name from `leg.resolvedAirports`.
+   Also affects line 284 (in-transit note) and line 480 (return leg terminal name).
+
+2. RETURN LEG TERMINAL NAME — same bug
+   Location: line 480, 486
+   `depHub?.name || `${fromCity.name} Terminal`` — if fromCity is the last destination's city and
+   has no airport in CITIES array, shows "Coupvray Terminal" instead of "Paris CDG Airport".
+   Fix: Use resolvedAirports data from the transport leg.
+
+3. HOME ADDRESS TOO LONG in timeline
+   Location: line 205, 497
+   Full address "Silver Oak Prestige residency, Waghbil Naka Flyover, behind dalal..." wraps
+   across multiple lines. Should show just city/area name.
+   Fix: Use `trip.from.parentCity || trip.from.name` for display, show full address as subtitle/tooltip.
+
+4. TRANSIT DAY CALCULATION may be wrong for 12-23h flights
+   Location: line 264
+   `Math.max(1, Math.floor(durHrs / 24) + ...)` — a 13h flight gets transitDays=1, meaning
+   departure and arrival are on separate day cards. But a 13h daytime flight (depart 6AM, arrive
+   7PM same day) should stay on one card.
+   Fix: Only split into separate days if arrival is actually on a different calendar date, not just
+   based on duration alone. Use isNextDay flag more carefully.
+
+5. NO FLIGHT/TRAIN CARD on travel days
+   Issue: Travel days show "✈ 10h 5m · BOM-AMS · Change" as plain text with a clickable
+   dropdown. The route page shows a rich flight card (airline, times, price, booking link).
+   Fix: Show the same styled card with airline logo, flight number, departure/arrival times,
+   price, duration, stops, and "Book on Skyscanner" link — same as route page.
+
+6. NO HOTEL CARD on travel/explore days
+   Issue: Hotel is shown as plain text "Ibis Amsterdam Center" with just "Change stay" link.
+   Route page shows a rich card with rating, price/night, check-in/out dates, total price.
+   Fix: Show hotel card with rating badge, price breakdown, check-in/out dates, booking link.
+
+=== UI/UX IMPROVEMENTS ===
+
+7. EXPLORE DAY shows only 2 attractions per day
+   Location: line 398
+   `attractions.slice((n * 2) % attractions.length, ((n * 2) % attractions.length) + 2)`
+   Only cycles through 2 attractions per day regardless of how many the user added.
+   Improve: Show all user's places distributed across explore days, or let user drag/reorder.
+
+8. MEAL TIMES are hardcoded
+   Breakfast 8:00, Lunch 12:30, Dinner 19:00 — don't adjust with start time properly.
+   The start time selector adjusts activity times but meal times also shift, which may not
+   make sense (dinner at 6 PM if start is 8 AM, dinner at 8 PM if start is 10 AM).
+
+9. WALKING DISTANCES are fake
+   Lines 396, 413-414: `duration: '15 min', distance: '0.8 mi'` — hardcoded values.
+   Should fetch real walking distances from Google Directions or at least estimate better.
+
+10. DAY NOTES are not persisted
+    Custom activities and day notes are stored in component state (useState) and lost on reload.
+    Should persist in the trip context or at least sessionStorage.
+
+11. NO SUMMARY at bottom
+    Route page has a cost summary. Deep plan should have a trip summary at the bottom:
+    total days, total cost, destinations visited, flights taken, etc.
+
+12. WEATHER shows for departure city on travel days, not destination
+    Line 644: `city={day.city}` — on travel days, `day.city` is the destination city.
+    But weather at departure time matters too. Could show both departure and arrival weather.
+
+13. CUSTOM ACTIVITIES have no time/duration
+    Custom activities auto-assigned times (90 min apart) but user can't set specific times.
+    Should allow time input for custom activities.
+
+14. NO CONNECTING INFO between days
+    No visual connection between end of Day 1 (hotel check-in) and start of Day 2 (breakfast).
+    Could show "Staying at Hotel X overnight" bridge between days.
+
+15. PRINT LAYOUT needs work
+    Print button works but the output includes interactive elements styling.
+    Should have cleaner print CSS: no rounded corners, full-width, serif fonts for readability.
+
+16. DATE FORMAT inconsistent
+    Day header shows "17-10-2026" (DD-MM-YYYY) but flight cards on route page show
+    "17 Oct" (DD Mon). Should be consistent: "Sat, 17 Oct 2026" for better readability.
+
+17. NO TIMEZONE indication
+    Arrival times in different countries don't show timezone.
+    "11:15 AM" at Amsterdam should show "11:15 AM CET" or "11:15 AM (local)".
+
+18. RETURN DAY doesn't account for overnight return flights
+    The return day logic (line 435-499) doesn't detect overnight returns like the outbound does.
+    Should apply the same overnight splitting logic.
+
+19. DAILY COST doesn't include children/infant pricing
+    Line 182-183: `pricePerAdult * trip.adults` — doesn't include children (full fare) and
+    infants (15%). Route page calculates this correctly with `transportPax + infantMultiplier`.
+
+20. EXPLORE DAY hotel cost doesn't include rooms
+    Line 382: `dest.selectedHotel.pricePerNight` — doesn't multiply by number of rooms.
+    Route page uses `rooms = Math.ceil((adults + children) / 2)`.
+
+=== FEATURE IDEAS ===
+
+21. DRAG-TO-REORDER activities within a day
+22. SHARE individual day plan (not whole trip)
+23. ESTIMATED DAILY WALKING DISTANCE total
+24. PACKING REMINDER per day (umbrella if rain forecast, warm clothes if cold)
+25. CURRENCY SELECTOR on deep plan (currently inherits from route page)
+26. OFFLINE MODE — save deep plan to localStorage for access without internet
+27. EXPORT TO GOOGLE CALENDAR — one event per activity, not just flights

@@ -1,0 +1,2297 @@
+'use client';
+
+import { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useSession } from 'next-auth/react';
+import { useTrip } from '@/context/TripContext';
+import { useCurrency } from '@/context/CurrencyContext';
+import { CITIES, City } from '@/data/mockData';
+import { timeStr12 } from '@/lib/timeUtils';
+import { getDirections } from '@/lib/googleApi';
+import { generateICS, downloadICS } from '@/lib/calendarExport';
+
+import { formatPrice, CURRENCIES, CurrencyCode } from '@/lib/currency';
+import { getFlightBookingUrl, getHotelBookingUrl } from '@/lib/affiliateLinks';
+import { getBookingFilesForCity } from '@/lib/bookingStore';
+import { BookingDoc } from '@/context/TripContext';
+import dynamic from 'next/dynamic';
+import ActivitySuggestions from '@/components/ActivitySuggestions';
+import WeatherBadge from '@/components/WeatherBadge';
+
+const HotelModal = dynamic(() => import('@/components/HotelModal'), { ssr: false });
+const TransportCompareModal = dynamic(() => import('@/components/TransportCompareModal'), { ssr: false });
+const ShareTripModal = dynamic(() => import('@/components/ShareTripModal'), { ssr: false });
+
+import { getVisaInfo } from '@/data/visaRequirements';
+
+const transportIcons: Record<string, string> = {
+  drive: 'M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2M7 14h.01M17 14h.01M6 3h12l1 5H5z',
+  flight: 'M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z',
+  train: 'M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2m-16 0h16M8 22h8m-8-4h.01M16 18h.01M6 6h12v6H6z',
+  bus: 'M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0v2m16-2v2M7 16h.01M17 16h.01M5 6h14v5H5zM8 22h8',
+};
+
+const AIRLINE_COLORS: Record<string, string> = {
+  '6E': '#4f46e5', 'AI': '#dc2626', 'IX': '#2563eb', 'UK': '#7c3aed', 'SG': '#f59e0b', 'QP': '#0d9488',
+  'LH': '#00205b', 'KL': '#00a1de', 'AF': '#002157', 'BA': '#003366', 'VY': '#f7c600', 'FR': '#003580',
+  'U2': '#ff6600', 'EW': '#a5027d', 'EK': '#d71921', 'EY': '#b5985a', 'QR': '#5c0632', 'TK': '#e31e24',
+};
+
+function RoutePageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlTripId = searchParams.get('id');
+  const { data: session } = useSession();
+  const trip = useTrip();
+  const { currency, setCurrency } = useCurrency();
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  // Restore trip from URL param, context, or sessionStorage on page reload
+  const [isRestoring, setIsRestoring] = useState(false);
+  // Tracks when the trip has fully loaded + settled — prevents date/nights effects from re-fetching
+  const tripStableRef = useRef(false);
+
+  useEffect(() => {
+    if (trip.destinations.length > 0) {
+      // Already have destinations in context (came from plan page) — mark stable
+      if (!tripStableRef.current) setTimeout(() => { tripStableRef.current = true; }, 500);
+      return;
+    }
+
+    // Try to reload from DB: prefer URL param, then context tripId, then sessionStorage
+    const idToLoad = urlTripId || trip.tripId || (() => { try { return sessionStorage.getItem('currentTripId'); } catch { return null; } })();
+    if (idToLoad) {
+      setIsRestoring(true);
+      trip.loadTrip(idToLoad).catch(() => {}).finally(() => {
+        setIsRestoring(false);
+        // Mark trip as stable after a short delay so date/nights effects don't fire on load
+        setTimeout(() => { tripStableRef.current = true; }, 500);
+      });
+    } else {
+      // No trip to load (new trip) — immediately stable
+      tripStableRef.current = true;
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save: save 5s after any selection changes
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isSavingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const autoSelectLoadingRef = useRef(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saved' | 'error'>('idle');
+
+  // Count selected items to detect when data is ready
+  const selectedCount = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length +
+    trip.destinations.filter(d => d.selectedHotel).length;
+
+  const nightsKey = useMemo(() => trip.destinations.map(d => d.nights).join(','), [trip.destinations]);
+  const transportKey = useMemo(() => trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}-${l.selectedFlight?.pricePerAdult || 0}`).join(','), [trip.transportLegs]);
+  const hotelKey = useMemo(() => trip.destinations.map(d => `${d.selectedHotel?.id || ''}-${d.selectedHotel?.pricePerNight || 0}`).join(','), [trip.destinations]);
+
+  useEffect(() => {
+    // Skip first render and while trip is loading/settling
+    if (!mountedRef.current) { mountedRef.current = true; return; }
+    if (!tripStableRef.current) return;
+    if (autoSelectLoadingRef.current) return;
+    // Only save when there's at least one selection
+    if (selectedCount === 0) return;
+    setAutoSaveStatus('pending');
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(async () => {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      try {
+        const result = await trip.saveTrip();
+        setAutoSaveStatus(result ? 'saved' : 'error');
+        // auto-save complete
+        // Update URL with trip ID so the link is shareable/bookmarkable
+        if (result) {
+          router.replace(`/route?id=${result}`, { scroll: false });
+        }
+      } catch (e) {
+        setAutoSaveStatus('error');
+        console.error('[auto-save] failed:', e);
+      }
+      isSavingRef.current = false;
+      setTimeout(() => setAutoSaveStatus('idle'), 3000);
+    }, 5000);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  }, [selectedCount, nightsKey, trip.adults, trip.children, trip.infants, trip.departureDate, trip.tripType, transportKey, hotelKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Modal state
+  const [transportModal, setTransportModal] = useState<{ legIndex: number } | null>(null);
+  const [hotelModal, setHotelModal] = useState<{ destIndex: number; isAdditional?: boolean } | null>(null);
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  const [viewingBooking, setViewingBooking] = useState<{ url: string; name: string; mimeType: string } | null>(null);
+
+  // Find booking docs for a city, optionally filtered by type
+  const getDocsForCity = (cityName: string, docType?: 'hotel' | 'transport'): BookingDoc[] => {
+    if (!cityName || !trip.bookingDocs || trip.bookingDocs.length === 0) {
+      const blobDocs = getBookingFilesForCity(cityName);
+      return blobDocs.map(b => ({ id: b.name, name: b.name, storagePath: '', url: b.url, mimeType: b.mimeType, matchCities: [], uploadedAt: '' }));
+    }
+    const key = cityName.toLowerCase();
+    const typeFilter = (d: BookingDoc) => !docType || !d.docType || d.docType === docType || d.docType === 'general';
+    const cityMatch = trip.bookingDocs.filter(d =>
+      typeFilter(d) && d.matchCities.some(c => c.includes(key) || key.includes(c))
+    );
+    if (cityMatch.length > 0) return cityMatch;
+    const nameMatch = trip.bookingDocs.filter(d =>
+      typeFilter(d) && d.name.toLowerCase().includes(key)
+    );
+    if (nameMatch.length > 0) return nameMatch;
+    const untagged = trip.bookingDocs.filter(d =>
+      typeFilter(d) && d.matchCities.length === 0
+    );
+    if (untagged.length > 0) return untagged;
+    return [];
+  };
+
+  // For transport: require BOTH from AND to cities to match the doc
+  const getTransportDocs = (fromName: string, toName: string): BookingDoc[] => {
+    if (!trip.bookingDocs?.length) return [];
+    const fKey = fromName.toLowerCase();
+    const tKey = toName.toLowerCase();
+    return trip.bookingDocs.filter(d => {
+      if (d.docType && d.docType !== 'transport' && d.docType !== 'general') return false;
+      const cities = d.matchCities;
+      const hasFrom = cities.some(c => c.includes(fKey) || fKey.includes(c));
+      const hasTo = cities.some(c => c.includes(tKey) || tKey.includes(c));
+      return hasFrom && hasTo;
+    });
+  };
+
+  // Real hub-to-hotel distances (fetched from Google Directions)
+  const hubToHotelRef = useRef<Record<string, { distance: string; duration: string }>>({});
+  const [hubToHotelDistances, setHubToHotelDistances] = useState<Record<string, { distance: string; duration: string }>>({});
+  const hubFetchedRef = useRef<Set<string>>(new Set());
+
+  // Fetch arrival airport → hotel AND hotel → departure airport distances
+  // Stored separately: "arr-{di}" for arrival, "dep-{di}" for departure
+  useEffect(() => {
+    if (!tripStableRef.current || autoSelectLoadingRef.current) return;
+    trip.destinations.forEach((dest, di) => {
+      if (!dest.selectedHotel) return;
+      // Use precise address/coordinates if available (custom stays with Google Places), fall back to name + city
+      const hotelQuery = dest.selectedHotel.address
+        ? dest.selectedHotel.address
+        : `${dest.selectedHotel.name}, ${dest.city.name}`;
+
+      // ARRIVAL: previous leg's landing airport/station → hotel
+      const arrLeg = trip.transportLegs[di];
+      if (arrLeg) {
+        const arrInfo = resolvedAirportsRef.current[di] || arrLeg.resolvedAirports;
+        let arrHub = '';
+        if (arrLeg.selectedFlight && arrInfo?.toCode) {
+          arrHub = `${arrInfo.toCity || arrInfo.toCode} Airport`;
+        } else if (arrLeg.selectedTrain) {
+          arrHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
+        }
+        if (arrHub) {
+          const key = `arr-${di}-${dest.selectedHotel?.id || dest.selectedHotel.name}-${arrInfo?.toCode || ''}`;
+          if (!hubFetchedRef.current.has(key)) {
+            hubFetchedRef.current.add(key);
+            getDirections(`${arrHub}, ${dest.city.name}`, hotelQuery, 'driving').then(result => {
+              if (result) {
+                setHubToHotelDistances(prev => ({ ...prev, [`arr-${di}`]: { distance: result.distanceText, duration: result.durationText } }));
+              }
+            });
+          }
+        }
+      }
+
+      // DEPARTURE: hotel → next leg's departure airport/station
+      const depLeg = trip.transportLegs[di + 1] || (trip.tripType === 'roundTrip' && di === trip.destinations.length - 1 ? trip.transportLegs[trip.transportLegs.length - 1] : null);
+      if (depLeg) {
+        const depInfo = resolvedAirportsRef.current[di + 1] || depLeg.resolvedAirports;
+        let depHub = '';
+        if (depLeg.selectedFlight && depInfo?.fromCode) {
+          depHub = `${depInfo.fromCity || depInfo.fromCode} Airport`;
+        } else if (depLeg.selectedTrain) {
+          depHub = dest.city.trainStation?.name || `${dest.city.name} Station`;
+        }
+        if (depHub) {
+          const key = `dep-${di}-${dest.selectedHotel?.id || dest.selectedHotel.name}-${depInfo?.fromCode || depHub}`;
+          if (!hubFetchedRef.current.has(key)) {
+            hubFetchedRef.current.add(key);
+            getDirections(hotelQuery, `${depHub}, ${dest.city.name}`, 'driving').then(result => {
+              if (result) {
+                setHubToHotelDistances(prev => ({ ...prev, [`dep-${di}`]: { distance: result.distanceText, duration: result.durationText } }));
+              }
+            });
+          }
+        }
+      }
+    });
+  }, [trip.destinations.map(d => `${d.id}-${d.selectedHotel?.name || ''}`).join(','), trip.transportLegs.map(l => `${l.selectedFlight?.id || ''}-${l.selectedTrain?.id || ''}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real road distance from home address to departure airport
+  const homeToAirportRef = useRef<{ distance: string; duration: string } | null>(null);
+  const [homeToAirportDist, setHomeToAirportDist] = useState<{ distance: string; duration: string } | null>(null);
+  const homeAirportFetchedRef = useRef('');
+  useEffect(() => {
+    const firstLeg = trip.transportLegs[0];
+    if (!firstLeg?.selectedFlight || !trip.fromAddress) return;
+    const info = resolvedAirportsRef.current[0] || firstLeg.resolvedAirports;
+    if (!info?.fromCode) return;
+    const airportName = info.fromCity ? `${info.fromCity} Airport` : `${info.fromCode} Airport`;
+    const key = `${trip.fromAddress}-${info.fromCode}`;
+    if (homeAirportFetchedRef.current === key) return;
+    homeAirportFetchedRef.current = key;
+    getDirections(trip.fromAddress, airportName, 'driving').then(result => {
+      if (result) {
+        homeToAirportRef.current = { distance: result.distanceText, duration: result.durationText };
+        setHomeToAirportDist({ distance: result.distanceText, duration: result.durationText });
+      }
+    });
+  }, [trip.fromAddress, trip.transportLegs[0]?.selectedFlight, trip.transportLegs[0]?.resolvedAirports]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch real driving directions for legs that don't have flight/train selected
+  const fetchedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    trip.transportLegs.forEach((leg, i) => {
+      // Only fetch for drive/bus legs without real data yet, and not already fetched
+      if ((leg.type === 'drive' || leg.type === 'bus') && !leg.selectedFlight && !leg.selectedTrain && !fetchedRef.current.has(leg.id)) {
+        const fromCity = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+        const toCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+        if (fromCity && toCity) {
+          fetchedRef.current.add(leg.id);
+          getDirections(fromCity.fullName, toCity.fullName, 'driving').then(result => {
+            if (result) {
+              trip.updateTransportLeg(leg.id, {
+                duration: result.durationText,
+                distance: result.distanceText,
+              });
+            }
+          });
+        }
+      }
+    });
+  }, [trip.transportLegs.map(l => `${l.id}-${l.type}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-select cheapest flight and hotel for each leg/destination on first load
+  const autoSelectedRef = useRef(false);
+  const autoSelectAbortRef = useRef<AbortController | null>(null);
+  const [autoSelectLoading, setAutoSelectLoading] = useState(false);
+  const [autoSelectStep, setAutoSelectStep] = useState('');
+  const [autoSelectDone, setAutoSelectDone] = useState(0);
+  const [autoSelectTotal, setAutoSelectTotal] = useState(0);
+  const [autoSelectCompletedSteps, setAutoSelectCompletedSteps] = useState<string[]>([]);
+  const pendingStepDescsRef = useRef<Map<string, string>>(new Map());
+  // Cache flight results per leg so the modal doesn't re-fetch
+  const flightCacheRef = useRef<Record<number, any[]>>({});
+  // Cache resolved airport info per leg (codes, names, cities, distances)
+  const resolvedAirportsRef = useRef<Record<number, {
+    fromCode: string; toCode: string;
+    fromAirport: string; toAirport: string;
+    fromCity: string; toCity: string;
+    fromDistance: number; toDistance: number;
+    nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
+  }>>({});
+  const pendingCountRef = useRef(0);
+
+  // Restore resolvedAirportsRef from saved transport leg data on load
+  useEffect(() => {
+    trip.transportLegs.forEach((leg, i) => {
+      if (leg.resolvedAirports && !resolvedAirportsRef.current[i]) {
+        resolvedAirportsRef.current[i] = leg.resolvedAirports;
+      }
+    });
+  }, [trip.transportLegs]);
+
+  // Proactively resolve airport cities for display (even before flights are selected)
+  const airportCityResolvedRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    const cities: Array<{ name: string; legIdx: number; field: 'from' | 'to' }> = [];
+    trip.transportLegs.forEach((leg, i) => {
+      if (resolvedAirportsRef.current[i]) return; // Already resolved
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (fromC?.name && !airportCityResolvedRef.current[`from-${i}`]) cities.push({ name: fromC.parentCity || fromC.name, legIdx: i, field: 'from' });
+      if (toC?.name && !airportCityResolvedRef.current[`to-${i}`]) cities.push({ name: toC.parentCity || toC.name, legIdx: i, field: 'to' });
+    });
+    if (cities.length === 0) return;
+    // Resolve each unique city name
+    const uniqueCities = Array.from(new Set(cities.map(c => c.name)));
+    uniqueCities.forEach(async (cityName) => {
+      const key = `city-${cityName}`;
+      if (airportCityResolvedRef.current[key]) return;
+      airportCityResolvedRef.current[key] = true;
+      try {
+        const res = await fetch(`/api/resolve-airport?city=${encodeURIComponent(cityName)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const airport = data.airports?.[0];
+        if (!airport) return;
+        // Update resolvedAirportsRef for all legs that use this city
+        cities.filter(c => c.name === cityName).forEach(c => {
+          airportCityResolvedRef.current[`${c.field}-${c.legIdx}`] = true;
+          if (!resolvedAirportsRef.current[c.legIdx]) {
+            resolvedAirportsRef.current[c.legIdx] = { fromCode: '', toCode: '', fromAirport: '', toAirport: '', fromCity: '', toCity: '', fromDistance: 0, toDistance: 0 };
+          }
+          const ref = resolvedAirportsRef.current[c.legIdx];
+          const airportCity = airport.municipality || airport.city || cityName;
+          if (c.field === 'from') {
+            if (!ref.fromCity) ref.fromCity = airportCity;
+            if (!ref.fromCode) ref.fromCode = airport.iata_code || airport.iata || '';
+          } else {
+            if (!ref.toCity) ref.toCity = airportCity;
+            if (!ref.toCode) ref.toCode = airport.iata_code || airport.iata || '';
+          }
+        });
+        // Force re-render by updating a trivial state
+        setAutoSelectLoading(prev => prev);
+      } catch {}
+    });
+  }, [trip.transportLegs.length, trip.destinations.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPendingRef = useRef(0);
+  const trackPending = (delta: number, completedLabel?: string) => {
+    pendingCountRef.current += delta;
+    if (delta > 0) totalPendingRef.current += delta;
+    if (delta < 0 && completedLabel) {
+      setAutoSelectDone(prev => prev + 1);
+      setAutoSelectCompletedSteps(prev => [...prev, completedLabel]);
+      // Remove from pending and update step text to next pending task
+      pendingStepDescsRef.current.delete(completedLabel);
+      const remaining = Array.from(pendingStepDescsRef.current.values());
+      setAutoSelectStep(remaining.length > 0 ? remaining[0] : '');
+    }
+    if (pendingCountRef.current <= 0) {
+      pendingCountRef.current = 0;
+      totalPendingRef.current = 0;
+      autoSelectLoadingRef.current = false;
+      setAutoSelectLoading(false);
+      setAutoSelectDone(0);
+      setAutoSelectTotal(0);
+      setAutoSelectCompletedSteps([]);
+      pendingStepDescsRef.current.clear();
+    }
+  };
+
+  // Replace same-city transport legs with local transfers (runs on every trip change)
+  useEffect(() => {
+    if (trip.destinations.length === 0 || trip.transportLegs.length === 0) return;
+    trip.transportLegs.forEach((leg, i) => {
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+      const fNames = [fromC.parentCity, fromC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const tNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const fFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
+      const same = fNames.some(fn => tNames.some(tn => fn === tn)) || tNames.some(tn => tn.length >= 3 && fFull.includes(tn));
+      if (same && leg.selectedTrain?.operator !== 'Local Transfer') {
+        trip.updateTransportLeg(leg.id, {
+          type: 'drive', selectedFlight: null,
+          selectedTrain: { id: `local-${Date.now()}-${i}`, operator: 'Local Transfer', trainName: 'Local Transfer', trainNumber: '', departure: '', arrival: '', duration: '~15 min', stops: 'Direct', fromStation: fromC.parentCity || fromC.name || '', toStation: toC.parentCity || toC.name || '', price: 0, color: '#6b7280' },
+          duration: '~15 min', distance: '~', departureTime: null, arrivalTime: null,
+        });
+      }
+    });
+  }, [trip.transportLegs.map(l => `${l.id}-${l.selectedTrain?.operator || ''}`).join(','), trip.destinations.length, trip.fromAddress, trip.from.name, trip.tripId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset auto-select when trip changes (including new unsaved trips with null tripId)
+  const prevTripIdRef = useRef<string | null>('__init__');
+  useEffect(() => {
+    const currentId = trip.tripId || null;
+    if (currentId !== prevTripIdRef.current) {
+      prevTripIdRef.current = currentId;
+      autoSelectedRef.current = false;
+    }
+  }, [trip.tripId, trip.destinations.length]);
+
+  useEffect(() => {
+    if (autoSelectedRef.current) return;
+    // Don't auto-select until trip data is ready (destinations loaded AND from city resolved)
+    if (trip.destinations.length === 0 || trip.transportLegs.length === 0) return;
+    // Wait for from city to be loaded (not default empty)
+    if (!trip.from.name && !trip.fromAddress) return;
+    autoSelectedRef.current = true;
+
+    // Abort any previous auto-select in-flight requests
+    if (autoSelectAbortRef.current) autoSelectAbortRef.current.abort();
+    const abortController = new AbortController();
+    autoSelectAbortRef.current = abortController;
+    const signal = abortController.signal;
+
+    // Ensure return leg exists for round trips
+    if (trip.tripType === 'roundTrip') {
+      const expectedLegs = trip.destinations.length + 1;
+      if (trip.transportLegs.length < expectedLegs) {
+        trip.setTripType('roundTrip'); // This adds the missing return leg
+      }
+    }
+
+    // Check if anything needs auto-selecting
+    const needsFlights = trip.transportLegs.some(l => !l.selectedFlight && !l.selectedTrain && (l.type === 'flight' || l.type === 'drive'));
+    const needsHotels = trip.destinations.some(d => !d.selectedHotel && d.nights > 0);
+
+    if (needsFlights || needsHotels) {
+      const flightCount = trip.transportLegs.filter(l => !l.selectedFlight && !l.selectedTrain).length;
+      const hotelCount = trip.destinations.filter(d => !d.selectedHotel && d.nights > 0).length;
+      autoSelectLoadingRef.current = true;
+      setAutoSelectLoading(true);
+      setAutoSelectDone(0);
+      setAutoSelectTotal(flightCount + hotelCount);
+      pendingStepDescsRef.current.clear();
+      setAutoSelectCompletedSteps([]);
+      setAutoSelectStep(needsFlights ? 'Searching flights and trains...' : 'Finding hotels...');
+    }
+
+    // Concurrency limiter: max 3 parallel transport fetches to avoid API rate limits
+    const semaphore = { active: 0, queue: [] as (() => void)[] };
+    const acquireSemaphore = () => new Promise<void>(resolve => {
+      if (semaphore.active < 3) { semaphore.active++; resolve(); }
+      else semaphore.queue.push(resolve);
+    });
+    const releaseSemaphore = () => {
+      semaphore.active--;
+      const next = semaphore.queue.shift();
+      if (next) { semaphore.active++; next(); }
+    };
+
+    // Auto-select best transport for each leg (flight OR train, whichever is cheaper/better)
+    trip.transportLegs.forEach((leg, i) => {
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+
+      // Same city check FIRST: if from and to are the same city, force local transfer
+      // (runs even if already selected — replaces bad same-city flights/trains)
+      // Check multiple name fields since FROM might be a street address, not a city name
+      const fromNames = [fromC.parentCity, fromC.name].filter(Boolean).map(n => n!.toLowerCase());
+      const toNames = [toC.parentCity, toC.name].filter(Boolean).map(n => n!.toLowerCase());
+      // Also extract city from fullName or fromAddress (e.g., "42 Rue Jacob, Paris, France" → contains "paris")
+      const fromFull = (fromC.fullName || (i === 0 ? trip.fromAddress : '') || '').toLowerCase();
+      const isSameCity = fromNames.some(fn => toNames.some(tn => fn === tn))
+        || toNames.some(tn => tn.length >= 3 && fromFull.includes(tn));
+      if (isSameCity) {
+        // Only replace if currently a flight/train (not already a local transfer)
+        if (leg.selectedTrain?.operator !== 'Local Transfer') {
+          trip.updateTransportLeg(leg.id, {
+            type: 'drive',
+            selectedFlight: null,
+            selectedTrain: {
+              id: `local-${Date.now()}-${i}`, operator: 'Local Transfer', trainName: 'Local Transfer', trainNumber: '',
+              departure: '', arrival: '', duration: '~15 min', stops: 'Direct',
+              fromStation: fromC.parentCity || fromC.name || '', toStation: toC.parentCity || toC.name || '',
+              price: 0, color: '#6b7280',
+            },
+            duration: '~15 min', distance: '~',
+            departureTime: null, arrivalTime: null,
+          });
+        }
+        return;
+      }
+
+      if (leg.selectedFlight || leg.selectedTrain) return; // Already selected
+
+      // Use city names (not airport codes) so the API can do parallel nearby-airport search
+      // Prefer parentCity (actual city name) over name (which may be a place/address like "Silver Oak Prestige residency")
+      let fc = fromC.parentCity || fromC.name || fromC.fullName || findAirportCode(fromC);
+      let tc = toC.parentCity || toC.name || toC.fullName || findAirportCode(toC);
+
+      // For return leg (last leg in round trip going back to origin),
+      // reuse the resolved airport from leg 0 so we get the same airport
+      const isReturnLeg = trip.tripType === 'roundTrip' && i === trip.transportLegs.length - 1 && i > 0;
+      if (isReturnLeg && resolvedAirportsRef.current[0]) {
+        tc = resolvedAirportsRef.current[0].fromCode;
+      }
+      // For any leg, if previous leg resolved the departure city's airport, reuse it
+      if (i > 0 && resolvedAirportsRef.current[i - 1]?.toCode) {
+        fc = resolvedAirportsRef.current[i - 1].toCode;
+      }
+
+      const fromName = fromC.parentCity || fromC.name || fromC.fullName || fc;
+      const toName = toC.parentCity || toC.name || toC.fullName || tc;
+      if (!fc || !tc || fc === tc) return;
+
+      let dayOffset = 0;
+      for (let d = 0; d < Math.min(i, trip.destinations.length); d++) {
+        dayOffset += trip.destinations[d].nights ?? 0;
+      }
+      const legDate = new Date(trip.departureDate);
+      legDate.setDate(legDate.getDate() + dayOffset);
+      const legDateStr = legDate.toISOString().split('T')[0];
+
+      pendingCountRef.current++;
+      totalPendingRef.current++;
+      const transportLabel = `${fromName} → ${toName}`;
+      pendingStepDescsRef.current.set(transportLabel, `Searching ${transportLabel}...`);
+      setAutoSelectStep(`Searching ${transportLabel}...`);
+
+      // Pre-check: resolve airports for BOTH cities and compare — if same, auto-select drive
+      // This catches cases like Thane→Mumbai (both resolve to BOM) worldwide
+      const setDriveForSameAirport = () => {
+        const driveFrom = fromC.fullName || `${fromC.parentCity || fromC.name}, ${fromC.country || ''}`;
+        const driveTo = toC.fullName || `${toC.parentCity || toC.name}, ${toC.country || ''}`;
+        const fStation = fromC.parentCity || fromC.name || '';
+        const tStation = toC.parentCity || toC.name || '';
+        getDirections(driveFrom, driveTo, 'driving').then(driveResult => {
+          if (signal.aborted) return;
+          if (driveResult) {
+            const distKm = parseFloat(driveResult.distanceText.replace(/[^\d.]/g, '')) || 0;
+            const cabCost = Math.round(distKm * 18);
+            trip.updateTransportLeg(leg.id, {
+              type: 'drive', selectedFlight: null,
+              selectedTrain: { id: `drive-auto-${Date.now()}-${i}`, operator: 'Hire Cab', trainName: 'Hire Cab', trainNumber: '', departure: '', arrival: '', duration: driveResult.durationText, stops: 'Direct', fromStation: fStation, toStation: tStation, price: cabCost, color: '#f59e0b' },
+              duration: driveResult.durationText, distance: driveResult.distanceText, departureTime: null, arrivalTime: null,
+            });
+          }
+          pendingCountRef.current--;
+          if (pendingCountRef.current === 0) setAutoSelectStep('');
+        }).catch(() => { pendingCountRef.current--; if (pendingCountRef.current === 0) setAutoSelectStep(''); });
+      };
+
+      // Fetch BOTH flights and trains in parallel (throttled by semaphore to avoid rate limits)
+      acquireSemaphore().then(() => {
+      if (signal.aborted) { releaseSemaphore(); return; }
+      const flightP = fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`, { signal })
+        .then(r => r.json()).catch(() => ({ flights: [] }));
+      const trainP = fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`, { signal })
+        .then(r => r.json()).catch(() => ({ trains: [] }));
+
+      Promise.all([flightP, trainP]).then(([flightData, trainData]) => {
+        if (signal.aborted) return;
+        const flights = flightData.flights || [];
+        const trains = trainData.trains || [];
+
+        // Store resolved airport info for display (airport codes, names, distances)
+        const resolvedFrom = flightData.fromResolved || fc;
+        const resolvedTo = flightData.toResolved || tc;
+        // Cache resolved info per leg for display
+        const nearestFrom = flightData.nearestFrom;
+        const resolvedInfo = {
+          fromCode: resolvedFrom, toCode: resolvedTo,
+          fromAirport: flightData.fromAirport || '',
+          toAirport: flightData.toAirport || '',
+          fromCity: flightData.fromCity || '',
+          toCity: flightData.toCity || '',
+          fromDistance: flightData.fromDistance || 0,
+          toDistance: flightData.toDistance || 0,
+          nearestFromCode: nearestFrom?.code,
+          nearestFromCity: nearestFrom?.city,
+          nearestFromDist: nearestFrom?.distance,
+        };
+        resolvedAirportsRef.current[i] = resolvedInfo;
+        // Persist resolved airport info on the transport leg for reload
+        trip.updateTransportLeg(leg.id, { resolvedAirports: resolvedInfo });
+
+        // Same airport check: if from/to resolve to the same code, auto-select drive
+        // Works globally: Thane→Mumbai (BOM=BOM), Oakland→SF (SFO=SFO), etc.
+        if (resolvedFrom && resolvedTo && resolvedFrom === resolvedTo) {
+          setDriveForSameAirport();
+          trackPending(-1, transportLabel);
+          return;
+        }
+
+        // Cache flights for the modal
+        if (flights.length > 0) flightCacheRef.current[i] = flights;
+
+        const cheapestFlight = flights.length > 0 ? flights.sort((a: any, b: any) => a.price - b.price)[0] : null;
+        const cheapestTrain = trains.length > 0 ? trains.sort((a: any, b: any) => a.price - b.price)[0] : null;
+
+        // Pick best: prefer train if it's cheaper OR similar price but faster
+        // For short distances (<500km), trains are usually better
+        if (cheapestTrain && cheapestFlight) {
+          const trainPrice = cheapestTrain.price;
+          const flightPrice = cheapestFlight.price;
+          const trainDurSec = cheapestTrain.durationSeconds || 99999;
+          const flightDurMatch = cheapestFlight.duration?.match(/(\d+)h\s*(\d+)?m?/);
+          const flightDurSec = flightDurMatch ? (parseInt(flightDurMatch[1]) * 3600 + parseInt(flightDurMatch[2] || '0') * 60) : 99999;
+
+          // Prefer train if: cheaper, or within 30% price AND faster/similar duration
+          const preferTrain = trainPrice < flightPrice || (trainPrice < flightPrice * 1.3 && trainDurSec <= flightDurSec * 1.2);
+
+          if (preferTrain) {
+            const train = {
+              id: `auto-${cheapestTrain.trainName}-${i}`, operator: cheapestTrain.operator,
+              trainName: cheapestTrain.trainName, trainNumber: cheapestTrain.trainNumber,
+              departure: cheapestTrain.departure, arrival: cheapestTrain.arrival,
+              duration: cheapestTrain.duration, stops: cheapestTrain.stops,
+              price: cheapestTrain.price, fromStation: cheapestTrain.fromStation, toStation: cheapestTrain.toStation,
+              color: cheapestTrain.transitSteps?.[0]?.color || '#6b7280',
+              transitSteps: cheapestTrain.transitSteps,
+            };
+            trip.selectTrain(leg.id, train);
+          } else {
+            const flight = {
+              id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
+              flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
+              duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
+              pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
+            };
+            trip.selectFlight(leg.id, flight);
+          }
+        } else if (cheapestTrain) {
+          const train = {
+            id: `auto-${cheapestTrain.trainName}-${i}`, operator: cheapestTrain.operator,
+            trainName: cheapestTrain.trainName, trainNumber: cheapestTrain.trainNumber,
+            departure: cheapestTrain.departure, arrival: cheapestTrain.arrival,
+            duration: cheapestTrain.duration, stops: cheapestTrain.stops,
+            price: cheapestTrain.price, fromStation: cheapestTrain.fromStation, toStation: cheapestTrain.toStation,
+            color: cheapestTrain.transitSteps?.[0]?.color || '#6b7280',
+            transitSteps: cheapestTrain.transitSteps,
+          };
+          trip.selectTrain(leg.id, train);
+        } else if (cheapestFlight) {
+          const flight = {
+            id: `auto-${cheapestFlight.flightNumber}`, airline: cheapestFlight.airline, airlineCode: cheapestFlight.airlineCode,
+            flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
+            duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
+            pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
+          };
+          trip.selectFlight(leg.id, flight);
+        }
+        trackPending(-1, `${fromName} → ${toName}`);
+      }).catch(() => trackPending(-1, `${fromName} → ${toName}`)).finally(releaseSemaphore);
+      }); // end acquireSemaphore
+    });
+
+    // Auto-select cheapest hotel for destinations without one
+    trip.destinations.forEach((dest, i) => {
+      if (dest.selectedHotel || dest.nights === 0) return;
+      pendingCountRef.current++;
+      totalPendingRef.current++;
+      const hotelLabel = `Hotel in ${dest.city.parentCity || dest.city.name}`;
+      pendingStepDescsRef.current.set(hotelLabel, `Finding hotels in ${dest.city.parentCity || dest.city.name}...`);
+      setAutoSelectStep(`Finding hotels in ${dest.city.parentCity || dest.city.name}...`);
+      // Calculate proper check-in/check-out dates for this destination
+      let hotelCheckInOffset = 0;
+      for (let d = 0; d < i; d++) {
+        hotelCheckInOffset += trip.destinations[d]?.nights ?? 0;
+      }
+      let checkInStr = '';
+      let checkOutStr = '';
+      if (trip.departureDate) {
+        try {
+          const checkInDate = new Date(trip.departureDate);
+          if (!isNaN(checkInDate.getTime())) {
+            checkInDate.setDate(checkInDate.getDate() + hotelCheckInOffset);
+            const checkOutDate = new Date(checkInDate);
+            checkOutDate.setDate(checkOutDate.getDate() + (dest.nights ?? 1));
+            checkInStr = checkInDate.toISOString().split('T')[0];
+            checkOutStr = checkOutDate.toISOString().split('T')[0];
+          }
+        } catch { /* invalid date — fetch without dates */ }
+      }
+      const dateParams = checkInStr && checkOutStr ? `&checkIn=${checkInStr}&checkOut=${checkOutStr}` : '';
+      const cityQuery = encodeURIComponent(dest.city.fullName || dest.city.name);
+      const selectHotel = (places: any[]) => {
+        if (places.length > 0) {
+          const h = places[0];
+          const hotel = {
+            id: `auto-${h.id || i}`,
+            name: h.displayName?.text || h.name || 'Hotel',
+            rating: h.rating || h.overall_rating || 0,
+            pricePerNight: h.rateExtracted || (4000 + Math.abs((dest.city.name.charCodeAt(0) * 137) % 5000)),
+            ratingColor: (h.rating || 0) >= 4 ? '#22c55e' : '#eab308',
+          };
+          trip.updateDestinationHotel(dest.id, hotel);
+          return true;
+        }
+        return false;
+      };
+      // Try with dates first, retry without dates if empty, then retry with just city name
+      fetch(`/api/nearby?location=${cityQuery}${dateParams}`, { signal })
+        .then(r => r.json())
+        .then(data => {
+          if (signal.aborted) return;
+          const hotelLabel = `Hotel in ${dest.city.parentCity || dest.city.name}`;
+          if (selectHotel(data.places || [])) { trackPending(-1, hotelLabel); return; }
+          if (dateParams) {
+            return fetch(`/api/nearby?location=${cityQuery}`, { signal }).then(r => r.json()).then(data2 => {
+              if (signal.aborted) return;
+              if (selectHotel(data2.places || [])) { trackPending(-1, hotelLabel); return; }
+              const simpleName = encodeURIComponent(dest.city.parentCity || dest.city.name);
+              return fetch(`/api/nearby?location=${simpleName}`, { signal }).then(r => r.json()).then(data3 => {
+                if (signal.aborted) return;
+                selectHotel(data3.places || []);
+                trackPending(-1, hotelLabel);
+              });
+            });
+          }
+          trackPending(-1, hotelLabel);
+        }).catch(() => { if (!signal.aborted) trackPending(-1, `Hotel in ${dest.city.parentCity || dest.city.name}`); });
+    });
+
+    return () => { abortController.abort(); };
+  }, [trip.destinations.length, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Toast notification for flight updates
+  const [flightUpdateToast, setFlightUpdateToast] = useState<string | null>(null);
+
+  // Track if date/nights changed since last fetch — show "Update" button instead of auto-refetching
+  const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const savedDateRef = useRef('');
+  const savedNightsRef = useRef('');
+
+  useEffect(() => {
+    if (!tripStableRef.current) {
+      savedDateRef.current = trip.departureDate;
+      savedNightsRef.current = nightsKey;
+      return;
+    }
+    if (savedDateRef.current === '' || savedNightsRef.current === '') {
+      savedDateRef.current = trip.departureDate;
+      savedNightsRef.current = nightsKey;
+      return;
+    }
+    const dateChanged = savedDateRef.current !== trip.departureDate;
+    const nightsChanged = savedNightsRef.current !== nightsKey;
+    if (dateChanged || nightsChanged) {
+      setNeedsRefresh(true);
+      // Clear stale caches
+      for (let li = 0; li < trip.transportLegs.length; li++) delete flightCacheRef.current[li];
+    }
+    // Detect switch to round trip with empty return leg
+    if (trip.tripType === 'roundTrip' && trip.transportLegs.length > 0) {
+      const returnLeg = trip.transportLegs[trip.transportLegs.length - 1];
+      if (returnLeg && !returnLeg.selectedFlight && !returnLeg.selectedTrain && returnLeg.duration === '~') {
+        setNeedsRefresh(true);
+      }
+    }
+  }, [trip.departureDate, nightsKey, trip.tripType, trip.transportLegs.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Manual refresh function — called by the "Update" button
+  const refreshTransport = () => {
+    setIsRefreshing(true);
+    setNeedsRefresh(false);
+    savedDateRef.current = trip.departureDate;
+    savedNightsRef.current = nightsKey;
+
+    const hasSelections = trip.transportLegs.filter(l => l.selectedFlight || l.selectedTrain).length;
+    const emptyLegs = trip.transportLegs.filter(l => !l.selectedFlight && !l.selectedTrain).length;
+    const total = hasSelections + emptyLegs;
+    if (total > 0) setFlightUpdateToast(`${hasSelections > 0 ? 'Updating' : 'Searching'} ${total} transport option${total > 1 ? 's' : ''}...`);
+
+    let pending = 0;
+    const onDone = () => { pending--; if (pending <= 0) { setFlightUpdateToast(null); setIsRefreshing(false); } };
+
+    trip.transportLegs.forEach((leg, i) => {
+
+      const fromC = i === 0 ? trip.from : trip.destinations[Math.min(i - 1, trip.destinations.length - 1)]?.city;
+      const toC = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+      if (!fromC || !toC) return;
+
+      const legDateStr = calcDepartureDate(i).toISOString().split('T')[0];
+
+      if (leg.selectedFlight) {
+        const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+        const fc = info?.fromCode || findAirportCode(fromC) || fromC.parentCity || fromC.name;
+        const tc = info?.toCode || findAirportCode(toC) || toC.parentCity || toC.name;
+        if (!fc || !tc || fc === tc) return;
+
+        pending++;
+        fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.flights?.length > 0) {
+              const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+              trip.selectFlight(leg.id, {
+                id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+                flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
+                pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+              });
+              flightCacheRef.current[i] = data.flights;
+            }
+            onDone();
+          }).catch(() => onDone());
+      } else if (leg.selectedTrain) {
+        const fromName = fromC.parentCity || fromC.name || fromC.fullName;
+        const toName = toC.parentCity || toC.name || toC.fullName;
+        pending++;
+        fetch(`/api/trains?from=${encodeURIComponent(fromName)}&to=${encodeURIComponent(toName)}&date=${legDateStr}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.trains?.length > 0) {
+              const cheapest = data.trains.sort((a: any, b: any) => a.price - b.price)[0];
+              trip.selectTrain(leg.id, {
+                id: `auto-${cheapest.name}`, operator: cheapest.operator || '', trainName: cheapest.name || '',
+                trainNumber: cheapest.trainNumber || '', departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops || 'Direct',
+                fromStation: cheapest.fromStation || fromName, toStation: cheapest.toStation || toName,
+                price: cheapest.price, color: '#f59e0b',
+              });
+            }
+            onDone();
+          }).catch(() => onDone());
+      } else {
+        // Empty leg (no selection yet) — search for cheapest flight using city names for better nearby airport coverage
+        const fc = fromC.parentCity || fromC.name || fromC.fullName || findAirportCode(fromC);
+        const tc = toC.parentCity || toC.name || toC.fullName || findAirportCode(toC);
+        if (!fc || !tc || fc === tc) return;
+        pending++;
+        fetch(`/api/flights?from=${encodeURIComponent(fc)}&to=${encodeURIComponent(tc)}&date=${legDateStr}&adults=${trip.adults}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.flights?.length > 0) {
+              const cheapest = data.flights.sort((a: any, b: any) => a.price - b.price)[0];
+              trip.selectFlight(leg.id, {
+                id: `auto-${cheapest.flightNumber}`, airline: cheapest.airline, airlineCode: cheapest.airlineCode,
+                flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
+                duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
+                pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+              });
+              flightCacheRef.current[i] = data.flights;
+            }
+            onDone();
+          }).catch(() => onDone());
+      }
+    });
+    if (pending === 0) { setFlightUpdateToast(null); setIsRefreshing(false); }
+  };
+
+  // Build route stops
+  // Detect if all destinations are in the same city as the origin (local stay)
+  const isLocalStay = useMemo(() => {
+    if (trip.destinations.length === 0) return false;
+    const originNames = [trip.from.parentCity, trip.from.name].filter(Boolean).map(n => n!.toLowerCase());
+    const originFull = (trip.from.fullName || trip.fromAddress || '').toLowerCase();
+    const addrLower = (trip.fromAddress || '').toLowerCase();
+    return trip.destinations.every(d => {
+      const dNames = [d.city.parentCity, d.city.name].filter(Boolean).map(n => n!.toLowerCase());
+      // Check 1: origin city names match destination city names
+      if (dNames.some(dn => originNames.some(on => on === dn))) return true;
+      // Check 2: destination city name found in origin's fullName or fromAddress
+      if (dNames.some(dn => dn.length >= 3 && (originFull.includes(dn) || addrLower.includes(dn)))) return true;
+      // Check 3: origin city name found in destination's fullName
+      const dFull = (d.city.fullName || '').toLowerCase();
+      if (originNames.some(on => on.length >= 3 && dFull.includes(on))) return true;
+      return false;
+    });
+  }, [trip.from.name, trip.from.parentCity, trip.from.fullName, trip.fromAddress, trip.destinations.map(d => `${d.city.name}-${d.city.parentCity || ''}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stops = useMemo(() => {
+    const result: Array<{
+      number: number; name: string; type: 'home' | 'destination';
+      explore?: string; destIndex?: number; nights?: number;
+    }> = [];
+    // For local stays, skip the home stop — just show destinations
+    if (!isLocalStay) {
+      result.push({ number: 1, name: trip.fromAddress, type: 'home' });
+    }
+    trip.destinations.forEach((dest, i) => {
+      result.push({ number: result.length + 1, name: dest.city.name, type: 'destination', explore: dest.city.name, destIndex: i, nights: dest.nights });
+    });
+    if (trip.tripType === 'roundTrip' && !isLocalStay) {
+      result.push({ number: result.length + 1, name: trip.fromAddress, type: 'home' });
+    }
+    return result;
+  }, [trip.fromAddress, trip.destinations, trip.tripType, isLocalStay]);
+
+  // Cost calc
+  const totalNights = trip.destinations.reduce((s, d) => s + d.nights, 0);
+  const rooms = Math.ceil((trip.adults + trip.children) / 2); // ~2 persons per room (infants share with adults)
+  // Transport cost: adults + children (full fare) + infants (15% of adult fare)
+  const transportPax = trip.adults + trip.children; // children pay full fare
+  const infantMultiplier = trip.infants * 0.15; // infants pay 15% on flights ONLY
+  const flightCost = trip.transportLegs.filter(l => l.selectedFlight).reduce((s, l) => s + l.selectedFlight!.pricePerAdult * (transportPax + infantMultiplier), 0);
+  const trainCost = trip.transportLegs.filter(l => l.selectedTrain).reduce((s, l) => s + l.selectedTrain!.price * (trip.adults + (trip.children || 0)), 0);
+  const hotelCost = trip.destinations.filter(d => d.selectedHotel && d.nights > 0).reduce((s, d) => {
+    const extras = d.additionalHotels || [];
+    const extraNights = extras.reduce((es, h) => es + h.nights, 0);
+    const primaryNights = d.nights - extraNights;
+    const primaryCost = d.selectedHotel!.pricePerNight * Math.max(0, primaryNights);
+    const extraCost = extras.reduce((es, h) => es + h.hotel.pricePerNight * h.nights, 0);
+    return s + (primaryCost + extraCost) * rooms;
+  }, 0);
+  const totalCost = flightCost + trainCost + hotelCost;
+
+  /** When user picks a type from TransportModal, either open sub-modal or just set type */
+  // handleTransportTypeSelect removed - unified modal handles everything
+
+  // Get cities for a leg index
+  const getLegCities = (legIdx: number) => {
+    const fromCity = legIdx === 0 ? trip.from : trip.destinations[Math.min(legIdx - 1, trip.destinations.length - 1)]?.city;
+    const toCity = legIdx < trip.destinations.length ? trip.destinations[legIdx]?.city : trip.from;
+    return { fromCity, toCity };
+  };
+
+  // Calculate the departure date from a given stop (accounts for overnight flights + hotel nights)
+  const calcDepartureDate = (stopIdx: number): Date => {
+    const d = new Date(trip.departureDate);
+    for (let s = 0; s < stopIdx; s++) {
+      // Add nights at destination s (if it's a destination, not home)
+      if (s > 0 && s - 1 < trip.destinations.length) {
+        d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights ?? 0));
+      }
+      // Add travel days for overnight transport from stop s
+      const tLeg = s < trip.transportLegs.length ? trip.transportLegs[s] : null;
+      if (tLeg) {
+        const sel = tLeg.selectedFlight || tLeg.selectedTrain;
+        if (sel) {
+          const depH = parseInt(sel.departure?.split(':')[0] || '0');
+          const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
+          const durMatch = sel.duration?.match(/(\d+)h/);
+          const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+          if ((sel as any).isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24) {
+            d.setDate(d.getDate() + 1);
+          }
+        }
+      }
+    }
+    // Add nights at the current stop
+    if (stopIdx > 0 && stopIdx - 1 < trip.destinations.length) {
+      d.setDate(d.getDate() + (trip.destinations[stopIdx - 1]?.nights || 0));
+    }
+    return d;
+  };
+
+  // Find nearest airport code for a city
+  const findAirportCode = (city: City | undefined): string => {
+    if (!city) return '';
+    if (city.airportCode) return city.airportCode;
+    // Use full name with country (e.g., "Barcelona, Spain" not just "Barcelona")
+    // to avoid geocoding to wrong places (a "Barcelona" restaurant near Mumbai)
+    return city.fullName || city.parentCity || city.name || '';
+  };
+
+  const findAirportName = (city: City | undefined): string => {
+    if (!city) return '';
+    if (city.airport?.name) return city.airport.name;
+    const searchText = `${city.parentCity || ''} ${city.fullName || ''} ${city.name || ''}`.toLowerCase();
+    const known = CITIES.find(c => c.airport && searchText.includes(c.name.toLowerCase()));
+    if (known) return known.airport!.name;
+    if (searchText.includes('maharashtra') || searchText.includes('thane') || searchText.includes('navi mumbai')) return 'Chhatrapati Shivaji Maharaj International Airport';
+    return city.name;
+  };
+
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex justify-center p-4 py-8 bg-bg-primary">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[430px] md:max-w-[760px]">
+        <div id="trip-content" className="border-2 border-border-subtle rounded-[2rem] p-6 md:p-8 relative">
+          {/* Nav */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <button onClick={() => router.push('/my-trips')} className="font-display text-lg font-bold hover:opacity-80 transition-opacity"><span className="text-accent-cyan">AI</span>Ezzy</button>
+              <span className="text-text-muted text-xs">/</span>
+              <button onClick={() => router.push(trip.tripId ? `/plan?id=${trip.tripId}` : '/plan')} className="text-text-secondary text-xs font-body hover:text-accent-cyan transition-colors">Edit Trip</button>
+              <span className="text-text-muted text-xs">/</span>
+              <span className="text-text-primary text-xs font-body font-semibold">Route</span>
+            </div>
+            {session?.user?.name && <span className="text-text-muted text-xs font-body">{session.user.name}</span>}
+          </div>
+
+          {/* Title */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-lg font-bold text-text-primary">Plan Transport & Stay by City</h1>
+              {autoSaveStatus === 'pending' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-[9px] font-body text-text-muted">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-pulse" />
+                  Saving...
+                </span>
+              )}
+              {autoSaveStatus === 'saved' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-50 text-[9px] font-body text-green-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  Saved
+                </span>
+              )}
+              {autoSaveStatus === 'error' && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-[9px] font-body text-red-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Save failed
+                </span>
+              )}
+              {autoSaveStatus === 'idle' && trip.lastSavedAt && (
+                <span role="status" aria-live="polite" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-50 text-[9px] font-body text-text-muted/50">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                  Saved
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <input
+                type="date"
+                value={trip.departureDate}
+                min={new Date().toISOString().split('T')[0]}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (!val || isNaN(new Date(val).getTime())) return; // Block invalid dates
+                  trip.setDepartureDate(val);
+                }}
+                className="bg-transparent border border-border-subtle rounded-md px-1.5 py-0.5 text-text-muted text-xs font-mono outline-none focus:border-accent-cyan transition-colors [color-scheme:light] cursor-pointer"
+              />
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setAdults(Math.max(1, trip.adults - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.adults} adult{trip.adults > 1 ? 's' : ''}</span>
+                <button onClick={() => trip.setAdults(trip.adults + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setChildren(Math.max(0, trip.children - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.children} child</span>
+                <button onClick={() => trip.setChildren(trip.children + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
+              <span className="text-text-muted text-xs">&middot;</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => trip.setInfants(Math.max(0, trip.infants - 1))}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">-</button>
+                <span className="text-text-muted text-xs font-mono">{trip.infants} infant</span>
+                <button onClick={() => trip.setInfants(trip.infants + 1)}
+                  className="w-4 h-4 rounded bg-bg-card border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[9px] flex items-center justify-center transition-colors">+</button>
+              </div>
+              <span className="text-text-muted text-xs">&middot;</span>
+              <button
+                onClick={() => trip.setTripType(trip.tripType === 'roundTrip' ? 'oneWay' : 'roundTrip')}
+                className="text-xs font-mono text-text-muted hover:text-accent-cyan transition-colors border border-border-subtle rounded-md px-1.5 py-0.5 cursor-pointer"
+              >
+                {trip.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}
+              </button>
+              {/* Update button — floating popup at bottom when date/nights changed */}
+            </div>
+          </div>
+
+          {/* Local stay banner — prompt to go to Plan Itinerary */}
+          {isLocalStay && trip.destinations.some(d => d.selectedHotel) && (
+            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-display font-bold text-emerald-800">Local Stay — no transport needed</p>
+                <p className="text-[11px] text-emerald-600 font-body mt-0.5">Your hotel is selected. Plan your day-by-day activities and meals.</p>
+              </div>
+              <button
+                onClick={() => router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan')}
+                className="px-4 py-2 bg-emerald-600 text-white font-display font-bold text-sm rounded-lg hover:bg-emerald-700 transition-colors flex-shrink-0"
+              >
+                Plan Itinerary →
+              </button>
+            </div>
+          )}
+
+          {/* Main content: timeline + sidebar on desktop */}
+          <div className="md:grid md:grid-cols-[1fr_260px] md:gap-8">
+          {/* Timeline */}
+          <div>
+            {stops.map((stop, i) => {
+              // Skip home stops and their transport for local stays (same-city trips)
+              if (isLocalStay && stop.type === 'home') return null;
+
+              const hasTransport = i < stops.length - 1;
+              // For round trips, ensure return leg exists
+              let leg = hasTransport && i < trip.transportLegs.length ? trip.transportLegs[i] : null;
+              if (hasTransport && !leg && trip.tripType === 'roundTrip' && i === stops.length - 2) {
+                // This is the return leg - create a placeholder
+                leg = { id: `tl-return`, type: 'flight', duration: '~', distance: '~', selectedFlight: null, selectedTrain: null, departureTime: null, arrivalTime: null };
+              }
+              const { fromCity, toCity } = hasTransport ? getLegCities(i) : { fromCity: null, toCity: null };
+
+              // Calculate dates by walking through the trip day-by-day:
+              // Each stop's arrival = previous stop's departure + travel days
+              // Each stop's departure = arrival + nights at this stop
+              // Travel days = 0 for same-day, +1 for overnight flights, etc.
+              const calcArrivalDate = () => {
+                const d = new Date(trip.departureDate);
+                for (let s = 0; s < i; s++) {
+                  // Add nights at destination s (if it's a destination, not home)
+                  if (s > 0 && s - 1 < trip.destinations.length) {
+                    d.setDate(d.getDate() + (trip.destinations[s - 1]?.nights ?? 0));
+                  }
+                  // Add travel days for the transport leg FROM stop s
+                  // Check if the flight/train arriving at stop s+1 is overnight
+                  const tLeg = s < trip.transportLegs.length ? trip.transportLegs[s] : null;
+                  if (tLeg) {
+                    const sel = tLeg.selectedFlight || tLeg.selectedTrain;
+                    if (sel) {
+                      const depH = parseInt(sel.departure?.split(':')[0] || '0');
+                      const arrH = parseInt(sel.arrival?.split(':')[0] || '0');
+                      const durMatch = sel.duration?.match(/(\d+)h/);
+                      const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                      const isOvernight = (sel as any).isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
+                      if (isOvernight) d.setDate(d.getDate() + 1);
+                    }
+                  }
+                }
+                return d;
+              };
+
+              const arrivalDate = calcArrivalDate();
+              const thisNights = stop.destIndex !== undefined ? (trip.destinations[stop.destIndex]?.nights || 0) : 0;
+              const legDate = new Date(arrivalDate);
+              legDate.setDate(legDate.getDate() + thisNights);
+              const legDateFormatted = legDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+              return (
+                <div key={`stop-${i}`}>
+                  {/* Stop pin + name */}
+                  <div className="flex items-start gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="relative">
+                        <div className="w-8 h-8 rounded-full bg-accent-cyan flex items-center justify-center text-white font-mono font-bold text-xs relative z-10">
+                          {stop.number}
+                        </div>
+                        {i === 0 && <div className="absolute inset-0 rounded-full animate-pulse-glow" />}
+                      </div>
+                    </div>
+                    <div className="flex-1 pb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-display font-bold text-sm text-text-primary">{stop.name}</h3>
+                        {stop.type === 'destination' && (
+                          <WeatherBadge city={stop.name} date={arrivalDate.toISOString().split('T')[0]} />
+                        )}
+                      </div>
+                      {/* Airport info — only for home stops (departure & return), not destinations */}
+                      {(() => {
+                        const curLeg = trip.transportLegs[i];
+                        const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
+                        const info = resolvedAirportsRef.current[i] || curLeg?.resolvedAirports;
+                        const prevInfo = i > 0 ? (resolvedAirportsRef.current[i - 1] || prevLeg?.resolvedAirports) : null;
+                        const firstInfo = resolvedAirportsRef.current[0] || trip.transportLegs[0]?.resolvedAirports;
+                        const isLastHome = stop.type === 'home' && i === stops.length - 1 && trip.tripType === 'roundTrip' && i > 0;
+
+                        // Only show on home stops (first stop + return home)
+                        if (stop.type === 'destination') return null;
+                        if (i === 0 && !curLeg?.selectedFlight) return null;
+                        if (isLastHome && !prevLeg?.selectedFlight) return null;
+                        if (!i && !isLastHome) return null;
+
+                        let airportCode: string | undefined, airportCity: string | undefined, airportDist: number | undefined;
+                        if (i === 0) {
+                          airportCode = info?.fromCode;
+                          airportCity = info?.fromCity;
+                          airportDist = info?.fromDistance;
+                        } else if (isLastHome) {
+                          airportCode = prevInfo?.toCode;
+                          airportCity = prevInfo?.toCity;
+                          if (prevInfo?.toCode && firstInfo?.nearestFromCode === prevInfo.toCode) {
+                            airportDist = firstInfo.nearestFromDist;
+                          } else if (prevInfo?.toCode && firstInfo?.fromCode === prevInfo.toCode) {
+                            airportDist = firstInfo.fromDistance;
+                          } else {
+                            airportDist = undefined;
+                          }
+                        }
+
+                        if (!airportCode) return null;
+
+                        // Show nearest airport note for first stop
+                        const nearest = i === 0 ? info : null;
+                        if (nearest?.nearestFromCode && nearest.nearestFromCode !== airportCode && airportDist && airportDist >= 30) {
+                          return (
+                            <div className="text-[10px] font-body mt-0.5 space-y-0.5">
+                              <p className="text-amber-600">
+                                Flights from {airportCity || airportCode} ({airportCode}), {Math.round(airportDist)} km away
+                              </p>
+                              <p className="text-text-muted">
+                                Nearest airport {nearest.nearestFromCity || nearest.nearestFromCode} ({nearest.nearestFromCode}) is {Math.round(nearest.nearestFromDist || 0)} km away but has no available flights
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        // Use real road distance for home stops when available
+                        const realHome = homeToAirportDist;
+                        const distStr = realHome ? `${realHome.distance} (${realHome.duration})` : (airportDist && airportDist >= 30 ? `${Math.round(airportDist)} km` : '');
+                        const msg = i === 0
+                          ? `Flights from ${airportCity || airportCode} (${airportCode})${distStr ? `, ${distStr} away` : ''}`
+                          : `Flight will land in ${airportCity || airportCode} (${airportCode})${distStr ? `, ${distStr} away` : ''}`;
+
+                        return (
+                          <p className="text-[10px] text-amber-600 font-body mt-0.5">{msg}</p>
+                        );
+                      })()}
+                      {/* Arrival hub → hotel distance (airport or station) — skip for local stays/transfers */}
+                      {stop.type === 'destination' && !isLocalStay && (() => {
+                        const prevLeg = i > 0 ? trip.transportLegs[i - 1] : null;
+                        if (prevLeg?.selectedTrain?.operator === 'Local Transfer' || (prevLeg?.selectedTrain as any)?.type === 'drive') return null;
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        const destCity = dest?.city;
+                        const hotelName = dest?.selectedHotel?.name;
+                        const toLabel = hotelName || destCity?.parentCity || destCity?.name || '';
+                        const di = stop.destIndex ?? -1;
+                        // Real distance from Google Directions (hotel-specific)
+                        const realDist = di >= 0 ? hubToHotelDistances[`arr-${di}`] : null;
+
+                        // Flight arrival: use resolved airport info
+                        if (prevLeg?.selectedFlight && i > 0) {
+                          const prevInfo = resolvedAirportsRef.current[i - 1] || prevLeg?.resolvedAirports;
+                          if (prevInfo?.toCode) {
+                            const distLabel = realDist?.distance || (() => {
+                              const hub = destCity?.airport;
+                              return (hub && hub.code === prevInfo.toCode ? hub.transitToCenter.distance : null)
+                                || (prevInfo.toDistance ? `${Math.round(prevInfo.toDistance)} km` : null);
+                            })();
+                            const durLabel = realDist?.duration || (() => {
+                              const hub = destCity?.airport;
+                              return hub && hub.code === prevInfo.toCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                            })();
+                            return (
+                              <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                Arriving at {prevInfo.toCity || prevInfo.toCode} ({prevInfo.toCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} to {toLabel}
+                              </p>
+                            );
+                          }
+                        }
+
+                        // Train/bus arrival: use station info from city data (skip drive/cab — no terminal)
+                        if (prevLeg?.selectedTrain && i > 0 && (prevLeg.selectedTrain as any)?.type !== 'drive' && prevLeg.type !== 'drive') {
+                          const station = destCity?.trainStation;
+                          if (station) {
+                            const distLabel = realDist?.distance || station.transitToCenter.distance;
+                            const durLabel = realDist?.duration || `~${station.transitToCenter.durationMin} min`;
+                            return (
+                              <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                Arriving at {station.name}, {distLabel} ({durLabel}) to {toLabel}
+                              </p>
+                            );
+                          }
+                        }
+
+                        // First destination: show airport/station distance if flight/train was used to get here
+                        if (i === 0) {
+                          const firstLeg = trip.transportLegs[0];
+                          if (firstLeg?.selectedFlight) {
+                            const info = resolvedAirportsRef.current[0] || firstLeg?.resolvedAirports;
+                            if (info?.toCode) {
+                              const distLabel = realDist?.distance || (() => {
+                                const hub = destCity?.airport;
+                                return (hub && hub.code === info.toCode ? hub.transitToCenter.distance : null)
+                                  || (info.toDistance ? `${Math.round(info.toDistance)} km` : null);
+                              })();
+                              const durLabel = realDist?.duration || (() => {
+                                const hub = destCity?.airport;
+                                return hub && hub.code === info.toCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                              })();
+                              return (
+                                <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                  Arriving at {info.toCity || info.toCode} ({info.toCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} to {toLabel}
+                                </p>
+                              );
+                            }
+                          } else if (firstLeg?.selectedTrain && (firstLeg.selectedTrain as any)?.type !== 'drive' && firstLeg.type !== 'drive') {
+                            const station = destCity?.trainStation;
+                            if (station) {
+                              return (
+                                <p className="text-[10px] text-teal-600 font-body mt-0.5">
+                                  Arriving at {station.name}, {station.transitToCenter.distance} (~{station.transitToCenter.durationMin} min) to {toLabel}
+                                </p>
+                              );
+                            }
+                          }
+                        }
+
+                        return null;
+                      })()}
+                      {/* Visa requirement badge */}
+                      {stop.type === 'destination' && (() => {
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        if (!dest) return null;
+                        const country = dest.city.country;
+                        if (!country || country === 'India') return null;
+                        const visa = getVisaInfo(country);
+                        if (!visa) return null;
+                        return (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: visa.color }} />
+                            <span className="text-[10px] font-body" style={{ color: visa.color }}>{visa.label}{visa.duration ? ` (${visa.duration})` : ''}</span>
+                            {visa.note && <span className="text-[10px] font-body text-text-muted">&middot; {visa.note}</span>}
+                          </div>
+                        );
+                      })()}
+                      {/* Places sub-list */}
+                      {stop.type === 'destination' && (() => {
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        if (!dest || !dest.places || dest.places.length === 0) return null;
+                        // Don't show if all place names match the city name
+                        const cityNameLower = dest.city.name.toLowerCase();
+                        const meaningfulPlaces = dest.places.filter(p => p.name.toLowerCase() !== cityNameLower);
+                        if (meaningfulPlaces.length === 0) return null;
+                        return (
+                          <div className="mt-1 space-y-0.5">
+                            {dest.places.map(p => (
+                              <div key={p.id} className="flex items-center gap-1.5 text-[10px] text-text-secondary font-body">
+                                <span className="w-1 h-1 rounded-full bg-accent-cyan/50 flex-shrink-0" />
+                                <span className="truncate">{p.name}</span>
+                                <span className="text-text-muted">({p.nights}N)</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                      {stop.type === 'destination' && (() => {
+                        const dest = stop.destIndex !== undefined ? trip.destinations[stop.destIndex] : null;
+                        const hotel = dest?.selectedHotel;
+                        const nights = stop.nights || 0;
+
+                        if (nights === 0) {
+                          return (
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-text-muted text-xs font-body italic">Pass through</span>
+                              <button onClick={() => dest && trip.updateNights(dest.id, 1)}
+                                className="px-2 py-0.5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] font-body transition-colors">+ Add night</button>
+                            </div>
+                          );
+                        }
+
+                        if (hotel) {
+                          // Primary hotel nights = total nights minus additional hotel nights
+                          const extras = dest?.additionalHotels || [];
+                          const extraNights = extras.reduce((s, h) => s + h.nights, 0);
+                          const primaryNights = Math.max(1, nights - extraNights);
+                          const totalPrice = hotel.pricePerNight * primaryNights * rooms;
+                          const checkIn = new Date(arrivalDate);
+                          const checkOut = new Date(arrivalDate);
+                          checkOut.setDate(checkOut.getDate() + primaryNights);
+                          const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                          return (
+                            <div className="mt-1.5 bg-rose-50/40 border border-rose-200/50 border-l-[3px] border-l-rose-400 rounded-lg p-2.5 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                                  {hotel.name}
+                                </span>
+                                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                  <a
+                                    href={getHotelBookingUrl(
+                                      hotel.name,
+                                      stop.name,
+                                      checkIn.toISOString().split('T')[0],
+                                      checkOut.toISOString().split('T')[0]
+                                    )}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-accent-gold text-[10px] font-body hover:underline flex items-center gap-0.5"
+                                  >
+                                    Book
+                                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                  </a>
+                                  {(() => {
+                                    const docs = getDocsForCity(stop.explore || stop.name, 'hotel');
+                                    return docs.length > 0 ? (
+                                      <button onClick={() => setViewingBooking(docs[0])}
+                                        className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                        Booking
+                                      </button>
+                                    ) : null;
+                                  })()}
+                                  <button onClick={() => stop.destIndex !== undefined && setHotelModal({ destIndex: stop.destIndex })}
+                                    className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px]">
+                                {hotel.rating > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: hotel.ratingColor, fontSize: '9px' }}>{hotel.rating}</span>
+                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => dest && trip.updateNights(dest.id, nights - 1)}
+                                    aria-label="Decrease nights"
+                                    className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">-</button>
+                                  <span className="text-text-primary font-mono font-bold">{primaryNights}N</span>
+                                  <button onClick={() => dest && trip.updateNights(dest.id, nights + 1)}
+                                    aria-label="Increase nights"
+                                    className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-text-secondary font-body">{formatPrice(hotel.pricePerNight, currency)}/night &times; {primaryNights}{rooms > 1 && <> &times; {rooms} rooms</>}</span>
+                                <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <button onClick={() => stop.destIndex !== undefined && setHotelModal({ destIndex: stop.destIndex })}
+                            className="text-accent-cyan text-xs font-body hover:underline mt-0.5 block">
+                            Select a hotel in {stop.explore} &middot; <span className="text-text-muted">{nights}N</span>
+                          </button>
+                        );
+                      })()}
+                      {/* Additional Hotels */}
+                      {stop.type === 'destination' && stop.destIndex !== undefined && (() => {
+                        const dest = trip.destinations[stop.destIndex!];
+                        if (!dest || !dest.selectedHotel || dest.nights <= 0) return null;
+                        const extras = dest.additionalHotels || [];
+                        const primaryNights = dest.selectedHotel
+                          ? dest.nights - extras.reduce((s, h) => s + h.nights, 0)
+                          : dest.nights;
+                        const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+                        return (
+                          <div className="mt-1.5 space-y-1.5">
+                            {/* Additional hotel cards */}
+                            {extras.map((stay, idx) => {
+                              const checkIn = new Date(arrivalDate);
+                              checkIn.setDate(checkIn.getDate() + primaryNights + extras.slice(0, idx).reduce((s, h) => s + h.nights, 0));
+                              const checkOut = new Date(checkIn);
+                              checkOut.setDate(checkOut.getDate() + stay.nights);
+                              const totalPrice = stay.hotel.pricePerNight * stay.nights * rooms;
+                              return (
+                                <div key={idx} className="bg-white border border-border-subtle rounded-lg shadow-sm p-2.5 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-display font-bold text-text-primary">{stay.hotel.name}</span>
+                                    <button onClick={() => trip.removeAdditionalHotel(dest.id, idx)}
+                                      className="text-text-muted text-[10px] font-body hover:text-accent-cyan transition-colors">Remove</button>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px]">
+                                    {stay.hotel.rating > 0 && (
+                                      <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: stay.hotel.ratingColor, fontSize: '9px' }}>{stay.hotel.rating}</span>
+                                    )}
+                                    <div className="flex items-center gap-1.5">
+                                      <button onClick={() => trip.updateAdditionalHotelNights(dest.id, idx, stay.nights - 1)}
+                                        aria-label="Decrease nights"
+                                        className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">-</button>
+                                      <span className="text-text-primary font-mono font-bold">{stay.nights}N</span>
+                                      <button onClick={() => trip.updateAdditionalHotelNights(dest.id, idx, stay.nights + 1)}
+                                        aria-label="Increase nights"
+                                        className="w-5 h-5 rounded bg-bg-surface border border-border-subtle text-text-muted hover:text-accent-cyan hover:border-accent-cyan text-[10px] flex items-center justify-center transition-colors">+</button>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                                    <span>Check-in {fmtDate(checkIn)} &rarr; Check-out {fmtDate(checkOut)}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-text-secondary font-body">{formatPrice(stay.hotel.pricePerNight, currency)}/night &times; {stay.nights}{rooms > 1 && <> &times; {rooms} rooms</>}</span>
+                                    <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalPrice, currency)}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Add another hotel button */}
+                            <button
+                              onClick={() => setHotelModal({ destIndex: stop.destIndex!, isAdditional: true })}
+                              className="text-[10px] text-text-muted hover:text-accent-cyan font-body transition-colors flex items-center gap-1"
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                              </svg>
+                              Add another hotel
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Transport leg */}
+                  {hasTransport && leg && !isLocalStay && (
+                    <div className="flex items-start gap-4 ml-0">
+                      <div className="flex flex-col items-center w-8">
+                        <div className="w-px flex-1 border-l-2 border-dashed border-border-subtle min-h-[48px]" />
+                      </div>
+                      <div className="flex-1 py-2 space-y-1">
+                        {/* Transport type + duration button */}
+                        <button
+                          onClick={() => setTransportModal({ legIndex: i })}
+                          className="flex items-center gap-2 text-text-secondary hover:text-accent-cyan transition-colors group"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="group-hover:text-accent-cyan">
+                            <path d={transportIcons[leg.type] || transportIcons.drive} />
+                          </svg>
+                          {(() => {
+                            const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+                            const duration = leg.selectedFlight ? leg.selectedFlight.duration : leg.selectedTrain ? leg.selectedTrain.duration : leg.duration;
+
+                            // Build route display: "Ahmedabad (AMD) - Amsterdam (AMS)"
+                            let routeDisplay = leg.distance || '';
+                            if (leg.selectedFlight) {
+                              // Get airport codes from resolved info or directly from the flight object
+                              const fCode = info?.fromCode || leg.selectedFlight.depAirportCode || '';
+                              const tCode = info?.toCode || leg.selectedFlight.arrAirportCode || '';
+                              // Get city names: resolved airport city (e.g., "Mumbai" for BOM when origin is Thane)
+                              const fCity = info?.fromCity || fromCity?.parentCity || fromCity?.name || '';
+                              const tCity = info?.toCity || toCity?.parentCity || toCity?.name || '';
+                              if (fCode && tCode && fCode !== tCode) {
+                                // Show "Mumbai (BOM)" not "Thane (BOM)" — use code alone if city matches code
+                                const fLabel = fCity && fCity !== fCode ? `${fCity} (${fCode})` : fCode;
+                                const tLabel = tCity && tCity !== tCode ? `${tCity} (${tCode})` : tCode;
+                                routeDisplay = `${fLabel} - ${tLabel}`;
+                              } else {
+                                routeDisplay = `${fCity || fCode} - ${tCity || tCode}`;
+                              }
+                            } else if (leg.selectedTrain) {
+                              routeDisplay = `${fromCity?.parentCity || fromCity?.name || ''} - ${toCity?.parentCity || toCity?.name || ''}`;
+                            } else {
+                              // No selection: use resolved airport city if available (e.g., Thane → Mumbai for nearest airport)
+                              const fName = info?.fromCity || fromCity?.parentCity || fromCity?.name || '';
+                              const tName = info?.toCity || toCity?.parentCity || toCity?.name || '';
+                              routeDisplay = `${fName} \u2192 ${tName}`;
+                            }
+
+                            const noSelection = !leg.selectedFlight && !leg.selectedTrain;
+                            return (
+                              <span className={`text-xs font-mono${noSelection ? ' text-text-muted' : ''}`}>
+                                {noSelection ? '' : `${duration} \u00b7 `}{routeDisplay}
+                              </span>
+                            );
+                          })()}
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+
+                        {/* No transport selected — red warning (skip for drive/walk/cycle with duration) */}
+                        {!leg.selectedFlight && !leg.selectedTrain && !(leg.type === 'drive' && leg.duration && leg.duration !== '~') && (
+                          <button
+                            onClick={() => setTransportModal({ legIndex: i })}
+                            className="flex items-center gap-1.5 mt-1 px-2.5 py-1.5 rounded-lg border border-amber-200/50 bg-amber-50/50 text-amber-700 text-[11px] font-body hover:bg-amber-50 transition-colors"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                            </svg>
+                            Please select transport for {(resolvedAirportsRef.current[i] || leg.resolvedAirports)?.fromCity || fromCity?.parentCity || fromCity?.name || ''} &rarr; {(resolvedAirportsRef.current[i] || leg.resolvedAirports)?.toCity || toCity?.parentCity || toCity?.name || ''}
+                          </button>
+                        )}
+
+                        {/* Airport distance info in transport section */}
+                        {leg.selectedFlight && (() => {
+                          const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+                          if (!info?.fromCode) return null;
+                          const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                          const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
+                          const depCity = i === 0 ? trip.from : depDest?.city;
+                          const hotelName = depDest?.selectedHotel?.name;
+                          const fromLabel = hotelName || depCity?.parentCity || depCity?.name || '';
+                          // Use real Google Directions distance (hotel-specific or home-to-airport), fall back to static data
+                          const realDist = i === 0 ? homeToAirportDist : (depDestIdx >= 0 ? hubToHotelDistances[`dep-${depDestIdx}`] : null);
+                          const distLabel = realDist?.distance || (() => {
+                            const hub = depCity?.airport;
+                            return (hub && hub.code === info.fromCode ? hub.transitToCenter.distance : null)
+                              || (info.fromDistance ? `${Math.round(info.fromDistance)} km` : null);
+                          })();
+                          const durLabel = realDist?.duration || (() => {
+                            const hub = depCity?.airport;
+                            return hub && hub.code === info.fromCode ? `~${hub.transitToCenter.durationMin} min` : null;
+                          })();
+                          return (
+                            <p className="text-[10px] text-amber-600 font-body mt-0.5">
+                              Departing from {info.fromCity || info.fromCode} ({info.fromCode}){distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} from {fromLabel}
+                            </p>
+                          );
+                        })()}
+
+                        {/* Selected flight details card */}
+                        {leg.selectedFlight && (
+                          <div className="bg-blue-50/50 border border-blue-200/60 border-l-[3px] border-l-blue-500 rounded-lg p-2.5 space-y-1 mt-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></svg>
+                                {leg.selectedFlight.airline} {leg.selectedFlight.flightNumber}
+                              </span>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                <a
+                                  href={(() => {
+                                    const route = leg.selectedFlight!.route || '';
+                                    const parts = route.split('-');
+                                    const fCode = parts[0]?.trim() || '';
+                                    const tCode = parts[1]?.trim() || '';
+                                    return getFlightBookingUrl(fCode, tCode, legDate.toISOString().split('T')[0], trip.adults);
+                                  })()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="text-accent-gold text-[10px] font-body hover:underline flex items-center gap-0.5"
+                                >
+                                  Book
+                                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                </a>
+                                {(() => {
+                                  const info = resolvedAirportsRef.current[i] || leg.resolvedAirports;
+                                  // Use trip city names (e.g., "Mumbai", "Amsterdam") for matching, not airport names
+                                  const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                                  const depCity = i === 0 ? trip.from : trip.destinations[depDestIdx]?.city;
+                                  const arrCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+                                  const fName = depCity?.name || info?.fromCity || '';
+                                  const tName = arrCity?.name || info?.toCity || '';
+                                  const flightDocs = getTransportDocs(fName, tName);
+                                  return flightDocs.length > 0 ? (
+                                    <button onClick={() => setViewingBooking(flightDocs[0])}
+                                      className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                      Booking
+                                    </button>
+                                  ) : null;
+                                })()}
+                                <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                              </div>
+                            </div>
+                            {(() => {
+                              // Compute arrival date: check if flight arrives next day
+                              const depH = parseInt(leg.selectedFlight!.departure?.split(':')[0] || '0');
+                              const arrH = parseInt(leg.selectedFlight!.arrival?.split(':')[0] || '0');
+                              const durMatch = leg.selectedFlight!.duration?.match(/(\d+)h/);
+                              const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                              const isNextDay = (leg.selectedFlight as any)?.isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
+                              const arrDate = new Date(legDate);
+                              if (isNextDay) arrDate.setDate(arrDate.getDate() + 1);
+                              const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                              return (
+                                <div className="flex items-center gap-2 text-[10px]">
+                                  <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedFlight!.color, fontSize: '9px' }}>{leg.selectedFlight!.airlineCode}</span>
+                                  <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedFlight!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedFlight!.arrival)}</span>
+                                  <span className="text-text-muted font-mono">{leg.selectedFlight!.duration}</span>
+                                  <span className="text-text-muted font-mono">{leg.selectedFlight!.stops === 'Nonstop' ? 'Direct' : leg.selectedFlight!.stops.split(' · ')[0]}</span>
+                                </div>
+                              );
+                            })()}
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-text-secondary font-body">{formatPrice(leg.selectedFlight.pricePerAdult, currency)}/pax &times; {transportPax}{trip.infants > 0 ? ` + ${trip.infants} infant` : ''}</span>
+                              <span className="text-accent-cyan font-mono font-bold">{formatPrice(Math.round(leg.selectedFlight.pricePerAdult * (transportPax + infantMultiplier)), currency)}</span>
+                            </div>
+                          </div>
+                        )}
+                        {/* Station distance info in transport section (skip for local transfers) */}
+                        {leg.selectedTrain && leg.selectedTrain.operator !== 'Local Transfer' && (leg.selectedTrain as any)?.type !== 'drive' && leg.type !== 'drive' && (() => {
+                          const depDestIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                          const depDest = depDestIdx >= 0 ? trip.destinations[depDestIdx] : null;
+                          const depCity = i === 0 ? trip.from : depDest?.city;
+                          const hotelName = depDest?.selectedHotel?.name;
+                          const fromLabel = hotelName || depCity?.parentCity || depCity?.name || '';
+                          const station = depCity?.trainStation;
+                          if (!station) return null;
+                          const realDist = depDestIdx >= 0 ? hubToHotelDistances[`dep-${depDestIdx}`] : null;
+                          const distLabel = realDist?.distance || station.transitToCenter.distance;
+                          const durLabel = realDist?.duration || `~${station.transitToCenter.durationMin} min`;
+                          return (
+                            <p className="text-[10px] text-amber-600 font-body mt-0.5">
+                              Departing from {station.name}{distLabel ? `, ${distLabel}` : ''}{durLabel ? ` (${durLabel})` : ''} from {fromLabel}
+                            </p>
+                          );
+                        })()}
+                        {/* Selected train/bus/drive details card */}
+                        {leg.selectedTrain && (
+                          <div className={`rounded-lg p-2.5 space-y-1 mt-1 border-l-[3px] ${
+                            leg.type === 'bus' ? 'bg-orange-50/50 border border-orange-200/60 border-l-orange-500'
+                            : leg.type === 'drive' ? 'bg-slate-50/50 border border-slate-200/60 border-l-slate-500'
+                            : 'bg-amber-50/50 border border-amber-200/60 border-l-amber-500'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-display font-bold text-text-primary flex items-center gap-1.5">
+                                {leg.type === 'bus' ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0v2m16-2v2M7 16h.01M17 16h.01"/></svg>
+                                ) : leg.type === 'drive' ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 17h14v-5H5zm14 0a2 2 0 0 0 2-2v-2l-2-5H5L3 8v5a2 2 0 0 0 2 2m0 0v2m14-2v2"/></svg>
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 16V6a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10m-16 0h16M8 22h8"/></svg>
+                                )}
+                                {leg.selectedTrain.operator} {leg.selectedTrain.trainNumber}
+                              </span>
+                              <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                                {(() => {
+                                  // Use city names for matching, fall back to station names
+                                  const tDepIdx = i > 0 ? Math.min(i - 1, trip.destinations.length - 1) : -1;
+                                  const tDepCity = i === 0 ? trip.from : trip.destinations[tDepIdx]?.city;
+                                  const tArrCity = i < trip.destinations.length ? trip.destinations[i]?.city : trip.from;
+                                  // Try city names first, then station names as fallback
+                                  let trainDocs = getTransportDocs(
+                                    tDepCity?.name || leg.selectedTrain!.fromStation || '',
+                                    tArrCity?.name || leg.selectedTrain!.toStation || ''
+                                  );
+                                  // Fallback: try station names (train may go via different city, e.g., Brussels → Bruges)
+                                  if (trainDocs.length === 0 && leg.selectedTrain!.fromStation) {
+                                    trainDocs = getTransportDocs(
+                                      leg.selectedTrain!.fromStation,
+                                      leg.selectedTrain!.toStation || ''
+                                    );
+                                  }
+                                  return trainDocs.length > 0 ? (
+                                    <button onClick={() => setViewingBooking(trainDocs[0])}
+                                      className="text-purple-600 text-[10px] font-body hover:underline flex items-center gap-0.5">
+                                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                      Booking
+                                    </button>
+                                  ) : null;
+                                })()}
+                                <button onClick={() => setTransportModal({ legIndex: i })} className="text-accent-cyan text-[10px] font-body hover:underline">Change</button>
+                              </div>
+                            </div>
+                            {(() => {
+                              const hasTimes = leg.selectedTrain!.departure && leg.selectedTrain!.arrival;
+                              if (hasTimes) {
+                                const depH = parseInt(leg.selectedTrain!.departure?.split(':')[0] || '0');
+                                const arrH = parseInt(leg.selectedTrain!.arrival?.split(':')[0] || '0');
+                                const durMatch = leg.selectedTrain!.duration?.match(/(\d+)h/);
+                                const durHrs = durMatch ? parseInt(durMatch[1]) : 0;
+                                const isNext = (leg.selectedTrain as any)?.isNextDay || (arrH < depH && durHrs > 2) || durHrs >= 24;
+                                const arrDate = new Date(legDate);
+                                if (isNext) arrDate.setDate(arrDate.getDate() + 1);
+                                const arrDateFmt = arrDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+                                return (
+                                  <div className="flex items-center gap-2 text-[10px]">
+                                    <span className="px-1.5 py-0.5 rounded text-white font-mono font-bold" style={{ backgroundColor: leg.selectedTrain!.color, fontSize: '9px' }}>{leg.selectedTrain!.operator.split(' ')[0].slice(0,3)}</span>
+                                    <span className="text-text-secondary font-mono">{legDateFormatted} {timeStr12(leg.selectedTrain!.departure)} &rarr; {arrDateFmt} {timeStr12(leg.selectedTrain!.arrival)}</span>
+                                    <span className="text-text-muted font-mono">{leg.selectedTrain!.duration}</span>
+                                  </div>
+                                );
+                              }
+                              // Drive/cab: show duration + distance only (no times)
+                              return (
+                                <div className="flex items-center gap-2 text-[10px]">
+                                  <span className="text-text-secondary font-mono">{leg.selectedTrain!.duration}</span>
+                                  {leg.distance && leg.distance !== '~' && (
+                                    <>
+                                      <span className="text-text-muted">&bull;</span>
+                                      <span className="text-text-secondary font-mono">{leg.distance}</span>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                            <div className="flex items-center justify-between text-[11px]">
+                              {leg.selectedTrain.price > 0 ? (
+                                <>
+                                  <span className="text-text-secondary font-body">{formatPrice(leg.selectedTrain.price, currency)}/pax &times; {trip.adults + (trip.children || 0)}</span>
+                                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(leg.selectedTrain.price * (trip.adults + (trip.children || 0)), currency)}</span>
+                                </>
+                              ) : (
+                                <span className="text-text-muted font-body italic">Price N/A</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Departure/arrival hubs based on type */}
+                        {!leg.selectedFlight && !leg.selectedTrain && leg.type !== 'drive' && fromCity && toCity && (
+                          <div className="ml-5 text-[10px] text-text-muted font-body">
+                            {leg.type === 'flight' && (findAirportCode(fromCity) || findAirportCode(toCity)) && (
+                              <p>{findAirportName(fromCity)} &rarr; {findAirportName(toCity)}</p>
+                            )}
+                            {leg.type === 'train' && fromCity.trainStation && toCity.trainStation && (
+                              <p>{fromCity.trainStation.name} &rarr; {toCity.trainStation.name}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Sidebar: Cost + Actions */}
+          <div className="md:sticky md:top-8 md:self-start">
+          {/* Cost Summary */}
+          <div className="mt-6 p-4 bg-white border border-border-subtle rounded-xl shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display font-bold text-xs text-accent-gold uppercase tracking-widest">Trip Estimate</h3>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value as CurrencyCode)}
+                aria-label="Select currency"
+                className="text-[10px] font-mono bg-bg-surface border border-border-subtle rounded px-1.5 py-0.5 text-text-primary focus:outline-none focus:border-accent-cyan cursor-pointer"
+              >
+                {Object.entries(CURRENCIES).map(([code]) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs font-body">
+                <span className="text-text-secondary">{trip.destinations.length} cities &middot; {totalNights} nights</span>
+                <span className="text-text-muted">{trip.adults} pax</span>
+              </div>
+              {/* Budget bar chart */}
+              {totalCost > 0 && (
+                <div className="h-2 rounded-full overflow-hidden flex bg-bg-surface">
+                  {flightCost > 0 && <div className="bg-accent-cyan h-full" style={{ width: `${(flightCost / totalCost * 100)}%` }} />}
+                  {trainCost > 0 && <div className="bg-accent-gold h-full" style={{ width: `${(trainCost / totalCost * 100)}%` }} />}
+                  {hotelCost > 0 && <div className="bg-blue-400 h-full" style={{ width: `${(hotelCost / totalCost * 100)}%` }} />}
+                </div>
+              )}
+              {flightCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-accent-cyan inline-block flex-shrink-0" />
+                    Flights
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(flightCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(flightCost, currency)}</span>
+                </div>
+              )}
+              {trainCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-accent-gold inline-block flex-shrink-0" />
+                    Trains
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(trainCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(trainCost, currency)}</span>
+                </div>
+              )}
+              {hotelCost > 0 && (
+                <div className="flex justify-between text-xs font-body">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-sm bg-blue-400 inline-block flex-shrink-0" />
+                    Hotels
+                    {totalCost > 0 && <span className="text-text-muted text-[10px]">({Math.round(hotelCost / totalCost * 100)}%)</span>}
+                  </span>
+                  <span className="text-text-primary font-mono">{formatPrice(hotelCost, currency)}</span>
+                </div>
+              )}
+              {totalCost > 0 ? (
+                <>
+                <div className="flex justify-between text-sm font-body pt-2 border-t border-border-subtle">
+                  <span className="text-text-primary font-semibold">Estimated Total</span>
+                  <span className="text-accent-cyan font-mono font-bold">{formatPrice(totalCost, currency)}</span>
+                </div>
+                <p className="text-text-muted text-[10px] font-body mt-2 leading-relaxed">
+                  Want a detailed hour-by-hour itinerary with activities, meals, and a complete budget? Use <span className="text-accent-cyan font-semibold">Plan Itinerary</span> below.
+                </p>
+                </>
+              ) : (
+                <p className="text-text-muted text-xs font-body italic">Select flights/trains and hotels to see cost</p>
+              )}
+              <p className="text-text-muted text-[10px] font-body mt-2">Prices are estimates and may vary at booking</p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-4 space-y-3">
+
+            {/* My Documents */}
+            {trip.bookingDocs?.length > 0 && (
+              <div className="bg-white border border-border-subtle rounded-xl shadow-sm p-3">
+                <p className="text-[10px] font-display font-bold text-text-muted uppercase tracking-wider mb-2">My Documents</p>
+                <div className="space-y-1.5">
+                  {trip.bookingDocs.map(doc => (
+                    <button key={doc.id} onClick={() => setViewingBooking(doc)}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent-cyan/5 transition-colors text-left">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500 flex-shrink-0">
+                        {doc.mimeType.includes('pdf')
+                          ? <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></>
+                          : <><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></>
+                        }
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-body text-text-primary truncate">{doc.name}</p>
+                        {doc.matchCities.length > 0 && (
+                          <p className="text-[8px] text-text-muted font-body truncate">{doc.matchCities.join(', ')}</p>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => {
+              // Validate: at least some transport or hotels selected before proceeding
+              const hasTransport = isLocalStay || trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain);
+              const hasHotels = trip.destinations.some(d => d.selectedHotel);
+              if (!hasTransport && !hasHotels) {
+                alert('Please select transport and hotels before creating your deep plan.');
+                return;
+              }
+              router.push(trip.tripId ? `/deep-plan?id=${trip.tripId}` : '/deep-plan');
+            }}
+              className="w-full bg-text-primary text-white font-display font-bold py-4 rounded-xl text-sm transition-all hover:bg-text-primary/90 hover:shadow-lg">
+              Plan Itinerary
+            </motion.button>
+            {/* Secondary actions row */}
+            <div className="flex gap-2 mt-2">
+              {(trip.transportLegs.some(l => l.selectedFlight || l.selectedTrain) || trip.destinations.some(d => d.selectedHotel)) && (
+                <button
+                  onClick={() => {
+                    const ics = generateICS(trip);
+                    if (ics) {
+                      const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                      downloadICS(ics, `trip-${cityNames || 'plan'}.ics`);
+                    }
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  Calendar
+                </button>
+              )}
+              {trip.tripId && (
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                  Share
+                </button>
+              )}
+              <button
+                onClick={async () => {
+                  setPdfLoading(true);
+                  try {
+                    const { exportTripPDFFromData } = await import('@/lib/pdfExport');
+                    const cityNames = trip.destinations.map(d => d.city.name).join('-');
+                    await exportTripPDFFromData({
+                      from: trip.from,
+                      fromAddress: trip.fromAddress,
+                      destinations: trip.destinations,
+                      transportLegs: trip.transportLegs,
+                      departureDate: trip.departureDate,
+                      adults: trip.adults,
+                      children: trip.children,
+                      infants: trip.infants,
+                      tripType: trip.tripType,
+                      currency,
+                      formatPrice: (amount: number) => formatPrice(amount, currency),
+                    }, `AIEzzy-Trip${cityNames ? '-' + cityNames : ''}.pdf`);
+                  } catch (e) {
+                    console.error('PDF export failed:', e);
+                  } finally {
+                    setPdfLoading(false);
+                  }
+                }}
+                disabled={pdfLoading}
+                className="flex-1 flex items-center justify-center gap-1.5 border border-border-subtle text-text-muted font-display font-semibold py-2 rounded-lg text-[10px] transition-all hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
+                    PDF...
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    PDF
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+          </div>{/* end sidebar */}
+          </div>{/* end grid */}
+        </div>
+      </motion.div>
+
+      {/* Auto-selection loading overlay */}
+      {autoSelectLoading && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-2xl shadow-xl p-6 max-w-[380px] w-full"
+          >
+            <div className="text-center mb-4">
+              <h3 className="font-display text-lg font-bold text-text-primary">Setting Up Your Trip</h3>
+              <p className="text-accent-cyan text-[13px] font-body mt-1 flex items-center justify-center gap-2">
+                <span className="w-3 h-3 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                {autoSelectStep || 'Finding the best options...'}
+              </p>
+            </div>
+            {/* Real progress bar */}
+            <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <motion.div
+                className="h-full bg-accent-cyan rounded-full"
+                initial={{ width: '5%' }}
+                animate={{ width: autoSelectTotal > 0 ? `${Math.max(5, Math.round((autoSelectDone / autoSelectTotal) * 100))}%` : '30%' }}
+                transition={{ duration: 0.4 }}
+              />
+            </div>
+            {/* Completed steps with checkmarks */}
+            {autoSelectCompletedSteps.length > 0 && (
+              <div className="space-y-1.5 mb-3 max-h-[120px] overflow-y-auto">
+                {autoSelectCompletedSteps.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[12px] font-body">
+                    <div className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </div>
+                    <span className="text-text-muted">{step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[10px] text-text-muted font-body text-center">
+              {autoSelectTotal > 0 ? `${autoSelectDone} of ${autoSelectTotal} completed` : 'Searching...'}
+            </p>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Flight update toast */}
+      <AnimatePresence>
+        {flightUpdateToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-text-primary text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" />
+            <span className="text-sm font-body">{flightUpdateToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating "Update Flights & Trains" popup */}
+      <AnimatePresence>
+        {needsRefresh && !isRefreshing && (
+          <motion.div
+            initial={{ opacity: 0, y: 60, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 60, scale: 0.9 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50"
+          >
+            <button
+              onClick={refreshTransport}
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-accent-cyan text-white font-display font-bold text-sm shadow-lg shadow-accent-cyan/30 hover:bg-accent-cyan/90 transition-all hover:scale-105 active:scale-95"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              Update Flights &amp; Trains
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Unified Transport Compare Modal */}
+      {transportModal !== null && (() => {
+        const { fromCity, toCity } = getLegCities(transportModal.legIndex);
+        const leg = trip.transportLegs[transportModal.legIndex];
+        // Calculate correct date for this leg using the same logic as the route cards
+        const legD = calcDepartureDate(transportModal.legIndex);
+        const legDateStr = legD.toISOString().split('T')[0];
+        return (
+          <TransportCompareModal
+            isOpen
+            onClose={() => setTransportModal(null)}
+            fromCity={fromCity?.parentCity || fromCity?.name || ''}
+            toCity={toCity?.parentCity || toCity?.name || ''}
+            fromCode={resolvedAirportsRef.current[transportModal.legIndex]?.fromCode || leg?.resolvedAirports?.fromCode || findAirportCode(fromCity) || ''}
+            toCode={resolvedAirportsRef.current[transportModal.legIndex]?.toCode || leg?.resolvedAirports?.toCode || findAirportCode(toCity) || ''}
+            fromAirport={findAirportName(fromCity)}
+            toAirport={findAirportName(toCity)}
+            date={legDateStr}
+            adults={trip.adults}
+            children={trip.children}
+            infants={trip.infants}
+            currentType={leg?.type || 'drive'}
+            selectedFlight={leg?.selectedFlight || null}
+            selectedTrain={leg?.selectedTrain || null}
+            cachedFlights={flightCacheRef.current[transportModal.legIndex] || null}
+            onBookingDocUploaded={async (file, matchCities, docType) => {
+              try {
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('tripId', trip.tripId || 'pending');
+                fd.append('matchCities', matchCities.join(','));
+                const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
+                if (res.ok) {
+                  const doc = await res.json();
+                  doc.docType = docType;
+                  trip.addBookingDoc(doc);
+                }
+              } catch { /* continue without saving doc */ }
+            }}
+            onSelectFlight={(flight, airportInfo) => {
+              if (leg) {
+                trip.selectFlight(leg.id, flight);
+                // Update resolved airports (from custom entry or API selection)
+                if (airportInfo) {
+                  const existing = resolvedAirportsRef.current[transportModal.legIndex] || leg.resolvedAirports;
+                  // For custom flights, extract toCode from route (e.g., "BOM-AMS")
+                  const routeParts = flight.route?.split('-') || [];
+                  const updated = {
+                    fromCode: airportInfo.fromCode,
+                    fromCity: airportInfo.fromCity,
+                    fromDistance: airportInfo.fromDistance,
+                    fromAirport: airportInfo.fromCity,
+                    toCode: routeParts[1]?.trim() || existing?.toCode || '',
+                    toCity: existing?.toCity || toCity?.name || '',
+                    toAirport: existing?.toAirport || '',
+                    toDistance: existing?.toDistance || 0,
+                  };
+                  resolvedAirportsRef.current[transportModal.legIndex] = updated;
+                  trip.updateTransportLeg(leg.id, { resolvedAirports: updated });
+                }
+              }
+              setTransportModal(null);
+            }}
+            onSelectTrain={train => {
+              if (leg) trip.selectTrain(leg.id, train);
+              setTransportModal(null);
+            }}
+            onSelectDrive={(info) => {
+              const legId = leg?.id;
+              if (!legId) { setTransportModal(null); return; }
+              const mode = info?.mode || 'drive';
+              const distKm = parseFloat((info?.distance || '0').replace(/[^\d.]/g, '')) || 0;
+              const fuelCostINR = Math.round(distKm * 8);
+              const cabCostINR = Math.round(distKm * 18);
+              // Pick label and price based on mode
+              const isCab = mode === 'cab';
+              const isWalk = mode === 'walk';
+              const isCycle = mode === 'cycle';
+              const label = isCab ? 'Hire Cab' : isWalk ? 'Walking' : isCycle ? 'Cycling' : 'Self Drive';
+              const price = isWalk || isCycle ? 0 : isCab ? cabCostINR : fuelCostINR;
+              trip.updateTransportLeg(legId, {
+                type: 'drive',
+                selectedFlight: null,
+                selectedTrain: {
+                  id: `drive-${Date.now()}`,
+                  operator: label,
+                  trainName: label,
+                  trainNumber: '',
+                  departure: '',
+                  arrival: '',
+                  duration: info?.duration || '~',
+                  stops: 'Direct',
+                  fromStation: fromCity?.parentCity || fromCity?.name || '',
+                  toStation: toCity?.parentCity || toCity?.name || '',
+                  price,
+                  color: isCab ? '#f59e0b' : '#6b7280',
+                },
+                duration: info?.duration || '~',
+                distance: info?.distance || '~',
+                departureTime: null,
+                arrivalTime: null,
+              });
+              setTransportModal(null);
+            }}
+            onSelectBus={(bus) => {
+              if (leg) {
+                trip.updateTransportLeg(leg.id, {
+                  type: 'bus',
+                  selectedFlight: null,
+                  selectedTrain: bus,
+                  departureTime: bus.departure,
+                  arrivalTime: bus.arrival,
+                  duration: bus.duration,
+                });
+              }
+              setTransportModal(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Hotel Modal */}
+      {hotelModal !== null && (() => {
+        const dest = trip.destinations[hotelModal.destIndex];
+        if (!dest) return null;
+        return (
+          <HotelModal
+            isOpen
+            onClose={() => setHotelModal(null)}
+            cityName={dest.city.name}
+            locationQuery={dest.city.fullName}
+            nights={dest.nights}
+            checkInDate={trip.departureDate}
+            checkOutDate={(() => { const d = new Date(trip.departureDate); d.setDate(d.getDate() + dest.nights); return d.toISOString().split('T')[0]; })()}
+            selectedHotel={hotelModal.isAdditional ? null : dest.selectedHotel}
+            onUpdateNights={n => trip.updateNights(dest.id, n)}
+            onBookingDocUploaded={async (file, matchCities, docType) => {
+              try {
+                const fd = new FormData();
+                fd.append('file', file);
+                fd.append('tripId', trip.tripId || 'pending');
+                fd.append('matchCities', matchCities.join(','));
+                const res = await fetch('/api/booking-docs', { method: 'POST', body: fd });
+                if (res.ok) {
+                  const doc = await res.json();
+                  doc.docType = docType;
+                  trip.addBookingDoc(doc);
+                }
+              } catch { /* continue */ }
+            }}
+            onSelectHotel={hotel => {
+              if (hotelModal.isAdditional) {
+                // Calculate remaining nights for additional hotel
+                const primaryNights = dest.selectedHotel ? Math.ceil(dest.nights / 2) : dest.nights;
+                const usedByAdditional = (dest.additionalHotels || []).reduce((s, h) => s + h.nights, 0);
+                const remaining = Math.max(1, dest.nights - primaryNights - usedByAdditional);
+                trip.addAdditionalHotel(dest.id, hotel, remaining);
+              } else {
+                trip.updateDestinationHotel(dest.id, hotel);
+              }
+              setHotelModal(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Share Trip Modal */}
+      {trip.tripId && (
+        <ShareTripModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          tripId={trip.tripId}
+        />
+      )}
+
+
+      {/* Booking Document Viewer */}
+      <AnimatePresence>
+        {viewingBooking && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+            onClick={() => setViewingBooking(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-bg-surface rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle flex-shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600 flex-shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span className="text-sm font-display font-bold text-text-primary truncate">{viewingBooking.name}</span>
+                </div>
+                <button onClick={() => setViewingBooking(null)}
+                  className="w-8 h-8 rounded-full bg-bg-card border border-border-subtle flex items-center justify-center text-text-muted hover:text-text-primary transition-colors flex-shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              <div className="flex-1 overflow-auto p-2 flex items-center justify-center bg-gray-100">
+                {viewingBooking.mimeType === 'application/pdf' ? (
+                  <iframe src={viewingBooking.url} className="w-full h-full min-h-[70vh] rounded" title="Booking PDF" />
+                ) : (
+                  <img src={viewingBooking.url} alt="Booking document" className="max-w-full max-h-[80vh] object-contain rounded" />
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function RoutePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center p-4" suppressHydrationWarning>
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-text-secondary text-sm font-body">Loading your trip...</p>
+        </div>
+      </div>
+    }>
+      <RoutePageContent />
+    </Suspense>
+  );
+}
