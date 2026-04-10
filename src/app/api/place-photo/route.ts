@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
     });
 
     const searchData = await searchRes.json();
+    trackApiCall('google_places_text_search');
     const photos = searchData.places?.[0]?.photos;
 
     if (!photos || photos.length === 0) {

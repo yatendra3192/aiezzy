@@ -11,6 +11,14 @@ interface Stats {
   tripsWithHotels: number;
   totalTripValue: number;
   recentSignups: number;
+  topDestinations: Array<{ city: string; count: number }>;
+  providerBreakdown: Record<string, number>;
+  usersWithTrips: number;
+  usersWithoutTrips: number;
+  avgNights: number;
+  avgCities: number;
+  tripsToday: number;
+  tripsThisWeek: number;
 }
 
 interface User {
@@ -24,13 +32,31 @@ interface Trip {
   hotelCost: number; totalCost: number; createdAt: string; updatedAt: string;
 }
 
+interface ApiProviderUsage {
+  count: number;
+  costPerCall: number;
+  estimatedCostUSD: number;
+  lastCalledAt: string | null;
+  label: string;
+  category: string;
+}
+
+interface ApiUsageData {
+  providers: Record<string, ApiProviderUsage>;
+  totalCostUSD: number;
+  projectedMonthlyCostUSD: number;
+  resetAt: string;
+  uptimeHours: number;
+}
+
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
-  const [tab, setTab] = useState<'overview' | 'users' | 'trips'>('overview');
+  const [apiUsage, setApiUsage] = useState<ApiUsageData | null>(null);
+  const [tab, setTab] = useState<'overview' | 'users' | 'trips' | 'costs'>('overview');
   const [error, setError] = useState('');
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
 
@@ -38,15 +64,27 @@ export default function AdminPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/admin');
-      if (res.status === 401) { setError('Access denied. Admin privileges required.'); setLoading(false); return; }
-      if (!res.ok) { setError('Failed to load data'); setLoading(false); return; }
-      const data = await res.json();
+      const [adminRes, usageRes] = await Promise.all([
+        fetch('/api/admin'),
+        fetch('/api/admin/api-usage'),
+      ]);
+      if (adminRes.status === 401) { setError('Access denied. Admin privileges required.'); setLoading(false); return; }
+      if (!adminRes.ok) { setError('Failed to load data'); setLoading(false); return; }
+      const data = await adminRes.json();
       setStats(data.stats);
       setUsers(data.users);
       setTrips(data.trips);
+      if (usageRes.ok) {
+        const usage = await usageRes.json();
+        setApiUsage(usage);
+      }
     } catch { setError('Failed to load data'); }
     setLoading(false);
+  };
+
+  const resetUsage = async () => {
+    const res = await fetch('/api/admin/api-usage', { method: 'DELETE' });
+    if (res.ok) setApiUsage(await res.json());
   };
 
   useEffect(() => {
@@ -73,6 +111,17 @@ export default function AdminPage() {
     );
   }
 
+  // Group API usage by category
+  const usageByCategory: Record<string, { providers: Array<{ key: string } & ApiProviderUsage>; totalCost: number; totalCalls: number }> = {};
+  if (apiUsage) {
+    for (const [key, p] of Object.entries(apiUsage.providers)) {
+      if (!usageByCategory[p.category]) usageByCategory[p.category] = { providers: [], totalCost: 0, totalCalls: 0 };
+      usageByCategory[p.category].providers.push({ key, ...p });
+      usageByCategory[p.category].totalCost += p.estimatedCostUSD;
+      usageByCategory[p.category].totalCalls += p.count;
+    }
+  }
+
   return (
     <div className="min-h-screen bg-bg-primary p-4 md:p-8">
       <div className="max-w-[1200px] mx-auto">
@@ -84,12 +133,15 @@ export default function AdminPage() {
             </h1>
             <p className="text-text-muted text-sm font-body">Dashboard</p>
           </div>
-          <button onClick={() => window.location.href = '/my-trips'} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Back to App</button>
+          <div className="flex items-center gap-3">
+            <button onClick={fetchData} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Refresh</button>
+            <button onClick={() => window.location.href = '/my-trips'} className="text-text-muted text-sm hover:text-accent-cyan transition-colors font-body">Back to App</button>
+          </div>
         </div>
 
-        {/* Stats cards */}
+        {/* Stats row 1 */}
         {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
               <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total Users</p>
               <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.totalUsers}</p>
@@ -113,9 +165,35 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* Stats row 2 */}
+        {stats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Active Users</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.usersWithTrips}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">{stats.usersWithoutTrips} haven&apos;t planned yet</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Trips This Week</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.tripsThisWeek}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">{stats.tripsToday} today</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Avg Trip Size</p>
+              <p className="text-3xl font-display font-bold text-text-primary mt-1">{stats.avgNights}N</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">{stats.avgCities} cities avg</p>
+            </div>
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+              <p className="text-text-muted text-xs font-body uppercase tracking-wider">Est. API Cost</p>
+              <p className="text-2xl font-display font-bold text-accent-cyan mt-1">${apiUsage?.totalCostUSD?.toFixed(2) || '0.00'}</p>
+              <p className="text-text-muted text-[10px] font-body mt-1">~${apiUsage?.projectedMonthlyCostUSD?.toFixed(0) || '0'}/mo projected</p>
+            </div>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex gap-2 mb-6">
-          {(['overview', 'users', 'trips'] as const).map(t => (
+          {(['overview', 'users', 'trips', 'costs'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 rounded-xl text-sm font-display font-bold transition-all ${
                 tab === t ? 'bg-accent-cyan text-white' : 'bg-bg-card border border-border-subtle text-text-secondary hover:border-accent-cyan/30'
@@ -145,10 +223,52 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Top destinations + Provider breakdown */}
+            <div className="space-y-6">
+              {/* Top destinations */}
+              {stats && stats.topDestinations.length > 0 && (
+                <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm">
+                  <h3 className="font-display font-bold text-sm text-text-primary mb-4">Top Destinations</h3>
+                  <div className="space-y-2">
+                    {stats.topDestinations.map((d, i) => (
+                      <div key={d.city} className="flex items-center gap-3">
+                        <span className="text-[10px] font-mono text-text-muted w-4">{i + 1}</span>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-xs font-body text-text-primary">{d.city}</span>
+                            <span className="text-[10px] font-mono text-text-muted">{d.count} trips</span>
+                          </div>
+                          <div className="h-1.5 bg-bg-card rounded-full overflow-hidden">
+                            <div className="h-full bg-accent-cyan/60 rounded-full" style={{ width: `${(d.count / stats.topDestinations[0].count) * 100}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Provider breakdown */}
+              {stats && (
+                <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm">
+                  <h3 className="font-display font-bold text-sm text-text-primary mb-4">Signup Providers</h3>
+                  <div className="flex gap-4">
+                    {Object.entries(stats.providerBreakdown).map(([provider, count]) => (
+                      <div key={provider} className="flex-1 text-center">
+                        <p className="text-2xl font-display font-bold text-text-primary">{count}</p>
+                        <p className="text-[10px] font-mono text-text-muted uppercase">{provider}</p>
+                        <p className="text-[10px] font-body text-text-muted">{Math.round(count / stats.totalUsers * 100)}%</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Recent trips */}
-            <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm">
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm md:col-span-2">
               <h3 className="font-display font-bold text-sm text-text-primary mb-4">Recent Trips</h3>
-              <div className="space-y-3">
+              <div className="grid md:grid-cols-2 gap-3">
                 {trips.slice(0, 8).map(t => (
                   <div key={t.id}>
                     <button onClick={() => setSelectedTrip(selectedTrip?.id === t.id ? null : t)} className="w-full text-left flex items-center justify-between hover:bg-bg-card/50 rounded-lg p-1.5 -mx-1.5 transition-colors">
@@ -260,7 +380,6 @@ export default function AdminPage() {
                         className="text-accent-cyan text-xs font-body hover:underline">{selectedTrip?.id === t.id ? 'Hide' : 'View'}</button>
                     </td>
                   </tr>
-                  {/* Expanded trip detail */}
                   {selectedTrip?.id === t.id && (
                     <tr><td colSpan={11} className="px-4 py-4 bg-bg-card/50">
                       <div className="grid md:grid-cols-2 gap-4">
@@ -306,6 +425,89 @@ export default function AdminPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Costs tab */}
+        {tab === 'costs' && apiUsage && (
+          <div className="space-y-6">
+            {/* Cost summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+                <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total Cost</p>
+                <p className="text-2xl font-display font-bold text-accent-cyan mt-1">${apiUsage.totalCostUSD.toFixed(2)}</p>
+                <p className="text-text-muted text-[10px] font-body mt-1">since deploy</p>
+              </div>
+              <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+                <p className="text-text-muted text-xs font-body uppercase tracking-wider">Monthly Projected</p>
+                <p className="text-2xl font-display font-bold text-text-primary mt-1">${apiUsage.projectedMonthlyCostUSD.toFixed(0)}</p>
+                <p className="text-text-muted text-[10px] font-body mt-1">at current rate</p>
+              </div>
+              <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+                <p className="text-text-muted text-xs font-body uppercase tracking-wider">Total API Calls</p>
+                <p className="text-2xl font-display font-bold text-text-primary mt-1">
+                  {Object.values(apiUsage.providers).reduce((s, p) => s + p.count, 0).toLocaleString()}
+                </p>
+                <p className="text-text-muted text-[10px] font-body mt-1">across all providers</p>
+              </div>
+              <div className="bg-bg-surface border border-border-subtle rounded-xl p-4 card-warm">
+                <p className="text-text-muted text-xs font-body uppercase tracking-wider">Uptime</p>
+                <p className="text-2xl font-display font-bold text-text-primary mt-1">{apiUsage.uptimeHours}h</p>
+                <p className="text-text-muted text-[10px] font-body mt-1">
+                  since {new Date(apiUsage.resetAt).toLocaleDateString()}
+                  <button onClick={resetUsage} className="ml-2 text-accent-cyan hover:underline">Reset</button>
+                </p>
+              </div>
+            </div>
+
+            {/* Usage by category */}
+            {Object.entries(usageByCategory)
+              .sort((a, b) => b[1].totalCost - a[1].totalCost)
+              .map(([category, data]) => (
+              <div key={category} className="bg-bg-surface border border-border-subtle rounded-xl card-warm overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 bg-bg-card border-b border-border-subtle">
+                  <h3 className="font-display font-bold text-sm text-text-primary">{category}</h3>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs font-mono text-text-muted">{data.totalCalls.toLocaleString()} calls</span>
+                    <span className={`text-xs font-mono font-bold ${data.totalCost > 0 ? 'text-accent-cyan' : 'text-green-500'}`}>
+                      {data.totalCost > 0 ? `$${data.totalCost.toFixed(3)}` : 'Free'}
+                    </span>
+                  </div>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border-subtle">
+                      <th className="text-left px-5 py-2 font-body text-text-muted text-xs">Provider</th>
+                      <th className="text-right px-5 py-2 font-body text-text-muted text-xs">Calls</th>
+                      <th className="text-right px-5 py-2 font-body text-text-muted text-xs">$/call</th>
+                      <th className="text-right px-5 py-2 font-body text-text-muted text-xs">Est. Cost</th>
+                      <th className="text-right px-5 py-2 font-body text-text-muted text-xs">Last Called</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.providers
+                      .sort((a, b) => b.estimatedCostUSD - a.estimatedCostUSD || b.count - a.count)
+                      .map(p => (
+                      <tr key={p.key} className="border-b border-border-subtle last:border-0 hover:bg-bg-card/30 transition-colors">
+                        <td className="px-5 py-2.5 font-body text-text-primary text-xs">{p.label}</td>
+                        <td className="px-5 py-2.5 font-mono text-text-primary text-xs text-right">{p.count.toLocaleString()}</td>
+                        <td className="px-5 py-2.5 font-mono text-text-muted text-xs text-right">
+                          {p.costPerCall > 0 ? `$${p.costPerCall}` : <span className="text-green-500">free</span>}
+                        </td>
+                        <td className={`px-5 py-2.5 font-mono text-xs text-right font-bold ${
+                          p.estimatedCostUSD > 1 ? 'text-red-500' : p.estimatedCostUSD > 0 ? 'text-accent-cyan' : 'text-green-500'
+                        }`}>
+                          {p.estimatedCostUSD > 0 ? `$${p.estimatedCostUSD.toFixed(3)}` : '—'}
+                        </td>
+                        <td className="px-5 py-2.5 font-mono text-text-muted text-[10px] text-right">
+                          {p.lastCalledAt ? new Date(p.lastCalledAt).toLocaleTimeString() : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
           </div>
         )}
       </div>

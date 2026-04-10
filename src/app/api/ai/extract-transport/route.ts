@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -109,6 +110,7 @@ Rules:
     }
 
     const data = await response.json();
+    trackApiCall('openai_responses');
     const text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
       || data.output?.[0]?.content?.[0]?.text || '';
     const jsonMatch = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim();

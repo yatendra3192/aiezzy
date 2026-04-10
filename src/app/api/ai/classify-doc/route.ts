@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 /** Lightweight document classifier — determines type and cities from ONE file */
 export async function POST(req: NextRequest) {
@@ -54,6 +55,7 @@ Rules:
     if (!response.ok) return NextResponse.json({ type: 'general', from: null, to: null, city: null });
 
     const data = await response.json();
+    trackApiCall('openai_responses');
     const text = data.output?.find((o: any) => o.type === 'message')?.content?.find((c: any) => c.type === 'output_text')?.text
       || data.output?.[0]?.content?.[0]?.text || '';
     const parsed = JSON.parse(text.replace(/```json?\n?/g, '').replace(/```/g, '').trim());

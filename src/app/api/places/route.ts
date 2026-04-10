@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -47,6 +48,7 @@ export async function GET(req: NextRequest) {
         }
       );
       const data = await res.json();
+      trackApiCall('google_places_autocomplete');
 
       // Store in cache
       placesCache.set(placesCacheKey, { data, ts: Date.now() });
@@ -73,6 +75,7 @@ export async function GET(req: NextRequest) {
         }
       );
       const data = await res.json();
+      trackApiCall('google_places_details');
       return NextResponse.json(data, {
         headers: { 'Cache-Control': 'private, max-age=3600' },
       });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 export interface ItineraryActivity {
   name: string;
@@ -119,6 +120,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          trackApiCall('gemini');
         } else {
           const errBody = await response.text().catch(() => '');
           console.error('Gemini itinerary-activities error:', response.status, errBody.slice(0, 200));
@@ -155,6 +157,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.choices?.[0]?.message?.content || '';
+          trackApiCall('openai_chat');
         } else {
           const errBody = await response.text().catch(() => '');
           console.error('OpenAI itinerary-activities error:', response.status, errBody.slice(0, 200));
@@ -189,6 +192,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.content?.[0]?.text || '';
+          trackApiCall('anthropic');
         }
       } catch (e: any) {
         console.error('Anthropic itinerary-activities timeout/error:', e.name === 'AbortError' ? 'timeout (20s)' : e.message);

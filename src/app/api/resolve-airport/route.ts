@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const CATALOG_URL = process.env.CATALOG_SUPABASE_URL || '';
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
         }
       );
       const geocodeData = await geocodeRes.json();
+      trackApiCall('google_places_text_search');
       const candidate = geocodeData.places?.[0];
       if (candidate?.location) {
         // Verify the result name actually matches our search (not a business with the city name in it)
@@ -105,6 +107,7 @@ export async function GET(req: NextRequest) {
       body: JSON.stringify({ lat, lng, radius_km: 1000 }),
     });
     const allAirports = await rpcRes.json();
+    trackApiCall('catalog_supabase');
 
     if (!Array.isArray(allAirports) || allAirports.length === 0) {
       return NextResponse.json({ airports: [], error: 'No airports found nearby' });
@@ -138,6 +141,7 @@ export async function GET(req: NextRequest) {
           { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
         );
         const muniData = await muniRes.json();
+        trackApiCall('catalog_supabase');
         if (Array.isArray(muniData)) {
           const muniMap = new Map(muniData.map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
           allCommercial.forEach(a => {

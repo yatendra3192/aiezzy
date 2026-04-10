@@ -100,6 +100,43 @@ export async function GET(req: NextRequest) {
       signupsByDay[day] = (signupsByDay[day] || 0) + 1;
     });
 
+    // Top destinations (across all fetched trips)
+    const destCounts: Record<string, number> = {};
+    for (const t of tripList) {
+      for (const d of t.destinations) {
+        destCounts[d] = (destCounts[d] || 0) + 1;
+      }
+    }
+    const topDestinations = Object.entries(destCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([city, count]) => ({ city, count }));
+
+    // Provider breakdown
+    const providerBreakdown: Record<string, number> = {};
+    for (const u of userList) {
+      providerBreakdown[u.provider] = (providerBreakdown[u.provider] || 0) + 1;
+    }
+
+    // Users with trips
+    const userIdsWithTrips = new Set(tripList.map(t => t.userEmail).filter(Boolean));
+    const usersWithTrips = userIdsWithTrips.size;
+
+    // Trip velocity
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const tripsToday = tripList.filter(t => t.createdAt?.startsWith(today)).length;
+    const tripsThisWeek = tripList.filter(t => new Date(t.createdAt) > weekAgo).length;
+
+    // Average trip size
+    const tripsWithDests = tripList.filter(t => t.destinationCount > 0);
+    const avgNights = tripsWithDests.length > 0
+      ? Math.round(tripsWithDests.reduce((s, t) => s + t.totalNights, 0) / tripsWithDests.length * 10) / 10
+      : 0;
+    const avgCities = tripsWithDests.length > 0
+      ? Math.round(tripsWithDests.reduce((s, t) => s + t.destinationCount, 0) / tripsWithDests.length * 10) / 10
+      : 0;
+
     return NextResponse.json({
       stats: {
         totalUsers,
@@ -108,6 +145,14 @@ export async function GET(req: NextRequest) {
         tripsWithHotels,
         totalTripValue,
         recentSignups: recentSignups.length,
+        topDestinations,
+        providerBreakdown,
+        usersWithTrips,
+        usersWithoutTrips: totalUsers - usersWithTrips,
+        avgNights,
+        avgCities,
+        tripsToday,
+        tripsThisWeek,
       },
       signupsByDay,
       users: userList,

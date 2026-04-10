@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -69,6 +70,13 @@ export async function GET(req: NextRequest) {
           .then(res => res.json());
       })
     );
+
+    // Track successful Google Directions fetches
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value?.status === 'OK') {
+        trackApiCall('google_directions');
+      }
+    }
 
     // Pick the first successful result that has routes (in priority order)
     for (const r of results) {
