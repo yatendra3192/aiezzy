@@ -19,8 +19,11 @@ export async function middleware(req: NextRequest) {
 
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   if (!token) {
-    const signInUrl = new URL('/', req.url);
-    signInUrl.searchParams.set('callbackUrl', req.url);
+    // Use public URL (not internal localhost:8080) for redirects
+    const publicBase = process.env.NEXTAUTH_URL || req.nextUrl.origin;
+    const signInUrl = new URL('/', publicBase);
+    const callbackPath = req.nextUrl.pathname + req.nextUrl.search;
+    signInUrl.searchParams.set('callbackUrl', `${publicBase}${callbackPath}`);
     return NextResponse.redirect(signInUrl);
   }
 
