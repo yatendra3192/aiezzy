@@ -101,8 +101,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result, {
       headers: { 'Cache-Control': 'private, max-age=3600' },
     });
-  } catch (e) {
-    console.error('[weather] Error:', e);
+  } catch (e: any) {
+    const msg = e?.cause?.code || e?.code || e?.message || 'unknown';
+    console.error(`[weather] ${city}: ${msg}`);
     return NextResponse.json({ error: 'Failed to fetch weather data' }, { status: 500 });
   }
 }
