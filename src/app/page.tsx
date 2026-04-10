@@ -69,8 +69,36 @@ export default function SignInPage() {
     }
   };
 
-  const handleSocialLogin = (provider: string) => {
-    signIn(provider, { callbackUrl: '/my-trips' });
+  const handleSocialLogin = async (provider: string) => {
+    try {
+      // Fetch CSRF token first, then POST to signin — fixes Android Chrome ERR_FAILED
+      const csrfRes = await fetch('/api/auth/csrf');
+      const { csrfToken } = await csrfRes.json();
+
+      // Create and submit a form (like NextAuth does internally)
+      // This avoids the JS fetch-based redirect that Android Chrome blocks
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/api/auth/signin/${provider}`;
+
+      const csrfInput = document.createElement('input');
+      csrfInput.type = 'hidden';
+      csrfInput.name = 'csrfToken';
+      csrfInput.value = csrfToken;
+      form.appendChild(csrfInput);
+
+      const callbackInput = document.createElement('input');
+      callbackInput.type = 'hidden';
+      callbackInput.name = 'callbackUrl';
+      callbackInput.value = '/my-trips';
+      form.appendChild(callbackInput);
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch {
+      // Fallback to standard signIn
+      signIn(provider, { callbackUrl: '/my-trips' });
+    }
   };
 
   return (
