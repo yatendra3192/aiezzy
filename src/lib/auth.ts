@@ -121,4 +121,22 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: 'jwt',
   },
+
+  // Use regular cookie names instead of __Host- prefix.
+  // __Host- cookies are rejected by Android Chrome when behind CDN/edge proxies
+  // (Railway uses Fastly CDN which can cause origin mismatch for __Host- validation)
+  cookies: {
+    csrfToken: {
+      name: 'next-auth.csrf-token',
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+    },
+    callbackUrl: {
+      name: 'next-auth.callback-url',
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+    },
+    sessionToken: {
+      name: 'next-auth.session-token',
+      options: { httpOnly: true, sameSite: 'lax', path: '/', secure: true },
+    },
+  },
 };
