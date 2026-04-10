@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(city)}&key=${API_KEY}`, { signal: AbortSignal.timeout(5000) });
       const geoData = await geoRes.json();
       if (geoData.status === 'OK' && geoData.results?.[0]) {
+        trackApiCall('google_geocoding');
         lat = geoData.results[0].geometry.location.lat;
         lng = geoData.results[0].geometry.location.lng;
       }
@@ -76,6 +78,7 @@ export async function GET(req: NextRequest) {
     }
 
     const data = await res.json();
+    trackApiCall('google_nearby_search');
     const restaurants = (data.places || []).map((p: any) => ({
       placeId: p.id || '',
       name: p.displayName?.text || '',

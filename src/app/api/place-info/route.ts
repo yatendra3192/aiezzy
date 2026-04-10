@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
         signal: AbortSignal.timeout(8000),
       });
       const searchData = await searchRes.json();
+      trackApiCall('google_places_text_search');
       const p = searchData.places?.[0];
       if (p) {
         address = p.formattedAddress || '';
@@ -84,6 +86,7 @@ Keep keyFacts to 4-6 bullet points. Focus on practical visitor info.`;
       });
 
       if (res.ok) {
+        trackApiCall('gemini');
         const data = await res.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         const jsonMatch = text.match(/\{[\s\S]*\}/);

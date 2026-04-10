@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
                       body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
                     });
                     const searchData = await searchRes.json();
+                    trackApiCall('google_places_text_search');
                     const photos = searchData.places?.[0]?.photos;
                     if (photos?.length > 0) {
                       h.images = photos.slice(0, 3).map((p: any) => ({
@@ -128,6 +130,7 @@ async function fetchLiveHotels(location: string, checkIn: string, checkOut: stri
 
   if (!res.ok) return null;
   const data = await res.json();
+  trackApiCall('scraper_hotels');
   const properties = data.properties || [];
 
   if (properties.length === 0) return null;
@@ -184,6 +187,7 @@ async function fetchNearbyPlaces(location: string, radiusMeters: number) {
       { signal: AbortSignal.timeout(10000) }
     );
     const geoData = await geoRes.json();
+    trackApiCall('google_geocoding');
     if (geoData.status !== 'OK' || !geoData.results?.[0]) return [];
     lat = geoData.results[0].geometry.location.lat;
     lng = geoData.results[0].geometry.location.lng;
@@ -207,6 +211,7 @@ async function fetchNearbyPlaces(location: string, radiusMeters: number) {
   });
 
   const data = await res.json();
+  trackApiCall('google_nearby_search');
   return (data.places || []).map((p: any) => ({
     ...p,
     source: 'google_places',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 // Map WMO weather codes to descriptions
 const WEATHER_DESCRIPTIONS: Record<number, string> = {
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
       { signal: AbortSignal.timeout(10000) }
     );
     const geoData = await geoRes.json();
+    trackApiCall('open_meteo');
 
     if (!geoData.results || geoData.results.length === 0) {
       return NextResponse.json({ error: 'City not found' }, { status: 404 });
@@ -81,6 +83,7 @@ export async function GET(req: NextRequest) {
       { signal: AbortSignal.timeout(10000) }
     );
     const weatherData = await weatherRes.json();
+    trackApiCall('open_meteo');
 
     if (!weatherData.daily || !weatherData.daily.time || weatherData.daily.time.length === 0) {
       return NextResponse.json({ error: 'No weather data available for this date' }, { status: 404 });

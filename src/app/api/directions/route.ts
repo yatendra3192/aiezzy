@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
       { signal: AbortSignal.timeout(15000) }
     );
     const data = await res.json();
+    trackApiCall('google_directions');
 
     // Store in cache
     dirCache.set(cacheKey, { data, ts: Date.now() });

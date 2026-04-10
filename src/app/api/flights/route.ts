@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { GLOBAL_CITY_AIRPORTS } from '@/data/airports';
+import { trackApiCall } from '@/lib/apiTracker';
 
 const FLIGHTS_API_URL = process.env.FLIGHTS_API_URL || '';
 const FLIGHTS_API_KEY = process.env.FLIGHTS_API_KEY || '';
@@ -286,6 +287,7 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
           { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } }
         );
         const data = await r.json();
+        trackApiCall('catalog_supabase');
         if (Array.isArray(data) && data.length > 0) {
           return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0, countryCode: data[0].country_code || '' }];
         }
@@ -303,6 +305,7 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
       // Geocode city name
       const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(input + ' city')}&key=${googleKey}`, { signal: AbortSignal.timeout(10000) });
       const geoData = await geoRes.json();
+      trackApiCall('google_geocoding');
       if (geoData.status === 'OK' && geoData.results?.[0]) {
         const lat = geoData.results[0].geometry.location.lat;
         const lng = geoData.results[0].geometry.location.lng;
@@ -314,6 +317,7 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
           signal: AbortSignal.timeout(10000),
         });
         const allAirports = await rpcRes.json();
+        trackApiCall('catalog_supabase');
         if (Array.isArray(allAirports) && allAirports.length > 0) {
           const MILITARY_KEYWORDS = ['air force', 'air base', 'afb', 'military', 'naval air', 'army airfield', 'joint base'];
           const commercial = allAirports
@@ -332,6 +336,7 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
             try {
               const muniRes = await fetch(`${catalogUrl}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code`, { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } });
               const muniData = await muniRes.json();
+              trackApiCall('catalog_supabase');
               const muniMap = new Map((Array.isArray(muniData) ? muniData : []).map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
               return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: muniMap.get(a.iata_code)?.muni || '', distance: Math.round(a.distance_km || 0), countryCode: muniMap.get(a.iata_code)?.cc || '' }));
             } catch { return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: '', distance: Math.round(a.distance_km || 0) })); }
@@ -468,6 +473,7 @@ async function getAmadeusToken(): Promise<string | null> {
     });
     const data = await res.json();
     if (data.access_token) {
+      trackApiCall('amadeus_auth');
       amadeusToken = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
       return data.access_token;
     }
@@ -502,6 +508,7 @@ async function fetchAmadeusFlights(from: string, to: string, date: string, adult
       return null;
     }
     const data = await res.json();
+    trackApiCall('amadeus_flights');
     const offers = data.data || [];
     if (offers.length === 0) return null;
 
@@ -650,6 +657,7 @@ async function fetchScraperFlights(from: string, to: string, date: string, adult
     });
     if (!res.ok) return null;
     const data = await res.json();
+    trackApiCall('scraper_flights');
     const raw = [...(data.best_flights || []), ...(data.other_flights || [])];
     if (raw.length === 0) return null;
 

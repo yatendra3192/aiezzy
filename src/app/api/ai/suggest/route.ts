@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { trackApiCall } from '@/lib/apiTracker';
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -77,6 +78,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          trackApiCall('gemini');
         } else {
           console.error('Gemini suggest error:', response.status);
         }
@@ -101,6 +103,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.choices?.[0]?.message?.content || '';
+          trackApiCall('openai_chat');
         } else {
           console.error('OpenAI suggest error:', response.status);
         }
@@ -134,6 +137,7 @@ Rules:
         if (response.ok) {
           const data = await response.json();
           text = data.content?.[0]?.text || '';
+          trackApiCall('anthropic');
         }
       } catch (e: any) {
         console.error('Anthropic suggest timeout/error:', e.name === 'AbortError' ? 'timeout (15s)' : e.message);
