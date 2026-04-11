@@ -90,6 +90,8 @@ export default function AdminPage() {
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [userSearch, setUserSearch] = useState('');
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<string | null>(null);
 
   // Open trip view as admin (API uses service client for admin emails)
   const openTripView = (tripId: string, page: 'route' | 'deep-plan') => {
@@ -121,6 +123,26 @@ export default function AdminPage() {
   const resetUsage = async () => {
     const res = await fetch('/api/admin/api-usage', { method: 'DELETE' });
     if (res.ok) setApiUsage(await res.json());
+  };
+
+  const runBackfillAirportCoords = async () => {
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch('/api/admin/backfill-airport-coords', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setBackfillResult(`Error: ${data.error || 'Failed'}`);
+      } else {
+        let msg = data.message || 'Done';
+        if (data.uniqueIataCodes) msg += ` | ${data.uniqueIataCodes} IATA codes looked up, ${data.airportsFound} found`;
+        if (data.errors?.length) msg += ` | ${data.errors.length} errors`;
+        setBackfillResult(msg);
+      }
+    } catch (e: any) {
+      setBackfillResult(`Error: ${e.message}`);
+    }
+    setBackfillLoading(false);
   };
 
   useEffect(() => {
@@ -420,6 +442,32 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
+
+            {/* Admin Tools */}
+            <div className="bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm md:col-span-2">
+              <h3 className="font-display font-bold text-sm text-text-primary mb-4">Admin Tools</h3>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={runBackfillAirportCoords}
+                  disabled={backfillLoading}
+                  className={`px-4 py-2 rounded-xl text-xs font-display font-bold transition-all flex items-center gap-2 ${
+                    backfillLoading
+                      ? 'bg-bg-card text-text-muted cursor-wait'
+                      : 'bg-accent-cyan/10 text-accent-cyan hover:bg-accent-cyan/20 border border-accent-cyan/20'
+                  }`}
+                >
+                  {backfillLoading && (
+                    <div className="w-3.5 h-3.5 border-2 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+                  )}
+                  {backfillLoading ? 'Running...' : 'Backfill Airport Coords'}
+                </button>
+                {backfillResult && (
+                  <p className={`text-xs font-mono ${backfillResult.startsWith('Error') ? 'text-red-500' : 'text-green-600'}`}>
+                    {backfillResult}
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Recent trips */}
             <div className={`bg-bg-surface border border-border-subtle rounded-xl p-5 card-warm ${stats && stats.popularRoutes.length > 0 ? '' : 'md:col-span-2'}`}>
