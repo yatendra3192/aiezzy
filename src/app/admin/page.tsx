@@ -137,6 +137,8 @@ export default function AdminPage() {
         let msg = data.message || 'Done';
         if (data.uniqueIataCodes) msg += ` | ${data.uniqueIataCodes} IATA codes looked up, ${data.airportsFound} found`;
         if (data.errors?.length) msg += ` | ${data.errors.length} errors`;
+        if (data.debug?.sampleCodes?.length) msg += ` | Codes: ${data.debug.sampleCodes.join(', ')}`;
+        if (data.debug?.rawResponse) msg += ` | DB status: ${data.debug.rawResponse.status}, rows: ${data.debug.rawResponse.length}`;
         setBackfillResult(msg);
       }
     } catch (e: any) {

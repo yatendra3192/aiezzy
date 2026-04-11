@@ -120,19 +120,21 @@ export async function POST(req: NextRequest) {
 
     // Supabase REST API has query length limits, batch in groups of 50
     const batchSize = 50;
+    let debugRawResponse: any = null;
+    let debugUrl = '';
     for (let i = 0; i < codesArray.length; i += batchSize) {
       const batch = codesArray.slice(i, i + batchSize);
-      const quotedCodes = batch.map(c => `"${c}"`).join(',');
-      const res = await fetch(
-        `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${quotedCodes})&select=iata_code,name,municipality,latitude_deg,longitude_deg`,
-        {
-          headers: {
-            'apikey': CATALOG_KEY,
-            'Authorization': `Bearer ${CATALOG_KEY}`,
-          },
-        }
-      );
+      const codeList = batch.join(',');
+      const url = `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codeList})&select=iata_code,name,municipality,latitude_deg,longitude_deg`;
+      if (!debugUrl) debugUrl = url.replace(CATALOG_KEY, '***');
+      const res = await fetch(url, {
+        headers: {
+          'apikey': CATALOG_KEY,
+          'Authorization': `Bearer ${CATALOG_KEY}`,
+        },
+      });
       const data = await res.json();
+      if (!debugRawResponse) debugRawResponse = { status: res.status, isArray: Array.isArray(data), length: Array.isArray(data) ? data.length : 0, sample: Array.isArray(data) ? data.slice(0, 2) : data };
       if (Array.isArray(data)) {
         for (const airport of data) {
           if (airport.iata_code && airport.latitude_deg != null && airport.longitude_deg != null) {
@@ -214,6 +216,7 @@ export async function POST(req: NextRequest) {
       airportsFound: airportMap.size,
       airportsFoundCodes: Array.from(airportMap.keys()),
       errors: errors.length > 0 ? errors : undefined,
+      debug: { rawResponse: debugRawResponse, sampleCodes: codesArray.slice(0, 5) },
     });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
