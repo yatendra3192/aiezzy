@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  return NextResponse.json(getApiUsage());
+  return NextResponse.json(await getApiUsage());
 }
 
 export async function DELETE(req: NextRequest) {
@@ -20,6 +20,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  resetApiUsage();
-  return NextResponse.json(getApiUsage());
+  await resetApiUsage();
+  return NextResponse.json(await getApiUsage());
 }
