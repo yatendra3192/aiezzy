@@ -2001,29 +2001,26 @@ function DeepPlanPageContent() {
         // Uses parentCity for specificity (e.g., "Jammu" not "Jammu and Kashmir")
         // cityForStop must match the stop's actual location (departure vs destination city)
         const resolveStopQuery = (stop: DeepStop, cityForStop: string, isHub: boolean) => {
-          // Use coordinates when available (most accurate)
-          if (stop.lat && stop.lng) return `${stop.lat},${stop.lng}`;
-          // Find the right destination for this city (for hotel address lookup)
           const stopDest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityForStop || d.city.name === cityForStop);
-          // Use parentCity if available (more specific than state-level names)
           const specific = stopDest?.city.parentCity || cityForStop;
-          // Home stop: use the full fromAddress for best geocoding
+          // Home: use full address
           if (stop.type === 'home') return trip.fromAddress || `${stop.name}, ${specific}`;
-          // Hub (airport/station): just use the hub name — it already includes the city
-          // (e.g., "Indore Airport", "Jammu and Kashmir Airport")
-          // DON'T append cityForStop — departure hubs are in a different city than the destination
+          // Airport/station: use hub name (already includes city)
           if (isHub) return stop.name;
-          // Hotel with generic name: resolve to actual hotel
-          if (stop.type === 'hotel' && (stop.name === 'Return to hotel' || stop.name.startsWith('Stay in '))) {
-            const realHotel = day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType && !s.name.startsWith('Stay in ') && s.name !== 'Rest / Sleep');
-            if (realHotel?.lat && realHotel?.lng) return `${realHotel.lat},${realHotel.lng}`;
-            if (stopDest?.selectedHotel?.address) return stopDest.selectedHotel.address;
-            if (realHotel) return `${realHotel.name}, ${specific}`;
-          }
-          // Hotel with actual name: try address first
+          // Hotel: use Google coordinates (accurate from Google's own data)
           if (stop.type === 'hotel') {
+            if (stop.lat && stop.lng) return `${stop.lat},${stop.lng}`;
+            if (stop.name === 'Return to hotel' || stop.name.startsWith('Stay in ')) {
+              const realHotel = day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType && !s.name.startsWith('Stay in ') && s.name !== 'Rest / Sleep');
+              if (realHotel?.lat && realHotel?.lng) return `${realHotel.lat},${realHotel.lng}`;
+              if (stopDest?.selectedHotel?.address) return stopDest.selectedHotel.address;
+              if (realHotel) return `${realHotel.name}, ${specific}`;
+            }
             if (stopDest?.selectedHotel?.address) return stopDest.selectedHotel.address;
+            return `${stop.name}, ${specific}`;
           }
+          // Activities: use place NAME (not AI GPS coords) — Google resolves named
+          // places to exact entrances, while AI coords are ~100-500m off
           return `${stop.name}, ${specific}`;
         };
         const fromQ = resolveStopQuery(queryFrom, fromCity, fromIsHub);
