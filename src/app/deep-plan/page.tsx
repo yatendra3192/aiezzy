@@ -622,8 +622,9 @@ function DeepPlanPageContent() {
     if (firstDest && firstLeg) {
       const hub = getDepartureHub(trip.from, firstLeg.type);
       if (hub) {
-        const fromCityLabel = trip.from.parentCity || trip.from.name || '';
-        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: `${hub.name}, ${fromCityLabel}`, mode: 'driving' });
+        // Don't append origin city to airport name — airport name already includes its city
+        // (e.g., "Indore Airport" not "Indore Airport, Pitgara" which confuses Google)
+        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: hub.name, mode: 'driving' });
       }
     }
 
@@ -1960,8 +1961,10 @@ function DeepPlanPageContent() {
           const specific = stopDest?.city.parentCity || cityForStop;
           // Home stop: use the full fromAddress for best geocoding
           if (stop.type === 'home') return trip.fromAddress || `${stop.name}, ${specific}`;
-          // Hub (airport/station): use full name + specific city
-          if (isHub) return `${stop.name}, ${specific}`;
+          // Hub (airport/station): just use the hub name — it already includes the city
+          // (e.g., "Indore Airport", "Jammu and Kashmir Airport")
+          // DON'T append cityForStop — departure hubs are in a different city than the destination
+          if (isHub) return stop.name;
           // Hotel with generic name: resolve to actual hotel
           if (stop.type === 'hotel' && (stop.name === 'Return to hotel' || stop.name.startsWith('Stay in '))) {
             const realHotel = day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType && !s.name.startsWith('Stay in ') && s.name !== 'Rest / Sleep');
