@@ -67,8 +67,20 @@ export async function POST(req: NextRequest) {
       const flight = leg.selected_flight;
       if (!flight) continue;
 
-      const depCode = (flight.depAirportCode || '') as string;
-      const arrCode = (flight.arrAirportCode || '') as string;
+      // Extract IATA codes: from depAirportCode/arrAirportCode, or parse from route (e.g., "IDR-IXJ")
+      let depCode = (flight.depAirportCode || '') as string;
+      let arrCode = (flight.arrAirportCode || '') as string;
+      if ((!depCode || !arrCode) && flight.route) {
+        const routeMatch = String(flight.route).match(/^([A-Z]{3})\s*[-–→]\s*([A-Z]{3})$/);
+        if (routeMatch) {
+          if (!depCode) depCode = routeMatch[1];
+          if (!arrCode) arrCode = routeMatch[2];
+        }
+      }
+      // Also try _resolvedAirports fromCode/toCode
+      const resolvedCodes = flight._resolvedAirports || {};
+      if (!depCode && resolvedCodes.fromCode) depCode = resolvedCodes.fromCode;
+      if (!arrCode && resolvedCodes.toCode) arrCode = resolvedCodes.toCode;
 
       // Check if coordinates are missing on the flight itself
       const needsDepCoords = !!depCode && (!flight.depAirportLat || !flight.depAirportLng);
@@ -141,16 +153,16 @@ export async function POST(req: NextRequest) {
       const depAirport = leg.depCode ? airportMap.get(leg.depCode) : null;
       const arrAirport = leg.arrCode ? airportMap.get(leg.arrCode) : null;
 
-      // Update flight-level coords
-      if (depAirport && leg.needsDepCoords) {
-        if (!flight.depAirportLat) flight.depAirportLat = depAirport.latitude_deg;
-        if (!flight.depAirportLng) flight.depAirportLng = depAirport.longitude_deg;
-        changed = true;
+      // Update flight-level coords and codes
+      if (depAirport) {
+        if (!flight.depAirportLat) { flight.depAirportLat = depAirport.latitude_deg; changed = true; }
+        if (!flight.depAirportLng) { flight.depAirportLng = depAirport.longitude_deg; changed = true; }
+        if (!flight.depAirportCode) { flight.depAirportCode = depAirport.iata_code; changed = true; }
       }
-      if (arrAirport && leg.needsArrCoords) {
-        if (!flight.arrAirportLat) flight.arrAirportLat = arrAirport.latitude_deg;
-        if (!flight.arrAirportLng) flight.arrAirportLng = arrAirport.longitude_deg;
-        changed = true;
+      if (arrAirport) {
+        if (!flight.arrAirportLat) { flight.arrAirportLat = arrAirport.latitude_deg; changed = true; }
+        if (!flight.arrAirportLng) { flight.arrAirportLng = arrAirport.longitude_deg; changed = true; }
+        if (!flight.arrAirportCode) { flight.arrAirportCode = arrAirport.iata_code; changed = true; }
       }
 
       // Update _resolvedAirports (embedded inside selected_flight JSONB)
@@ -198,7 +210,9 @@ export async function POST(req: NextRequest) {
       legsNeedingUpdate: legsToUpdate.length,
       updated,
       uniqueIataCodes: codesArray.length,
+      iataCodes: codesArray,
       airportsFound: airportMap.size,
+      airportsFoundCodes: Array.from(airportMap.keys()),
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (e: any) {
