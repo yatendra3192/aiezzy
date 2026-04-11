@@ -2019,8 +2019,9 @@ function DeepPlanPageContent() {
             if (stopDest?.selectedHotel?.address) return stopDest.selectedHotel.address;
             return `${stop.name}, ${specific}`;
           }
-          // Activities: use place NAME (not AI GPS coords) — Google resolves named
-          // places to exact entrances, while AI coords are ~100-500m off
+          // Activities: use GPS coords when available (100-500m off but correct location)
+          // Place names fail for duplicate names (e.g., "Peer Baba Dargah" matches wrong shrine 13km away)
+          if (stop.lat && stop.lng) return `${stop.lat},${stop.lng}`;
           return `${stop.name}, ${specific}`;
         };
         const fromQ = resolveStopQuery(queryFrom, fromCity, fromIsHub);
