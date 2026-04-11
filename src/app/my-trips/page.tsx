@@ -60,6 +60,8 @@ export default function MyTripsPage() {
   const [sharingTripId, setSharingTripId] = useState<string | null>(null);
   const [showAISuggest, setShowAISuggest] = useState(false);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'upcoming' | 'past' | 'drafts'>('all');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (authStatus === 'unauthenticated') {
@@ -155,8 +157,23 @@ export default function MyTripsPage() {
     );
   }
 
-  const upcomingTrips = trips.filter(t => daysUntil(t.departureDate) >= 0).sort((a, b) => daysUntil(a.departureDate) - daysUntil(b.departureDate));
-  const pastTrips = trips.filter(t => daysUntil(t.departureDate) < 0);
+  // Search filter
+  const searchLower = search.toLowerCase().trim();
+  const searchedTrips = searchLower
+    ? trips.filter(t => t.title.toLowerCase().includes(searchLower) || t.destinations.some(d => d.toLowerCase().includes(searchLower)) || t.fromAddress.toLowerCase().includes(searchLower))
+    : trips;
+
+  // Tab filter
+  const allUpcoming = searchedTrips.filter(t => daysUntil(t.departureDate) >= 0).sort((a, b) => daysUntil(a.departureDate) - daysUntil(b.departureDate));
+  const allPast = searchedTrips.filter(t => daysUntil(t.departureDate) < 0);
+  const allDrafts = searchedTrips.filter(t => t.totalCost === 0 || (t.flightCost === 0 && t.hotelCost === 0));
+
+  const upcomingTrips = filter === 'past' ? [] : filter === 'drafts' ? allDrafts.filter(t => daysUntil(t.departureDate) >= 0) : allUpcoming;
+  const pastTrips = filter === 'upcoming' ? [] : filter === 'drafts' ? allDrafts.filter(t => daysUntil(t.departureDate) < 0) : allPast;
+  const showHero = filter === 'all' && !searchLower && allUpcoming.length > 0;
+
+  // Tab counts
+  const counts = { all: searchedTrips.length, upcoming: allUpcoming.length, past: allPast.length, drafts: allDrafts.length };
 
   return (
     <div className="min-h-screen p-4 md:p-8">
@@ -207,6 +224,35 @@ export default function MyTripsPage() {
           )}
         </motion.div>
 
+        {/* Filter bar */}
+        {trips.length > 0 && (
+          <div className="flex items-center gap-3 mb-6 flex-wrap">
+            {/* Tabs */}
+            <div className="flex items-center bg-bg-surface border border-border-subtle rounded-xl p-0.5">
+              {([['all', 'All'], ['upcoming', 'Upcoming'], ['past', 'Past'], ['drafts', 'Drafts']] as const).map(([key, label]) => (
+                <button key={key} onClick={() => setFilter(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-display font-bold transition-all ${filter === key ? 'bg-accent-cyan text-white shadow-sm' : 'text-text-muted hover:text-text-primary'}`}>
+                  {label} <span className={`ml-0.5 font-mono text-[10px] ${filter === key ? 'text-white/70' : 'text-text-muted/60'}`}>{counts[key]}</span>
+                </button>
+              ))}
+            </div>
+            {/* Search */}
+            <div className="relative flex-1 min-w-[160px] max-w-[280px]">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search trips..."
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border-subtle bg-bg-surface text-xs font-body text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent-cyan/40 transition-colors"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary text-sm">&times;</button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Trip list */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-24">
@@ -241,7 +287,7 @@ export default function MyTripsPage() {
         ) : (
           <div className="space-y-8">
             {/* Next Trip Hero */}
-            {upcomingTrips.length > 0 && (() => {
+            {showHero && (() => {
               const next = upcomingTrips[0];
               const days = daysUntil(next.departureDate);
               const primaryDest = next.destinations[0] || 'Trip';
@@ -300,14 +346,15 @@ export default function MyTripsPage() {
               );
             })()}
 
-            {/* Upcoming trips (skip the first one — it's the hero) */}
-            {upcomingTrips.length > 1 && (
+            {/* Upcoming trips (skip first if hero is shown) */}
+            {(showHero ? upcomingTrips.length > 1 : upcomingTrips.length > 0) && (
               <div>
                 <h2 className="font-display text-sm font-bold text-text-muted uppercase tracking-wider mb-4">
-                  Upcoming
+                  {filter === 'drafts' ? 'Draft Trips' : 'Upcoming'}
+                  {search && <span className="text-text-muted/50 ml-2 normal-case">({(showHero ? upcomingTrips.length - 1 : upcomingTrips.length)} results)</span>}
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {upcomingTrips.slice(1).map((t, i) => {
+                  {(showHero ? upcomingTrips.slice(1) : upcomingTrips).map((t, i) => {
                     const days = daysUntil(t.departureDate);
                     const primaryDest = t.destinations[0] || 'Trip';
                     return (
@@ -488,6 +535,14 @@ export default function MyTripsPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* No results */}
+        {!loading && trips.length > 0 && upcomingTrips.length === 0 && pastTrips.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-text-muted font-body text-sm">No trips match {search ? `"${search}"` : 'this filter'}</p>
+            <button onClick={() => { setSearch(''); setFilter('all'); }} className="text-accent-cyan text-xs font-display font-bold mt-2 hover:underline">Clear filters</button>
           </div>
         )}
 
