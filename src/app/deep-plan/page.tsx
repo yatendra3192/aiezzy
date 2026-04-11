@@ -3540,7 +3540,24 @@ function DeepPlanPageContent() {
                           const nextStopIdx = day.stops.findIndex((s, idx) => idx > si && !s.mealType);
                           const nextStop = nextStopIdx >= 0 ? day.stops[nextStopIdx] : null;
                           const travelKey = nextStop ? `${stop.name}→${nextStop.name}` : '';
-                          const travelData = travelKey ? travelBetween[travelKey] : null;
+                          let travelData = travelKey ? travelBetween[travelKey] : null;
+                          // For airport/station→hotel pairs, prefer realTimes hub-to-hotel data (more reliable query)
+                          if ((stop.type === 'airport' || stop.type === 'station') && nextStop?.type === 'hotel') {
+                            // Find matching hub-to-hotel realTimes entry
+                            const destIdx = nextStop.destIndex !== undefined ? nextStop.destIndex
+                              : trip.destinations.findIndex(d => (d.city.parentCity || d.city.name) === day.city || d.city.name === day.city);
+                            if (destIdx >= 0) {
+                              const rt = realTimes[`hub-to-hotel-${destIdx}`];
+                              if (rt && rt.duration) {
+                                travelData = { selected: 'drive', drive: rt, _fetched: true };
+                              }
+                            }
+                          } else if (stop.type === 'home' && (nextStop?.type === 'airport' || nextStop?.type === 'station')) {
+                            const rt = realTimes['home-to-hub-0'];
+                            if (rt && rt.duration) {
+                              travelData = { selected: 'drive', drive: rt, _fetched: true };
+                            }
+                          }
                           const selMode = travelData?.selected || 'walk';
                           const selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
