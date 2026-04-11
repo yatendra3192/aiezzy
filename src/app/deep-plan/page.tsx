@@ -3562,7 +3562,13 @@ function DeepPlanPageContent() {
                             }
                           }
                           const selMode = travelData?.selected || 'walk';
-                          const selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
+                          let selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
+                          // Sanity check: airport→hotel should be < 50km. If much larger, the query resolved wrong.
+                          const isHubToLocal = (stop.type === 'airport' || stop.type === 'station' || stop.type === 'home') && nextStop && (nextStop.type === 'hotel' || nextStop.type === 'attraction');
+                          const isLocalToHub = (nextStop?.type === 'airport' || nextStop?.type === 'station') && (stop.type === 'hotel' || stop.type === 'attraction' || stop.type === 'home');
+                          if ((isHubToLocal || isLocalToHub) && selData && parseDistKm(selData.distance) > 50) {
+                            selData = undefined; // Bogus — show "See directions" instead
+                          }
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
                           const isDropdownOpen = openTravelDropdown === travelKey;
                           const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
