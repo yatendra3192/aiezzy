@@ -2032,14 +2032,15 @@ function DeepPlanPageContent() {
         const fetchMode = (mode: 'walking' | 'transit' | 'driving', modeKey: string) =>
           getDirections(fromQ, toQ, mode).then(r => r ? { duration: r.durationText, distance: r.distanceText } : null).catch(() => null);
         Promise.all([fetchMode('walking', 'walk'), fetchMode('transit', 'transit'), fetchMode('driving', 'drive')]).then(([walk, transit, drive]) => {
-          // Smart default: pick best mode based on distance/duration
-          // Walk if ≤ 20 min, transit if available and ≤ 45 min, else drive
+          // Smart default: pick FASTEST mode
           const walkMin = walk ? parseDurationMinutes(walk.duration) : 999;
           const transitMin = transit ? parseDurationMinutes(transit.duration) : 999;
           const driveMin = drive ? parseDurationMinutes(drive.duration) : 999;
+          const fastest = Math.min(walkMin, transitMin, driveMin);
           let bestMode = 'walk';
-          if (walkMin <= 20) bestMode = 'walk';
-          else if (transitMin <= 45 && transit) bestMode = 'transit';
+          if (fastest === driveMin && drive) bestMode = 'drive';
+          else if (fastest === transitMin && transit) bestMode = 'transit';
+          else if (fastest === walkMin && walk) bestMode = 'walk';
           else if (drive) bestMode = 'drive';
           else if (transit) bestMode = 'transit';
 
