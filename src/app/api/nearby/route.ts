@@ -164,6 +164,8 @@ async function fetchLiveHotels(location: string, checkIn: string, checkOut: stri
       original: typeof img === 'string' ? img : (img.original_image || img.thumbnail || ''),
     })).filter((img: any) => img.thumbnail && !img.thumbnail.includes('default-user') && img.thumbnail.length > 50),
     link: h.link || '',
+    lat: h.gps_coordinates?.latitude || h.latitude || null,
+    lng: h.gps_coordinates?.longitude || h.longitude || null,
     mapsLink: `https://www.google.com/maps/search/${encodeURIComponent(h.name + ' ' + location)}`,
     bookingLink: `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name + ', ' + location)}&checkin=${checkIn}&checkout=${checkOut}&group_adults=2&no_rooms=1`,
     source: 'live',

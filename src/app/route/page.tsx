@@ -682,12 +682,17 @@ function RoutePageContent() {
       const selectHotel = (places: any[]) => {
         if (places.length > 0) {
           const h = places[0];
+          const addr = h.formattedAddress || h.address || '';
+          const lat = h.lat || h.location?.latitude;
+          const lng = h.lng || h.location?.longitude;
           const hotel = {
             id: `auto-${h.id || i}`,
             name: h.displayName?.text || h.name || 'Hotel',
             rating: h.rating || h.overall_rating || 0,
             pricePerNight: h.rateExtracted || (4000 + Math.abs((dest.city.name.charCodeAt(0) * 137) % 5000)),
             ratingColor: (h.rating || 0) >= 4 ? '#22c55e' : '#eab308',
+            ...(addr && { address: addr }),
+            ...(lat && lng && { lat, lng }),
           };
           trip.updateDestinationHotel(dest.id, hotel);
           return true;
