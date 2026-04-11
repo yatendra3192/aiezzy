@@ -1939,17 +1939,30 @@ function DeepPlanPageContent() {
         const key = `${from.name}→${to.name}`; // Key uses original stop name for render lookup
         if (travelFetchedRef.current[key] || travelBetween[key]) continue;
         travelFetchedRef.current[key] = true;
-        // For hotel stops ("Return to hotel", "Leave hotel"), resolve to actual hotel name when no coordinates
-        const resolveStopQuery = (stop: DeepStop, city: string, isHub: boolean) => {
-          if (isHub) return stop.name;
+        // Resolve stop to best query string for Directions API
+        // Uses parentCity for specificity (e.g., "Jammu" not "Jammu and Kashmir")
+        const dest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === day.city || d.city.name === day.city);
+        const specificCity = dest?.city.parentCity || dest?.city.name || day.city;
+        const resolveStopQuery = (stop: DeepStop, fallbackCity: string, isHub: boolean) => {
+          // Use coordinates when available (most accurate)
           if (stop.lat && stop.lng) return `${stop.lat},${stop.lng}`;
-          // If this is a hotel stop with a generic name, find the real hotel name from this day
+          // Hub (airport/station): use full name — but append specific city for context
+          if (isHub) return `${stop.name}, ${specificCity}`;
+          // Hotel with generic name: resolve to actual hotel
           if (stop.type === 'hotel' && (stop.name === 'Return to hotel' || stop.name.startsWith('Stay in '))) {
             const realHotel = day.stops.find(s => s.type === 'hotel' && s.name !== 'Return to hotel' && !s.mealType && !s.name.startsWith('Stay in ') && s.name !== 'Rest / Sleep');
             if (realHotel?.lat && realHotel?.lng) return `${realHotel.lat},${realHotel.lng}`;
-            if (realHotel) return `${realHotel.name}, ${city}`;
+            // Use hotel address if available (from Google Places)
+            const hotelData = dest?.selectedHotel;
+            if (hotelData?.address) return hotelData.address;
+            if (realHotel) return `${realHotel.name}, ${specificCity}`;
           }
-          return `${stop.name}, ${city}`;
+          // Hotel with actual name: try address first
+          if (stop.type === 'hotel') {
+            const hotelData = dest?.selectedHotel;
+            if (hotelData?.address) return hotelData.address;
+          }
+          return `${stop.name}, ${specificCity}`;
         };
         const fromQ = resolveStopQuery(queryFrom, fromCity, fromIsHub);
         const toQ = resolveStopQuery(to, toCity, toIsHub);
