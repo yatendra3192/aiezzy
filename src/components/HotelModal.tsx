@@ -201,6 +201,8 @@ export default function HotelModal({
     pricePerNight: gh.livePrice || estimatePrice(gh.priceLevel, gh.name, gh.rating),
     ratingColor: gh.rating >= 4.5 ? '#16a34a' : gh.rating >= 4 ? '#22c55e' : gh.rating >= 3 ? '#eab308' : '#ef4444',
     ...(gh.address && { address: gh.address }),
+    ...(gh.lat && gh.lng && { lat: gh.lat, lng: gh.lng }),
+    ...(gh.location?.latitude && gh.location?.longitude && { lat: gh.location.latitude, lng: gh.location.longitude }),
   }));
 
   const toggleAmenity = (a: string) => {

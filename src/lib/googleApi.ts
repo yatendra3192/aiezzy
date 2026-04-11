@@ -118,6 +118,9 @@ export interface NearbyHotel {
   deal: string | null;
   mapsLink: string;
   bookingLink: string;
+  lat?: number;
+  lng?: number;
+  location?: { latitude: number; longitude: number };
 }
 
 export async function searchNearbyHotels(
@@ -158,6 +161,8 @@ export async function searchNearbyHotels(
       deal: p.deal || null,
       mapsLink: p.mapsLink || `https://www.google.com/maps/search/${encodeURIComponent(p.displayName?.text || p.name || '')}`,
       bookingLink: p.bookingLink || `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(p.displayName?.text || p.name || '')}`,
+      lat: p.lat || p.location?.latitude || undefined,
+      lng: p.lng || p.location?.longitude || undefined,
     }));
   } catch {
     return [];
