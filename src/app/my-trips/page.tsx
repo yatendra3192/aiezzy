@@ -255,10 +255,10 @@ export default function MyTripsPage() {
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.05 }}
-                        className="group bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden hover:shadow-lg hover:border-accent-cyan/20 transition-all duration-300"
+                        className="group bg-bg-surface border border-border-subtle rounded-2xl hover:shadow-lg hover:border-accent-cyan/20 transition-all duration-300"
                       >
                         {/* Photo header */}
-                        <button onClick={() => handleLoadTrip(t.id)} className="w-full relative h-32 overflow-hidden">
+                        <button onClick={() => handleLoadTrip(t.id)} className="w-full relative h-32 overflow-hidden rounded-t-2xl">
                           <PlacePhoto name={primaryDest} city={primaryDest} className="w-full h-full object-cover" />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
                           {/* Countdown badge */}
