@@ -91,6 +91,11 @@ export default function AdminPage() {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [userSearch, setUserSearch] = useState('');
 
+  // Open trip view as admin (API uses service client for admin emails)
+  const openTripView = (tripId: string, page: 'route' | 'deep-plan') => {
+    window.open(`/${page}?id=${tripId}`, '_blank');
+  };
+
   const fetchData = async () => {
     setLoading(true);
     setError('');
@@ -452,14 +457,14 @@ export default function AdminPage() {
                             <p className="text-text-primary font-semibold mt-1 pt-1 border-t border-border-subtle">Total: <span className="font-mono text-accent-cyan">&#8377;{t.totalCost.toLocaleString()}</span></p>
                             <p className="text-text-muted mt-1">{t.totalNights}N &middot; {t.adults} pax &middot; {t.tripType === 'roundTrip' ? 'Round Trip' : 'One Way'}</p>
                             <div className="mt-2 flex gap-2">
-                              <a href={`/route?id=${t.id}`} target="_blank" rel="noopener noreferrer"
+                              <button onClick={() => openTripView(t.id, 'route')}
                                 className="px-2 py-1 rounded bg-accent-cyan/10 text-accent-cyan text-[10px] font-bold hover:bg-accent-cyan/20 transition-colors">
                                 Route
-                              </a>
-                              <a href={`/deep-plan?id=${t.id}`} target="_blank" rel="noopener noreferrer"
+                              </button>
+                              <button onClick={() => openTripView(t.id, 'deep-plan')}
                                 className="px-2 py-1 rounded bg-accent-gold/10 text-accent-gold text-[10px] font-bold hover:bg-accent-gold/20 transition-colors">
                                 Deep Plan
-                              </a>
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -582,8 +587,8 @@ export default function AdminPage() {
                                         <td className="py-2 pr-3 font-mono text-text-primary">{t.totalNights}N</td>
                                         <td className="py-2 pr-2 font-mono text-accent-cyan text-right">{t.totalCost > 0 ? `\u20B9${t.totalCost.toLocaleString()}` : '\u2014'}</td>
                                         <td className="py-2 text-right">
-                                          <a href={`/route?id=${t.id}`} target="_blank" rel="noopener noreferrer" className="text-accent-cyan text-[10px] font-bold hover:underline mr-2">Route</a>
-                                          <a href={`/deep-plan?id=${t.id}`} target="_blank" rel="noopener noreferrer" className="text-accent-gold text-[10px] font-bold hover:underline">Plan</a>
+                                          <button onClick={() => openTripView(t.id, 'route')} className="text-accent-cyan text-[10px] font-bold hover:underline mr-2">Route</button>
+                                          <button onClick={() => openTripView(t.id, 'deep-plan')} className="text-accent-gold text-[10px] font-bold hover:underline">Plan</button>
                                         </td>
                                       </tr>
                                     ))}
@@ -697,14 +702,14 @@ export default function AdminPage() {
                               <p>Updated: {new Date(t.updatedAt).toLocaleString()}</p>
                             </div>
                             <div className="mt-3 flex gap-2">
-                              <a href={`/route?id=${t.id}`} target="_blank" rel="noopener noreferrer"
+                              <button onClick={() => openTripView(t.id, 'route')}
                                 className="px-3 py-1.5 rounded-lg bg-accent-cyan/10 text-accent-cyan text-[11px] font-display font-bold hover:bg-accent-cyan/20 transition-colors">
                                 View Route Page
-                              </a>
-                              <a href={`/deep-plan?id=${t.id}`} target="_blank" rel="noopener noreferrer"
+                              </button>
+                              <button onClick={() => openTripView(t.id, 'deep-plan')}
                                 className="px-3 py-1.5 rounded-lg bg-accent-gold/10 text-accent-gold text-[11px] font-display font-bold hover:bg-accent-gold/20 transition-colors">
                                 View Deep Plan
-                              </a>
+                              </button>
                             </div>
                           </div>
                         </div>
