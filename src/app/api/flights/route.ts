@@ -232,9 +232,13 @@ export async function GET(req: NextRequest) {
         fromAirport: resolvedFromAp.name,
         fromCity: resolvedFromAp.city,
         fromDistance: resolvedFromAp.distance,
+        fromAirportLat: resolvedFromAp.lat,
+        fromAirportLng: resolvedFromAp.lng,
         toCity: resolvedToAp.city || resolvedToAp.name || '',
         toDistance: resolvedToAp.distance || 0,
         toAirport: resolvedToAp.name || '',
+        toAirportLat: resolvedToAp.lat,
+        toAirportLng: resolvedToAp.lng,
         nearestFrom: nearest.code !== resolvedFromAp.code ? { code: nearest.code, city: nearest.city, distance: nearest.distance } : undefined,
         flights: allFlights,
         source: allFlights.some(f => f.source === 'scraper') ? 'amadeus+scraper' : 'amadeus',
@@ -273,6 +277,8 @@ interface AirportCandidate {
   city: string; // municipality/city name (e.g., "Ahmedabad")
   distance: number; // km
   countryCode?: string; // "IN", "FR", etc.
+  lat?: number; // GPS latitude (from catalog DB)
+  lng?: number; // GPS longitude (from catalog DB)
 }
 
 async function resolveToAirports(input: string, _baseUrl?: string): Promise<AirportCandidate[]> {
@@ -283,13 +289,13 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
       const catalogKey = process.env.CATALOG_SUPABASE_ANON_KEY;
       if (catalogUrl && catalogKey) {
         const r = await fetch(
-          `${catalogUrl}/rest/v1/airports?iata_code=eq.${input}&select=iata_code,name,municipality,country_code&limit=1`,
+          `${catalogUrl}/rest/v1/airports?iata_code=eq.${input}&select=iata_code,name,municipality,country_code,latitude_deg,longitude_deg&limit=1`,
           { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } }
         );
         const data = await r.json();
         trackApiCall('catalog_supabase');
         if (Array.isArray(data) && data.length > 0) {
-          return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0, countryCode: data[0].country_code || '' }];
+          return [{ code: input, name: data[0].name || '', city: data[0].municipality || '', distance: 0, countryCode: data[0].country_code || '', lat: data[0].latitude_deg ?? undefined, lng: data[0].longitude_deg ?? undefined }];
         }
       }
     } catch {}
@@ -331,15 +337,21 @@ async function resolveToAirports(input: string, _baseUrl?: string): Promise<Airp
           const rest = commercial.filter((a: any) => !seen.has(a.iata_code)).slice(0, 5);
           const result = [...closest, ...rest];
           if (result.length > 0) {
-            // Get municipality data
+            // Get municipality + coordinates data
             const codes = result.map((a: any) => `"${a.iata_code}"`).join(',');
             try {
-              const muniRes = await fetch(`${catalogUrl}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code`, { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } });
+              const muniRes = await fetch(`${catalogUrl}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code,latitude_deg,longitude_deg`, { headers: { 'apikey': catalogKey, 'Authorization': `Bearer ${catalogKey}` } });
               const muniData = await muniRes.json();
               trackApiCall('catalog_supabase');
-              const muniMap = new Map((Array.isArray(muniData) ? muniData : []).map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
-              return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: muniMap.get(a.iata_code)?.muni || '', distance: Math.round(a.distance_km || 0), countryCode: muniMap.get(a.iata_code)?.cc || '' }));
-            } catch { return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: '', distance: Math.round(a.distance_km || 0) })); }
+              const muniMap = new Map((Array.isArray(muniData) ? muniData : []).map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '', lat: m.latitude_deg, lng: m.longitude_deg }]));
+              return result.map((a: any) => {
+                const info = muniMap.get(a.iata_code);
+                // Prefer coordinates from RPC result (if available), fall back to direct query
+                const apLat = a.latitude_deg ?? info?.lat ?? undefined;
+                const apLng = a.longitude_deg ?? info?.lng ?? undefined;
+                return { code: a.iata_code, name: a.name || '', city: info?.muni || '', distance: Math.round(a.distance_km || 0), countryCode: info?.cc || '', lat: apLat, lng: apLng };
+              });
+            } catch { return result.map((a: any) => ({ code: a.iata_code, name: a.name || '', city: '', distance: Math.round(a.distance_km || 0), lat: a.latitude_deg ?? undefined, lng: a.longitude_deg ?? undefined })); }
           }
         }
       }

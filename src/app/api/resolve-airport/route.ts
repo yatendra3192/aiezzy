@@ -18,6 +18,8 @@ interface NearbyAirport {
   type: string;
   municipality: string;
   country_code: string;
+  latitude_deg?: number;
+  longitude_deg?: number;
 }
 
 /**
@@ -130,6 +132,8 @@ export async function GET(req: NextRequest) {
         type: a.type || '',
         municipality: '', // Will be filled from direct query below
         country_code: '',
+        latitude_deg: a.latitude_deg as number | undefined,
+        longitude_deg: a.longitude_deg as number | undefined,
       }));
 
     // Get municipality + country_code from airports table directly
@@ -137,17 +141,20 @@ export async function GET(req: NextRequest) {
       try {
         const codes = allCommercial.map(a => `"${a.iata_code}"`).join(',');
         const muniRes = await fetch(
-          `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code`,
+          `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codes})&select=iata_code,municipality,country_code,latitude_deg,longitude_deg`,
           { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
         );
         const muniData = await muniRes.json();
         trackApiCall('catalog_supabase');
         if (Array.isArray(muniData)) {
-          const muniMap = new Map(muniData.map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '' }]));
+          const muniMap = new Map(muniData.map((m: any) => [m.iata_code, { muni: m.municipality || '', cc: m.country_code || '', lat: m.latitude_deg, lng: m.longitude_deg }]));
           allCommercial.forEach(a => {
             const info = muniMap.get(a.iata_code);
             a.municipality = info?.muni || '';
             a.country_code = info?.cc || '';
+            // Prefer coordinates from RPC result, fall back to direct query
+            if (!a.latitude_deg && info?.lat) a.latitude_deg = info.lat;
+            if (!a.longitude_deg && info?.lng) a.longitude_deg = info.lng;
           });
         }
       } catch {}
