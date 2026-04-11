@@ -1,6 +1,6 @@
 // Persistent API usage tracker — in-memory buffer + Supabase persistence
-// trackApiCall() is synchronous and fast (in-memory only)
-// Flushes to Supabase every 60s and loads from DB on first read
+// trackApiCall() is synchronous (no DB latency on API routes)
+// Flushes to Supabase every 60s, loads from DB on first admin read
 
 export type ApiProvider =
   | 'google_places_autocomplete'
@@ -21,7 +21,6 @@ export type ApiProvider =
   | 'open_meteo'
   | 'catalog_supabase';
 
-// Cost per call in USD (approximate averages)
 const COST_PER_CALL: Record<ApiProvider, number> = {
   google_places_autocomplete: 0.00283,
   google_places_details: 0.017,
@@ -82,23 +81,20 @@ export const PROVIDER_CATEGORY: Record<ApiProvider, string> = {
   catalog_supabase: 'Free',
 };
 
-// --- In-memory buffer (fast, no DB on every call) ---
-// Stores UNFLUSHED increments since last flush
+// In-memory buffer (fast, no DB on every call)
 const buffer = new Map<string, number>();
-// Stores TOTAL counts (DB + buffer combined)
 const totals = new Map<string, { count: number; lastCalledAt: number }>();
 
 let dbLoaded = false;
 let loadingPromise: Promise<void> | null = null;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
-let trackingSince: string | null = null; // ISO date of earliest record
+let trackingSince: string | null = null;
+let tableExists = false;
 
 /** Track an external API call. Synchronous, never throws. */
 export function trackApiCall(provider: ApiProvider, count: number = 1): void {
   try {
-    // Add to buffer (unflushed)
     buffer.set(provider, (buffer.get(provider) || 0) + count);
-    // Update totals
     const existing = totals.get(provider);
     if (existing) {
       existing.count += count;
@@ -106,7 +102,6 @@ export function trackApiCall(provider: ApiProvider, count: number = 1): void {
     } else {
       totals.set(provider, { count, lastCalledAt: Date.now() });
     }
-    // Start flush timer if not running
     if (!flushTimer) {
       flushTimer = setInterval(() => { flushToDb(); }, 60_000);
     }
@@ -115,14 +110,20 @@ export function trackApiCall(provider: ApiProvider, count: number = 1): void {
   }
 }
 
-/** Load totals from Supabase (called once on first getApiUsage) */
-async function loadFromDb(): Promise<void> {
+/** Ensure api_usage table exists */
+async function ensureTable(): Promise<boolean> {
+  if (tableExists) return true;
   try {
     const { createServiceClient } = await import('@/lib/supabase/server');
     const supabase = createServiceClient();
-
-    // Create table if not exists
-    await supabase.rpc('exec_sql', {
+    // Try to select — if table exists, this succeeds
+    const { error } = await supabase.from('api_usage').select('provider').limit(1);
+    if (!error) {
+      tableExists = true;
+      return true;
+    }
+    // Table doesn't exist — try to create via exec_sql RPC
+    const { error: rpcError } = await supabase.rpc('exec_sql', {
       sql: `CREATE TABLE IF NOT EXISTS public.api_usage (
         provider TEXT PRIMARY KEY,
         call_count BIGINT NOT NULL DEFAULT 0,
@@ -130,12 +131,29 @@ async function loadFromDb(): Promise<void> {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );`,
     }).maybeSingle();
+    if (!rpcError) {
+      tableExists = true;
+      return true;
+    }
+    console.error('[apiTracker] Cannot create api_usage table. Run migration from admin.');
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Load totals from Supabase */
+async function loadFromDb(): Promise<void> {
+  try {
+    if (!(await ensureTable())) { dbLoaded = true; return; }
+    const { createServiceClient } = await import('@/lib/supabase/server');
+    const supabase = createServiceClient();
 
     const { data } = await supabase
       .from('api_usage')
       .select('provider, call_count, last_called_at, updated_at');
 
-    if (data) {
+    if (data && data.length > 0) {
       let earliest: string | null = null;
       for (const row of data) {
         const bufferCount = buffer.get(row.provider) || 0;
@@ -151,50 +169,53 @@ async function loadFromDb(): Promise<void> {
     }
     dbLoaded = true;
   } catch (e) {
-    // If DB load fails, just use in-memory
     console.error('[apiTracker] DB load failed:', (e as Error).message);
     dbLoaded = true;
   }
 }
 
-/** Flush buffered increments to Supabase */
+/** Flush buffered increments to Supabase using upsert (no exec_sql needed) */
 async function flushToDb(): Promise<void> {
   if (buffer.size === 0) return;
+  if (!tableExists && !(await ensureTable())) return;
   try {
     const { createServiceClient } = await import('@/lib/supabase/server');
     const supabase = createServiceClient();
 
-    // Snapshot and clear buffer
     const toFlush = new Map(buffer);
     buffer.clear();
 
     for (const [provider, increment] of Array.from(toFlush.entries())) {
-      // Upsert: increment existing count or insert new
-      await supabase.rpc('exec_sql', {
-        sql: `INSERT INTO public.api_usage (provider, call_count, last_called_at, updated_at)
-              VALUES ('${provider}', ${increment}, NOW(), NOW())
-              ON CONFLICT (provider)
-              DO UPDATE SET
-                call_count = api_usage.call_count + ${increment},
-                last_called_at = NOW(),
-                updated_at = NOW();`,
-      }).maybeSingle();
+      // Read current count, then upsert with incremented value
+      const { data: existing } = await supabase
+        .from('api_usage')
+        .select('call_count')
+        .eq('provider', provider)
+        .maybeSingle();
+
+      const newCount = (existing?.call_count || 0) + increment;
+      const now = new Date().toISOString();
+
+      await supabase
+        .from('api_usage')
+        .upsert({
+          provider,
+          call_count: newCount,
+          last_called_at: now,
+          updated_at: now,
+        }, { onConflict: 'provider' });
     }
   } catch (e) {
     console.error('[apiTracker] Flush failed:', (e as Error).message);
-    // Don't lose data — buffer stays, will retry next flush
   }
 }
 
 /** Get all usage data for admin dashboard */
 export async function getApiUsage() {
-  // Load from DB on first call
   if (!dbLoaded) {
     if (!loadingPromise) loadingPromise = loadFromDb();
     await loadingPromise;
   }
-
-  // Flush any pending buffer before reading
   await flushToDb();
 
   const providers: Record<string, {
@@ -207,7 +228,6 @@ export async function getApiUsage() {
   }> = {};
 
   let totalCostUSD = 0;
-
   const allProviders = Object.keys(COST_PER_CALL) as ApiProvider[];
   for (const key of allProviders) {
     const entry = totals.get(key);
@@ -225,7 +245,6 @@ export async function getApiUsage() {
     };
   }
 
-  // Calculate uptime from earliest record
   const since = trackingSince ? new Date(trackingSince) : new Date();
   const uptimeMs = Date.now() - since.getTime();
   const uptimeHours = Math.round(uptimeMs / (1000 * 60 * 60) * 10) / 10;
@@ -243,17 +262,18 @@ export async function getApiUsage() {
   };
 }
 
-/** Reset all counters (DB + memory) */
+/** Reset all counters */
 export async function resetApiUsage(): Promise<void> {
   buffer.clear();
   totals.clear();
   trackingSince = new Date().toISOString();
   try {
+    if (!tableExists) return;
     const { createServiceClient } = await import('@/lib/supabase/server');
     const supabase = createServiceClient();
-    await supabase.rpc('exec_sql', {
-      sql: `DELETE FROM public.api_usage;`,
-    }).maybeSingle();
+    // Delete all rows
+    const allProviders = Object.keys(COST_PER_CALL) as ApiProvider[];
+    await supabase.from('api_usage').delete().in('provider', allProviders);
   } catch (e) {
     console.error('[apiTracker] Reset failed:', (e as Error).message);
   }
