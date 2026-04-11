@@ -3591,32 +3591,17 @@ function DeepPlanPageContent() {
                           const nextStopIdx = day.stops.findIndex((s, idx) => idx > si && !s.mealType);
                           const nextStop = nextStopIdx >= 0 ? day.stops[nextStopIdx] : null;
                           const travelKey = nextStop ? `${stop.name}→${nextStop.name}` : '';
-                          let travelData = travelKey ? travelBetween[travelKey] : null;
-                          // For airport/station→hotel pairs, prefer realTimes hub-to-hotel data (more reliable query)
-                          if ((stop.type === 'airport' || stop.type === 'station') && nextStop?.type === 'hotel') {
-                            // Find matching hub-to-hotel realTimes entry
-                            const destIdx = nextStop.destIndex !== undefined ? nextStop.destIndex
-                              : trip.destinations.findIndex(d => (d.city.parentCity || d.city.name) === day.city || d.city.name === day.city);
-                            if (destIdx >= 0) {
-                              const rt = realTimes[`hub-to-hotel-${destIdx}`];
-                              if (rt && rt.duration) {
-                                travelData = { selected: 'drive', drive: rt, _fetched: true };
-                              }
-                            }
-                          } else if (stop.type === 'home' && (nextStop?.type === 'airport' || nextStop?.type === 'station')) {
-                            const rt = realTimes['home-to-hub-0'];
-                            if (rt && rt.duration) {
-                              travelData = { selected: 'drive', drive: rt, _fetched: true };
-                            }
-                          }
+                          // For hub-related pairs (home↔airport, airport↔hotel), use the stop's built-in
+                          // transport data (from day builder + realTimes) — NOT travelBetween which uses unreliable text queries.
+                          const isHubPair = (
+                            (stop.type === 'home' && (nextStop?.type === 'airport' || nextStop?.type === 'station')) ||
+                            ((stop.type === 'airport' || stop.type === 'station') && nextStop?.type === 'hotel') ||
+                            (stop.type === 'hotel' && (nextStop?.type === 'airport' || nextStop?.type === 'station'))
+                          );
+                          let travelData = isHubPair ? null : (travelKey ? travelBetween[travelKey] : null);
                           const selMode = travelData?.selected || 'walk';
                           let selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
-                          // Sanity check: airport→hotel should be < 50km. If much larger, the query resolved wrong.
-                          const isHubToLocal = (stop.type === 'airport' || stop.type === 'station' || stop.type === 'home') && nextStop && (nextStop.type === 'hotel' || nextStop.type === 'attraction');
-                          const isLocalToHub = (nextStop?.type === 'airport' || nextStop?.type === 'station') && (stop.type === 'hotel' || stop.type === 'attraction' || stop.type === 'home');
-                          if ((isHubToLocal || isLocalToHub) && selData && parseDistKm(selData.distance) > 50) {
-                            selData = undefined; // Bogus — show "See directions" instead
-                          }
+                          // For hub pairs: skip travelBetween entirely, show built-in stop transport data below
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
                           const isDropdownOpen = openTravelDropdown === travelKey;
                           const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
@@ -3664,6 +3649,21 @@ function DeepPlanPageContent() {
                                     <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
                                   </button>
                                   )
+                                ) : isHubPair && hasDurationInfo ? (
+                                  /* Hub pairs (home↔airport, airport↔hotel): show built-in transport data, skip travelBetween */
+                                  <div className="flex items-center gap-2 bg-gray-50/80 rounded-lg px-2.5 py-1.5 border border-gray-100/60">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 flex-shrink-0"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-secondary flex-shrink-0">
+                                      <path d={TRANSPORT_ICONS.drive} />
+                                    </svg>
+                                    <span className="text-[11px] font-mono text-text-secondary">{stop.transport.duration} &middot; {stop.transport.distance}</span>
+                                    {gmapsUrl && (
+                                      <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
+                                        className="print-hide text-[11px] text-accent-cyan hover:underline font-body font-semibold transition-colors ml-auto">
+                                        Directions &rarr;
+                                      </a>
+                                    )}
+                                  </div>
                                 ) : (
                                   <div className="relative">
                                     <div className="flex items-center gap-2">
