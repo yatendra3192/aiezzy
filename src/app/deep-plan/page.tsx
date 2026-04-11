@@ -3598,10 +3598,18 @@ function DeepPlanPageContent() {
                             ((stop.type === 'airport' || stop.type === 'station') && nextStop?.type === 'hotel') ||
                             (stop.type === 'hotel' && (nextStop?.type === 'airport' || nextStop?.type === 'station'))
                           );
-                          let travelData = isHubPair ? null : (travelKey ? travelBetween[travelKey] : null);
+                          let travelData = travelKey ? travelBetween[travelKey] : null;
+                          // For hub pairs: force drive mode and use built-in transport data (correct from day builder)
+                          if (isHubPair && hasDurationInfo) {
+                            const builtIn = { duration: stop.transport.duration, distance: stop.transport.distance };
+                            if (!travelData) {
+                              travelData = { selected: 'drive', drive: builtIn, _fetched: true };
+                            } else {
+                              travelData = { ...travelData, selected: 'drive', drive: builtIn };
+                            }
+                          }
                           const selMode = travelData?.selected || 'walk';
                           let selData = travelData?.[selMode as 'walk' | 'transit' | 'drive'];
-                          // For hub pairs: skip travelBetween entirely, show built-in stop transport data below
                           const selIcon = selMode === 'transit' ? 'publicTransit' : selMode === 'drive' ? 'drive' : 'walk';
                           const isDropdownOpen = openTravelDropdown === travelKey;
                           const gmapsTravelMode = selMode === 'drive' ? 'driving' : selMode === 'transit' ? 'transit' : 'walking';
@@ -3649,21 +3657,6 @@ function DeepPlanPageContent() {
                                     <span className="text-[10px] text-text-muted font-body print-hide">Change</span>
                                   </button>
                                   )
-                                ) : isHubPair && hasDurationInfo ? (
-                                  /* Hub pairs (home↔airport, airport↔hotel): show built-in transport data, skip travelBetween */
-                                  <div className="flex items-center gap-2 bg-gray-50/80 rounded-lg px-2.5 py-1.5 border border-gray-100/60">
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-gray-300 flex-shrink-0"><path d="M12 5v14"/><path d="M19 12l-7 7-7-7"/></svg>
-                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-text-secondary flex-shrink-0">
-                                      <path d={TRANSPORT_ICONS.drive} />
-                                    </svg>
-                                    <span className="text-[11px] font-mono text-text-secondary">{stop.transport.duration} &middot; {stop.transport.distance}</span>
-                                    {gmapsUrl && (
-                                      <a href={gmapsUrl} target="_blank" rel="noopener noreferrer"
-                                        className="print-hide text-[11px] text-accent-cyan hover:underline font-body font-semibold transition-colors ml-auto">
-                                        Directions &rarr;
-                                      </a>
-                                    )}
-                                  </div>
                                 ) : (
                                   <div className="relative">
                                     <div className="flex items-center gap-2">
