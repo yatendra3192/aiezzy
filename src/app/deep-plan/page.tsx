@@ -1949,6 +1949,8 @@ function DeepPlanPageContent() {
           const stopDest = trip.destinations.find(d => (d.city.parentCity || d.city.name) === cityForStop || d.city.name === cityForStop);
           // Use parentCity if available (more specific than state-level names)
           const specific = stopDest?.city.parentCity || cityForStop;
+          // Home stop: use the full fromAddress for best geocoding
+          if (stop.type === 'home') return trip.fromAddress || `${stop.name}, ${specific}`;
           // Hub (airport/station): use full name + specific city
           if (isHub) return `${stop.name}, ${specific}`;
           // Hotel with generic name: resolve to actual hotel
