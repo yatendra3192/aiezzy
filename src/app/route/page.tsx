@@ -1538,7 +1538,8 @@ function RoutePageContent() {
                               const fCode = info?.fromCode || leg.selectedFlight.depAirportCode || '';
                               const tCode = info?.toCode || leg.selectedFlight.arrAirportCode || '';
                               // Get city names: resolved airport city (e.g., "Mumbai" for BOM when origin is Thane)
-                              const fCity = info?.fromCity || fromCity?.parentCity || fromCity?.name || '';
+                              // Don't fall back to origin city name (e.g., "Jaora") — use IATA code instead
+                              const fCity = info?.fromCity || (fCode && fCode !== (fromCity?.parentCity || fromCity?.name) ? '' : (fromCity?.parentCity || fromCity?.name || ''));
                               const tCity = info?.toCity || toCity?.parentCity || toCity?.name || '';
                               if (fCode && tCode && fCode !== tCode) {
                                 // Show "Mumbai (BOM)" not "Thane (BOM)" — use code alone if city matches code

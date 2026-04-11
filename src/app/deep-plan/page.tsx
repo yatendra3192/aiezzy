@@ -785,7 +785,9 @@ function DeepPlanPageContent() {
           const terminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
           const resolvedInfo = leg.resolvedAirports;
           const terminalName = depHub?.name
+            || (resolvedInfo?.fromAirport ? resolvedInfo.fromAirport : null)
             || (resolvedInfo?.fromCity ? `${resolvedInfo.fromCity} Airport` : null)
+            || (leg.selectedFlight?.depAirportCode ? `${leg.selectedFlight.depAirportCode} Airport` : null)
             || `${fromCityName} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
           // Add GPS coordinates for departure airport (for precise inter-activity directions)
           const depApLat = leg.selectedFlight?.depAirportLat ?? resolvedInfo?.fromAirportLat;
@@ -847,7 +849,11 @@ function DeepPlanPageContent() {
 
             // Arrival terminal
             const arrTerminalType2 = leg.type === 'flight' ? 'airport' as const : 'station' as const;
-            const arrTerminalName2 = arrHub?.name || `${toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+            const arrTerminalName2 = arrHub?.name
+              || (resolvedInfo?.toAirport ? resolvedInfo.toAirport : null)
+              || (resolvedInfo?.toCity ? `${resolvedInfo.toCity} Airport` : null)
+              || (leg.selectedFlight?.arrAirportCode ? `${leg.selectedFlight.arrAirportCode} Airport` : null)
+              || `${toCity.parentCity || toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
             const hubToHotelKey2 = `hub-to-hotel-${destIdx}`;
             const realHubToHotel2 = realTimes[hubToHotelKey2];
             const fromArrTerminalMin2 = realHubToHotel2 ? parseDurationMinutes(realHubToHotel2.duration) : (arrHub?.transitToCenter.durationMin || 15);
@@ -955,7 +961,11 @@ function DeepPlanPageContent() {
           } else {
             // Same-day arrival — keep everything on the travel day
             const arrTerminalType = leg.type === 'flight' ? 'airport' as const : 'station' as const;
-            const arrTerminalName = arrHub?.name || `${toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+            const arrTerminalName = arrHub?.name
+              || (resolvedInfo?.toAirport ? resolvedInfo.toAirport : null)
+              || (resolvedInfo?.toCity ? `${resolvedInfo.toCity} Airport` : null)
+              || (leg.selectedFlight?.arrAirportCode ? `${leg.selectedFlight.arrAirportCode} Airport` : null)
+              || `${toCity.parentCity || toCity.name} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
             const hubToHotelKey = `hub-to-hotel-${destIdx}`;
             const realHubToHotel = realTimes[hubToHotelKey];
             const fromArrTerminalMin = realHubToHotel ? parseDurationMinutes(realHubToHotel.duration) : (arrHub?.transitToCenter.durationMin || 15);
@@ -1341,10 +1351,14 @@ function DeepPlanPageContent() {
           // Bug fix #2: Use resolvedAirports for return leg terminal names
           const returnResolved = returnLeg.resolvedAirports;
           const depTerminalName = depHub?.name
+            || (returnResolved?.fromAirport ? returnResolved.fromAirport : null)
             || (returnResolved?.fromCity ? `${returnResolved.fromCity} Airport` : null)
+            || (returnLeg.selectedFlight?.depAirportCode ? `${returnLeg.selectedFlight.depAirportCode} Airport` : null)
             || `${fromCity.parentCity || fromCity.name} ${returnLeg.type === 'flight' ? 'Airport' : 'Station'}`;
           const arrTerminalName = arrHub?.name
+            || (returnResolved?.toAirport ? returnResolved.toAirport : null)
             || (returnResolved?.toCity ? `${returnResolved.toCity} Airport` : null)
+            || (returnLeg.selectedFlight?.arrAirportCode ? `${returnLeg.selectedFlight.arrAirportCode} Airport` : null)
             || `${trip.from.parentCity || trip.from.name} ${returnLeg.type === 'flight' ? 'Airport' : 'Station'}`;
 
           // Detect overnight return flight/train (same logic as outbound)
