@@ -622,7 +622,8 @@ function DeepPlanPageContent() {
     if (firstDest && firstLeg) {
       const hub = getDepartureHub(trip.from, firstLeg.type);
       if (hub) {
-        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: hub.name, mode: 'driving' });
+        const fromCityLabel = trip.from.parentCity || trip.from.name || '';
+        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: `${hub.name}, ${fromCityLabel}`, mode: 'driving' });
       }
     }
 
@@ -632,11 +633,19 @@ function DeepPlanPageContent() {
       if (leg) {
         const arrHub = getArrivalHub(dest.city, leg.type);
         if (arrHub) {
+          const cityLabel = dest.city.parentCity || dest.city.name;
+          // Use hotel coordinates/address when available for precise routing
+          const hotelLat = dest.selectedHotel?.lat;
+          const hotelLng = dest.selectedHotel?.lng;
+          const hotelAddr = dest.selectedHotel?.address;
           const hotelName = dest.selectedHotel?.name || dest.city.name;
+          const toQuery = (hotelLat && hotelLng) ? `${hotelLat},${hotelLng}`
+            : hotelAddr ? hotelAddr
+            : `${hotelName}, ${cityLabel}`;
           segments.push({
             key: `hub-to-hotel-${i}`,
-            from: arrHub.name + ', ' + dest.city.name,
-            to: hotelName + ', ' + dest.city.name,
+            from: `${arrHub.name}, ${cityLabel}`,
+            to: toQuery,
             mode: leg.type === 'flight' ? 'driving' : 'walking',
           });
         }
