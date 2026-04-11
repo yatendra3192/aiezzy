@@ -621,10 +621,14 @@ function DeepPlanPageContent() {
     const firstLeg = trip.transportLegs[0];
     if (firstDest && firstLeg) {
       const hub = getDepartureHub(trip.from, firstLeg.type);
-      if (hub) {
-        // Don't append origin city to airport name — airport name already includes its city
-        // (e.g., "Indore Airport" not "Indore Airport, Pitgara" which confuses Google)
-        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: hub.name, mode: 'driving' });
+      if (hub || firstLeg.type === 'flight') {
+        // Use departure airport GPS coordinates when available (from catalog DB via flights API)
+        const depAirportLat = firstLeg.selectedFlight?.depAirportLat ?? firstLeg.resolvedAirports?.fromAirportLat;
+        const depAirportLng = firstLeg.selectedFlight?.depAirportLng ?? firstLeg.resolvedAirports?.fromAirportLng;
+        const toQuery = (depAirportLat && depAirportLng)
+          ? `${depAirportLat},${depAirportLng}`
+          : hub ? hub.name : `${trip.from.parentCity || trip.from.name} Airport`;
+        segments.push({ key: `home-to-hub-0`, from: trip.fromAddress, to: toQuery, mode: 'driving' });
       }
     }
 
@@ -633,7 +637,7 @@ function DeepPlanPageContent() {
       const leg = trip.transportLegs[i];
       if (leg) {
         const arrHub = getArrivalHub(dest.city, leg.type);
-        if (arrHub) {
+        if (arrHub || leg.type === 'flight') {
           const cityLabel = dest.city.parentCity || dest.city.name;
           // Use hotel coordinates/address when available for precise routing
           const hotelLat = dest.selectedHotel?.lat;
@@ -643,9 +647,16 @@ function DeepPlanPageContent() {
           const toQuery = (hotelLat && hotelLng) ? `${hotelLat},${hotelLng}`
             : hotelAddr ? hotelAddr
             : `${hotelName}, ${cityLabel}`;
+          // Use arrival airport GPS coordinates when available (from catalog DB via flights API)
+          // This avoids vague text queries like "Jammu and Kashmir Airport" that Google can't resolve
+          const arrAirportLat = leg.selectedFlight?.arrAirportLat ?? leg.resolvedAirports?.toAirportLat;
+          const arrAirportLng = leg.selectedFlight?.arrAirportLng ?? leg.resolvedAirports?.toAirportLng;
+          const fromQuery = (arrAirportLat && arrAirportLng)
+            ? `${arrAirportLat},${arrAirportLng}`
+            : arrHub ? `${arrHub.name}, ${cityLabel}` : `${cityLabel} Airport`;
           segments.push({
             key: `hub-to-hotel-${i}`,
-            from: `${arrHub.name}, ${cityLabel}`,
+            from: fromQuery,
             to: toQuery,
             mode: leg.type === 'flight' ? 'driving' : 'walking',
           });
@@ -776,6 +787,9 @@ function DeepPlanPageContent() {
           const terminalName = depHub?.name
             || (resolvedInfo?.fromCity ? `${resolvedInfo.fromCity} Airport` : null)
             || `${fromCityName} ${leg.type === 'flight' ? 'Airport' : 'Station'}`;
+          // Add GPS coordinates for departure airport (for precise inter-activity directions)
+          const depApLat = leg.selectedFlight?.depAirportLat ?? resolvedInfo?.fromAirportLat;
+          const depApLng = leg.selectedFlight?.depAirportLng ?? resolvedInfo?.fromAirportLng;
           travelDay.stops.push({
             id: `dp${sc++}`, name: terminalName, type: terminalType, time: arriveAtTerminalTime,
             transport: { icon: leg.type, duration: leg.duration, distance: leg.distance },
@@ -783,6 +797,7 @@ function DeepPlanPageContent() {
             note: leg.type === 'flight'
               ? `Check-in ${bufferMin >= 120 ? '2.5h' : '1.5h'} before departure at ${depTime ? formatTime12(parseTime(depTime)) : '~'}`
               : `Board ${bufferMin}min before departure at ${depTime ? formatTime12(parseTime(depTime)) : '~'}`,
+            lat: depApLat, lng: depApLng,
           });
 
           // Detect overnight/multi-day arrival
@@ -838,9 +853,13 @@ function DeepPlanPageContent() {
             const fromArrTerminalMin2 = realHubToHotel2 ? parseDurationMinutes(realHubToHotel2.duration) : (arrHub?.transitToCenter.durationMin || 15);
             const fromArrTerminalDist2 = realHubToHotel2?.distance || arrHub?.transitToCenter.distance || '~';
 
+            // Add GPS coordinates for arrival airport (for precise inter-activity directions)
+            const arrApLat2 = leg.selectedFlight?.arrAirportLat ?? leg.resolvedAirports?.toAirportLat;
+            const arrApLng2 = leg.selectedFlight?.arrAirportLng ?? leg.resolvedAirports?.toAirportLng;
             arrivalDay.stops.push({
               id: `dp${sc++}`, name: arrTerminalName2, type: arrTerminalType2, time: arrTime,
               transport: { icon: arrHub?.transitToCenter.type || 'drive', duration: realHubToHotel2?.duration || `${fromArrTerminalMin2} min`, distance: fromArrTerminalDist2 },
+              lat: arrApLat2, lng: arrApLng2,
             });
 
             const hotelArriveTime2 = arrTime ? addMinutes(arrTime, fromArrTerminalMin2) : null;
@@ -941,9 +960,13 @@ function DeepPlanPageContent() {
             const realHubToHotel = realTimes[hubToHotelKey];
             const fromArrTerminalMin = realHubToHotel ? parseDurationMinutes(realHubToHotel.duration) : (arrHub?.transitToCenter.durationMin || 15);
             const fromArrTerminalDist = realHubToHotel?.distance || arrHub?.transitToCenter.distance || '~';
+            // Add GPS coordinates for arrival airport (for precise inter-activity directions)
+            const arrApLat = leg.selectedFlight?.arrAirportLat ?? leg.resolvedAirports?.toAirportLat;
+            const arrApLng = leg.selectedFlight?.arrAirportLng ?? leg.resolvedAirports?.toAirportLng;
             travelDay.stops.push({
               id: `dp${sc++}`, name: arrTerminalName, type: arrTerminalType, time: arrTime,
               transport: { icon: arrHub?.transitToCenter.type || 'drive', duration: realHubToHotel?.duration || `${fromArrTerminalMin} min`, distance: fromArrTerminalDist },
+              lat: arrApLat, lng: arrApLng,
             });
 
             const hotelArriveTime = arrTime ? addMinutes(arrTime, fromArrTerminalMin) : null;
@@ -1339,11 +1362,15 @@ function DeepPlanPageContent() {
             }
           }
 
+          // Add GPS coordinates for return departure airport
+          const retDepApLat = returnLeg.selectedFlight?.depAirportLat ?? returnLeg.resolvedAirports?.fromAirportLat;
+          const retDepApLng = returnLeg.selectedFlight?.depAirportLng ?? returnLeg.resolvedAirports?.fromAirportLng;
           returnDay.stops.push({
             id: `dp${sc++}`, name: depTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
             time: depTime ? subtractMinutes(depTime, bufferMin) : null,
             transport: { icon: returnLeg.type, duration: returnLeg.duration, distance: returnLeg.distance },
             legIndex: trip.transportLegs.length - 1,
+            lat: retDepApLat, lng: retDepApLng,
           });
 
           if (returnTransitDays > 0) {
@@ -1371,19 +1398,26 @@ function DeepPlanPageContent() {
               day: dayNum + 1, date: addDaysToDate(trip.departureDate, dayNum), stops: [],
               type: 'departure', city: trip.from.name, dayCost: 0, costLabel: 'Arrival',
             };
+            // Add GPS coordinates for return arrival airport
+            const retArrApLat = returnLeg.selectedFlight?.arrAirportLat ?? returnLeg.resolvedAirports?.toAirportLat;
+            const retArrApLng = returnLeg.selectedFlight?.arrAirportLng ?? returnLeg.resolvedAirports?.toAirportLng;
             returnArrivalDay.stops.push({
               id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
               time: arrTime,
               transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
+              lat: retArrApLat, lng: retArrApLng,
             });
             returnArrivalDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
             result.push(returnArrivalDay);
           } else {
-            // Same-day return
+            // Same-day return — reuse return arrival airport coordinates
+            const retArrApLat2 = returnLeg.selectedFlight?.arrAirportLat ?? returnLeg.resolvedAirports?.toAirportLat;
+            const retArrApLng2 = returnLeg.selectedFlight?.arrAirportLng ?? returnLeg.resolvedAirports?.toAirportLng;
             returnDay.stops.push({
               id: `dp${sc++}`, name: arrTerminalName, type: returnLeg.type === 'flight' ? 'airport' : 'station',
               time: arrTime,
               transport: { icon: 'drive', duration: `${trip.from.homeToAirportMin || 27} min`, distance: '~' },
+              lat: retArrApLat2, lng: retArrApLng2,
             });
             returnDay.stops.push({ id: `dp${sc++}`, name: trip.from.parentCity || trip.from.name || trip.fromAddress, type: 'home', time: null, transport: null });
             result.push(returnDay);
@@ -4119,15 +4153,21 @@ function DeepPlanPageContent() {
                 trip.selectFlight(leg.id, flight);
                 if (airportInfo) {
                   const routeParts = flight.route?.split('-') || [];
+                  const existing = leg.resolvedAirports;
                   const updated = {
                     fromCode: airportInfo.fromCode,
                     fromCity: airportInfo.fromCity,
                     fromDistance: airportInfo.fromDistance,
                     fromAirport: airportInfo.fromCity,
-                    toCode: routeParts[1]?.trim() || leg.resolvedAirports?.toCode || '',
-                    toCity: leg.resolvedAirports?.toCity || toCity?.name || '',
-                    toAirport: leg.resolvedAirports?.toAirport || '',
-                    toDistance: leg.resolvedAirports?.toDistance || 0,
+                    toCode: routeParts[1]?.trim() || existing?.toCode || '',
+                    toCity: existing?.toCity || toCity?.name || '',
+                    toAirport: existing?.toAirport || '',
+                    toDistance: existing?.toDistance || 0,
+                    // Preserve airport GPS coordinates from flight data or existing resolved info
+                    fromAirportLat: flight.depAirportLat ?? existing?.fromAirportLat,
+                    fromAirportLng: flight.depAirportLng ?? existing?.fromAirportLng,
+                    toAirportLat: flight.arrAirportLat ?? existing?.toAirportLat,
+                    toAirportLng: flight.arrAirportLng ?? existing?.toAirportLng,
                   };
                   trip.updateTransportLeg(leg.id, { resolvedAirports: updated });
                 }

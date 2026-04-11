@@ -289,6 +289,8 @@ function RoutePageContent() {
     fromCity: string; toCity: string;
     fromDistance: number; toDistance: number;
     nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
+    fromAirportLat?: number; fromAirportLng?: number;
+    toAirportLat?: number; toAirportLng?: number;
   }>>({});
   const pendingCountRef = useRef(0);
 
@@ -336,9 +338,13 @@ function RoutePageContent() {
           if (c.field === 'from') {
             if (!ref.fromCity) ref.fromCity = airportCity;
             if (!ref.fromCode) ref.fromCode = airport.iata_code || airport.iata || '';
+            if (!ref.fromAirportLat && airport.latitude_deg) ref.fromAirportLat = airport.latitude_deg;
+            if (!ref.fromAirportLng && airport.longitude_deg) ref.fromAirportLng = airport.longitude_deg;
           } else {
             if (!ref.toCity) ref.toCity = airportCity;
             if (!ref.toCode) ref.toCode = airport.iata_code || airport.iata || '';
+            if (!ref.toAirportLat && airport.latitude_deg) ref.toAirportLat = airport.latitude_deg;
+            if (!ref.toAirportLng && airport.longitude_deg) ref.toAirportLng = airport.longitude_deg;
           }
         });
         // Force re-render by updating a trivial state
@@ -574,6 +580,10 @@ function RoutePageContent() {
           nearestFromCode: nearestFrom?.code,
           nearestFromCity: nearestFrom?.city,
           nearestFromDist: nearestFrom?.distance,
+          fromAirportLat: flightData.fromAirportLat,
+          fromAirportLng: flightData.fromAirportLng,
+          toAirportLat: flightData.toAirportLat,
+          toAirportLng: flightData.toAirportLng,
         };
         resolvedAirportsRef.current[i] = resolvedInfo;
         // Persist resolved airport info on the transport leg for reload
@@ -622,6 +632,8 @@ function RoutePageContent() {
               flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
               duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
               pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
+              depAirportLat: flightData.fromAirportLat, depAirportLng: flightData.fromAirportLng,
+              arrAirportLat: flightData.toAirportLat, arrAirportLng: flightData.toAirportLng,
             };
             trip.selectFlight(leg.id, flight);
           }
@@ -642,6 +654,8 @@ function RoutePageContent() {
             flightNumber: cheapestFlight.flightNumber, departure: cheapestFlight.departure, arrival: cheapestFlight.arrival,
             duration: cheapestFlight.duration, stops: cheapestFlight.stops, route: `${resolvedFrom}-${resolvedTo}`,
             pricePerAdult: cheapestFlight.price, color: AIRLINE_COLORS[cheapestFlight.airlineCode] || '#6b7280',
+            depAirportLat: flightData.fromAirportLat, depAirportLng: flightData.fromAirportLng,
+            arrAirportLat: flightData.toAirportLat, arrAirportLng: flightData.toAirportLng,
           };
           trip.selectFlight(leg.id, flight);
         }
@@ -801,6 +815,8 @@ function RoutePageContent() {
                 flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
                 duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
                 pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+                depAirportLat: data.fromAirportLat, depAirportLng: data.fromAirportLng,
+                arrAirportLat: data.toAirportLat, arrAirportLng: data.toAirportLng,
               });
               flightCacheRef.current[i] = data.flights;
             }
@@ -841,6 +857,8 @@ function RoutePageContent() {
                 flightNumber: cheapest.flightNumber, departure: cheapest.departure, arrival: cheapest.arrival,
                 duration: cheapest.duration, stops: cheapest.stops, route: `${data.fromResolved || fc}-${data.toResolved || tc}`,
                 pricePerAdult: cheapest.price, color: AIRLINE_COLORS[cheapest.airlineCode] || '#6b7280',
+                depAirportLat: data.fromAirportLat, depAirportLng: data.fromAirportLng,
+                arrAirportLat: data.toAirportLat, arrAirportLng: data.toAirportLng,
               });
               flightCacheRef.current[i] = data.flights;
             }
@@ -2122,6 +2140,11 @@ function RoutePageContent() {
                     toCity: existing?.toCity || toCity?.name || '',
                     toAirport: existing?.toAirport || '',
                     toDistance: existing?.toDistance || 0,
+                    // Preserve airport GPS coordinates from flight data or existing resolved info
+                    fromAirportLat: flight.depAirportLat ?? existing?.fromAirportLat,
+                    fromAirportLng: flight.depAirportLng ?? existing?.fromAirportLng,
+                    toAirportLat: flight.arrAirportLat ?? existing?.toAirportLat,
+                    toAirportLng: flight.arrAirportLng ?? existing?.toAirportLng,
                   };
                   resolvedAirportsRef.current[transportModal.legIndex] = updated;
                   trip.updateTransportLeg(leg.id, { resolvedAirports: updated });

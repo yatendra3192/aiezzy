@@ -54,6 +54,12 @@ export interface Flight {
   depTerminal?: string;        // "2" or "T2"
   arrTerminal?: string;
   basePrice?: number;          // base fare per person (before taxes)
+  /** GPS coordinates of departure airport (from catalog DB) */
+  depAirportLat?: number;
+  depAirportLng?: number;
+  /** GPS coordinates of arrival airport (from catalog DB) */
+  arrAirportLat?: number;
+  arrAirportLng?: number;
 }
 
 // ─── Train ───────────────────────────────────────────────────────────────────
@@ -135,6 +141,10 @@ export interface ResolvedAirports {
   fromCity: string; toCity: string;
   fromDistance: number; toDistance: number;
   nearestFromCode?: string; nearestFromCity?: string; nearestFromDist?: number;
+  /** GPS coordinates of departure airport (from catalog DB) */
+  fromAirportLat?: number; fromAirportLng?: number;
+  /** GPS coordinates of arrival airport (from catalog DB) */
+  toAirportLat?: number; toAirportLng?: number;
 }
 
 export interface TransportLeg {
