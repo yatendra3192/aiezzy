@@ -4,24 +4,32 @@ import { authOptions } from '@/lib/auth';
 import { createUserClient, createServiceClient } from '@/lib/supabase/server';
 import { validateTripPayload } from '@/lib/tripValidation';
 
+const ADMIN_EMAILS = ['yatendra3192@gmail.com'];
+
 /** GET /api/trips/[id] - Load a single trip with all data */
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
-  const supabase = await createUserClient(userId);
+  const isAdmin = ADMIN_EMAILS.includes(session.user.email || '');
 
-  const { data: trip, error } = await supabase
+  // Admin can view any trip (service client bypasses RLS)
+  const supabase = isAdmin ? createServiceClient() : await createUserClient(userId);
+
+  let query = supabase
     .from('trips')
     .select(`
       *,
       trip_destinations(*),
       trip_transport_legs(*)
     `)
-    .eq('id', params.id)
-    .eq('user_id', userId)
-    .single();
+    .eq('id', params.id);
+
+  // Non-admin: restrict to own trips
+  if (!isAdmin) query = query.eq('user_id', userId);
+
+  const { data: trip, error } = await query.single();
 
   if (error || !trip) {
     return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
@@ -87,21 +95,22 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const userId = (session.user as any).supabaseUserId;
+  const isAdmin = ADMIN_EMAILS.includes(session.user.email || '');
   const raw = await req.json();
   const validation = validateTripPayload(raw);
   if (!validation.success) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
   const body = validation.data;
-  const supabase = await createUserClient(userId);
+  const supabase = isAdmin ? createServiceClient() : await createUserClient(userId);
 
-  // Verify trip belongs to user (needed for title generation + optimistic locking)
-  const { data: existing } = await supabase
+  // Verify trip belongs to user (or admin can access any)
+  let existingQuery = supabase
     .from('trips')
     .select('id, title, updated_at')
-    .eq('id', params.id)
-    .eq('user_id', userId)
-    .single();
+    .eq('id', params.id);
+  if (!isAdmin) existingQuery = existingQuery.eq('user_id', userId);
+  const { data: existing } = await existingQuery.single();
 
   if (!existing) return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
 
