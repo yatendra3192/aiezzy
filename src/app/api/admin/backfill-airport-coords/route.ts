@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     let debugUrl = '';
     for (let i = 0; i < codesArray.length; i += batchSize) {
       const batch = codesArray.slice(i, i + batchSize);
-      const codeList = batch.join(',');
+      const codeList = batch.map(c => `"${c}"`).join(',');
       const url = `${CATALOG_URL}/rest/v1/airports?iata_code=in.(${codeList})&select=iata_code,name,municipality,latitude_deg,longitude_deg`;
       if (!debugUrl) debugUrl = url.replace(CATALOG_KEY, '***');
       const res = await fetch(url, {
