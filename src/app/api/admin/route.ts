@@ -14,16 +14,24 @@ export async function GET(req: NextRequest) {
   const supabase = createServiceClient();
 
   try {
-    // Get total users
-    const { data: users } = await supabase.auth.admin.listUsers();
-    const totalUsers = users?.users?.length || 0;
+    // Get total users — paginate to get ALL (default is 50 per page)
+    let allAuthUsers: any[] = [];
+    let page = 1;
+    while (true) {
+      const { data: batch } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+      const batchUsers = batch?.users || [];
+      allAuthUsers = allAuthUsers.concat(batchUsers);
+      if (batchUsers.length < 1000) break;
+      page++;
+    }
+    const totalUsers = allAuthUsers.length;
 
     // Get profiles for display names
     const { data: profiles } = await supabase.from('profiles').select('id, display_name, email');
     const profileMap = new Map((profiles || []).map(p => [p.id, p]));
 
     // Get user details
-    const userList = (users?.users || []).map(u => {
+    const userList = allAuthUsers.map(u => {
       const profile = profileMap.get(u.id);
       return {
         id: u.id,
@@ -52,13 +60,13 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50);
 
-    // Lightweight query for funnel stats (all trips, no limit)
+    // All trips query for accurate stats (funnel, costs, destinations)
     const { data: allTripsForFunnel } = await supabase
       .from('trips')
       .select(`
-        user_id, deep_plan_data,
-        trip_destinations(selected_hotel),
-        trip_transport_legs(selected_flight)
+        user_id, deep_plan_data, from_address, created_at, adults, children,
+        trip_destinations(city, nights, selected_hotel),
+        trip_transport_legs(selected_flight, selected_train)
       `);
 
     // Process trips
@@ -96,30 +104,55 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // Stats
-    const tripsWithFlights = tripList.filter(t => t.flightCost > 0).length;
-    const tripsWithHotels = tripList.filter(t => t.hotelCost > 0).length;
-    const totalTripValue = tripList.reduce((s, t) => s + t.totalCost, 0);
+    // All stats computed from ALL trips (not just the 50 display trips)
+    const allTrips = allTripsForFunnel || [];
 
-    // Funnel stats — computed from ALL trips (not just the 50 display trips)
-    const funnelTrips = allTripsForFunnel || [];
+    // Funnel + cost stats
     const funnelUserIdsWithTrips = new Set<string>();
     const funnelUserIdsWithFlights = new Set<string>();
     const funnelUserIdsWithHotels = new Set<string>();
     const funnelUserIdsWithDeepPlan = new Set<string>();
+    let tripsWithFlightsCount = 0;
+    let tripsWithHotelsCount = 0;
+    let totalTripValue = 0;
+    const destCounts: Record<string, number> = {};
+    const routeCounts: Record<string, number> = {};
+    let totalNightsSum = 0;
+    let totalDestsSum = 0;
+    let tripsWithDestsCount = 0;
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    let tripsToday = 0;
+    let tripsThisWeek = 0;
 
-    for (const ft of funnelTrips) {
+    for (const ft of allTrips) {
       if (ft.user_id) funnelUserIdsWithTrips.add(ft.user_id);
 
-      const ftLegs: Array<{ selected_flight: unknown }> = (ft.trip_transport_legs as Array<{ selected_flight: unknown }>) || [];
-      const hasFlights = ftLegs.some((l) => l.selected_flight != null);
-      if (hasFlights && ft.user_id) funnelUserIdsWithFlights.add(ft.user_id);
+      const ftLegs: any[] = ft.trip_transport_legs || [];
+      const ftDests: any[] = ft.trip_destinations || [];
 
-      const ftDests: Array<{ selected_hotel: unknown }> = (ft.trip_destinations as Array<{ selected_hotel: unknown }>) || [];
-      const hasHotels = ftDests.some((d) => d.selected_hotel != null);
-      if (hasHotels && ft.user_id) funnelUserIdsWithHotels.add(ft.user_id);
+      // Flights
+      const hasFlights = ftLegs.some((l: any) => l.selected_flight != null);
+      if (hasFlights) {
+        tripsWithFlightsCount++;
+        if (ft.user_id) funnelUserIdsWithFlights.add(ft.user_id);
+      }
+      const flightCost = ftLegs.filter((l: any) => l.selected_flight).reduce((s: number, l: any) => s + (l.selected_flight?.pricePerAdult || 0), 0) * (ft.adults || 1);
 
-      // deep_plan_data is considered "used" if it's not null and has at least one key with content
+      // Hotels
+      const hasHotels = ftDests.some((d: any) => d.selected_hotel != null);
+      if (hasHotels) {
+        tripsWithHotelsCount++;
+        if (ft.user_id) funnelUserIdsWithHotels.add(ft.user_id);
+      }
+      const hotelCost = ftDests.filter((d: any) => d.selected_hotel && d.nights > 0).reduce((s: number, d: any) => s + (d.selected_hotel?.pricePerNight || 0) * d.nights, 0);
+
+      // Trains
+      const trainCost = ftLegs.filter((l: any) => l.selected_train).reduce((s: number, l: any) => s + (l.selected_train?.price || 0), 0) * ((ft.adults || 1) + (ft.children || 0));
+
+      totalTripValue += flightCost + trainCost + hotelCost;
+
+      // Deep plan
       const dpd = ft.deep_plan_data as Record<string, unknown> | null;
       if (dpd && ft.user_id) {
         const hasContent = Object.keys(dpd).some(k => {
@@ -130,26 +163,50 @@ export async function GET(req: NextRequest) {
         });
         if (hasContent) funnelUserIdsWithDeepPlan.add(ft.user_id);
       }
-    }
 
-    // Popular routes — origin → first destination
-    const routeCounts: Record<string, number> = {};
-    for (const t of tripList) {
-      if (t.fromAddress && t.destinations.length > 0) {
-        // Extract city from fromAddress: use part before first comma
-        const originParts = t.fromAddress.split(',');
-        const originCity = originParts[0].trim();
-        const destCity = t.destinations[0];
-        if (originCity && destCity) {
-          const routeKey = `${originCity} → ${destCity}`;
+      // Destinations
+      const destNames = ftDests.map((d: any) => d.city?.name).filter(Boolean);
+      for (const d of destNames) {
+        destCounts[d] = (destCounts[d] || 0) + 1;
+      }
+      if (destNames.length > 0) {
+        tripsWithDestsCount++;
+        totalDestsSum += destNames.length;
+        totalNightsSum += ftDests.reduce((s: number, d: any) => s + (d.nights || 0), 0);
+      }
+
+      // Popular routes
+      if (ft.from_address && destNames.length > 0) {
+        const originCity = ft.from_address.split(',')[0].trim();
+        if (originCity && destNames[0]) {
+          const routeKey = `${originCity} → ${destNames[0]}`;
           routeCounts[routeKey] = (routeCounts[routeKey] || 0) + 1;
         }
       }
+
+      // Trip velocity
+      if (ft.created_at?.startsWith(today)) tripsToday++;
+      if (ft.created_at && new Date(ft.created_at) > weekAgo) tripsThisWeek++;
     }
+
+    const topDestinations = Object.entries(destCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([city, count]) => ({ city, count }));
+
     const popularRoutes = Object.entries(routeCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([route, count]) => ({ route, count }));
+
+    const avgNights = tripsWithDestsCount > 0 ? Math.round(totalNightsSum / tripsWithDestsCount * 10) / 10 : 0;
+    const avgCities = tripsWithDestsCount > 0 ? Math.round(totalDestsSum / tripsWithDestsCount * 10) / 10 : 0;
+
+    // Provider breakdown
+    const providerBreakdown: Record<string, number> = {};
+    for (const u of userList) {
+      providerBreakdown[u.provider] = (providerBreakdown[u.provider] || 0) + 1;
+    }
 
     // Signups per day (last 30 days)
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -160,55 +217,18 @@ export async function GET(req: NextRequest) {
       signupsByDay[day] = (signupsByDay[day] || 0) + 1;
     });
 
-    // Top destinations (across all fetched trips)
-    const destCounts: Record<string, number> = {};
-    for (const t of tripList) {
-      for (const d of t.destinations) {
-        destCounts[d] = (destCounts[d] || 0) + 1;
-      }
-    }
-    const topDestinations = Object.entries(destCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([city, count]) => ({ city, count }));
-
-    // Provider breakdown
-    const providerBreakdown: Record<string, number> = {};
-    for (const u of userList) {
-      providerBreakdown[u.provider] = (providerBreakdown[u.provider] || 0) + 1;
-    }
-
-    // Users with trips
-    const userIdsWithTrips = new Set(tripList.map(t => t.userEmail).filter(Boolean));
-    const usersWithTrips = userIdsWithTrips.size;
-
-    // Trip velocity
-    const today = new Date().toISOString().split('T')[0];
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const tripsToday = tripList.filter(t => t.createdAt?.startsWith(today)).length;
-    const tripsThisWeek = tripList.filter(t => new Date(t.createdAt) > weekAgo).length;
-
-    // Average trip size
-    const tripsWithDests = tripList.filter(t => t.destinationCount > 0);
-    const avgNights = tripsWithDests.length > 0
-      ? Math.round(tripsWithDests.reduce((s, t) => s + t.totalNights, 0) / tripsWithDests.length * 10) / 10
-      : 0;
-    const avgCities = tripsWithDests.length > 0
-      ? Math.round(tripsWithDests.reduce((s, t) => s + t.destinationCount, 0) / tripsWithDests.length * 10) / 10
-      : 0;
-
     return NextResponse.json({
       stats: {
         totalUsers,
         totalTrips: totalTrips || 0,
-        tripsWithFlights,
-        tripsWithHotels,
+        tripsWithFlights: tripsWithFlightsCount,
+        tripsWithHotels: tripsWithHotelsCount,
         totalTripValue,
         recentSignups: recentSignups.length,
         topDestinations,
         providerBreakdown,
-        usersWithTrips,
-        usersWithoutTrips: totalUsers - usersWithTrips,
+        usersWithTrips: funnelUserIdsWithTrips.size,
+        usersWithoutTrips: totalUsers - funnelUserIdsWithTrips.size,
         avgNights,
         avgCities,
         tripsToday,
