@@ -3580,7 +3580,7 @@ function DeepPlanPageContent() {
                                           </svg>
                                           {selData ? (
                                             parseDistKm(selData.distance) < 0.1 ? (
-                                            <span className="text-[11px] font-body text-text-muted">Directions unavailable</span>
+                                            <span className="text-[11px] font-body text-text-muted">See directions</span>
                                             ) : <span className="text-[11px] font-mono">{selData.duration} &middot; {selData.distance}
                                               {(() => {
                                                 // Use correct city: pre-transport stops use departureCity, post-transport use day.city
