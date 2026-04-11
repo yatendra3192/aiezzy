@@ -240,14 +240,74 @@ export default function MyTripsPage() {
           </motion.div>
         ) : (
           <div className="space-y-8">
-            {/* Upcoming trips */}
-            {upcomingTrips.length > 0 && (
+            {/* Next Trip Hero */}
+            {upcomingTrips.length > 0 && (() => {
+              const next = upcomingTrips[0];
+              const days = daysUntil(next.departureDate);
+              const primaryDest = next.destinations[0] || 'Trip';
+              const pendingFlights = next.destinationCount - (next.flightCost > 0 ? Math.min(next.destinationCount, Math.ceil(next.flightCost / 1000)) : 0);
+              const hasHotel = next.hotelCost > 0;
+              const pendingItems = (!hasHotel ? 1 : 0) + (next.flightCost === 0 ? 1 : 0);
+              return (
+                <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}>
+                  <button onClick={() => handleLoadTrip(next.id)}
+                    className="w-full relative rounded-2xl overflow-hidden group text-left">
+                    <div className="h-44 md:h-52 relative">
+                      <PlacePhoto name={primaryDest} city={primaryDest} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-black/10" />
+                      <div className="absolute inset-0 p-5 md:p-6 flex flex-col justify-between">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-white/70 text-xs font-body uppercase tracking-wider">Next Trip</span>
+                            {days <= 7 && days >= 0 && (
+                              <span className="ml-2 bg-white/20 backdrop-blur-sm text-white text-[10px] font-display font-bold px-2 py-0.5 rounded-full">
+                                {days === 0 ? 'Departing Today!' : days === 1 ? 'Tomorrow!' : `In ${days} days`}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-white/60 text-xs font-mono">{formatTripDate(next.departureDate)}</span>
+                        </div>
+                        <div>
+                          <h2 className="font-display font-bold text-white text-xl md:text-2xl leading-tight drop-shadow-lg">
+                            {next.destinations.length > 0 ? next.destinations.join(' → ') : primaryDest}
+                          </h2>
+                          <div className="flex items-center gap-4 mt-2">
+                            <span className="text-white/80 text-xs font-body">{next.totalNights} nights &bull; {next.destinationCount} {next.destinationCount === 1 ? 'city' : 'cities'} &bull; {next.adults + (next.children || 0)} pax</span>
+                            {next.totalCost > 0 && (
+                              <span className="font-mono font-bold text-white text-sm">{formatPrice(next.totalCost, currency)}</span>
+                            )}
+                          </div>
+                          {pendingItems > 0 && (
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="bg-amber-400/90 text-amber-900 text-[10px] font-display font-bold px-2 py-0.5 rounded-full">
+                                {pendingItems} {pendingItems === 1 ? 'item' : 'items'} pending
+                              </span>
+                              <span className="text-white/60 text-[10px] font-body">
+                                {next.flightCost === 0 && 'Select flights'}{next.flightCost === 0 && !hasHotel && ' & '}{!hasHotel && 'Book hotels'}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="absolute bottom-0 right-0 p-4">
+                      <span className="bg-white/90 backdrop-blur-sm text-accent-cyan font-display font-bold text-xs px-4 py-2 rounded-xl shadow-sm group-hover:bg-white group-hover:shadow-md transition-all">
+                        Continue Planning &rarr;
+                      </span>
+                    </div>
+                  </button>
+                </motion.div>
+              );
+            })()}
+
+            {/* Upcoming trips (skip the first one — it's the hero) */}
+            {upcomingTrips.length > 1 && (
               <div>
                 <h2 className="font-display text-sm font-bold text-text-muted uppercase tracking-wider mb-4">
                   Upcoming
                 </h2>
                 <div className="grid gap-4 md:grid-cols-2">
-                  {upcomingTrips.map((t, i) => {
+                  {upcomingTrips.slice(1).map((t, i) => {
                     const days = daysUntil(t.departureDate);
                     const primaryDest = t.destinations[0] || 'Trip';
                     return (
